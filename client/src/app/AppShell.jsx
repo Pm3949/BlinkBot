@@ -6,6 +6,7 @@ import AppHeader from "../components/layout/AppHeader";
 import MobileSidebar from "../components/layout/MobileSidebar";
 import CreateAgentWizard from "../components/agents/CreateAgentWizard";
 import { useUIStore } from "../store/useUIStore";
+import { usePermissionSync } from "../hooks/usePermissionSync";
 
 export default function AppShell() {
   const darkMode = useUIStore((state) => state.darkMode);
@@ -17,6 +18,9 @@ export default function AppShell() {
   const setCreateAgentWizardOpen = useUIStore(
     (state) => state.setCreateAgentWizardOpen,
   );
+
+  // Real-time: Admin द्वारा permission बदलने पर तुरंत UI update
+  usePermissionSync();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -30,7 +34,7 @@ export default function AppShell() {
         <CreateAgentWizard onClose={() => setCreateAgentWizardOpen(false)} />
       )}
 
-      <div className="min-h-screen bg-slate-50 text-slate-950 transition-colors dark:bg-zinc-950 dark:text-zinc-50">
+      <div className="min-h-screen bg-background text-foreground transition-colors">
         <div className="hidden lg:block">
           <AppSidebar />
         </div>

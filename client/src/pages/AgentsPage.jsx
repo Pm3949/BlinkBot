@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -6,12 +7,24 @@ import {
   MessageSquare,
   Database,
   MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useAgents } from "../hooks/useAgents";
+import { useAgents, useDeleteAgent } from "../hooks/useAgents";
+import { useWorkspacePermissions } from "../hooks/useSettings";
 import EmptyState from "../components/shared/EmptyState";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../components/ui/dialog";
+import { Button } from "../components/ui/button";
 
 function formatCreatedAt(value) {
   if (!value) return "Not available";
@@ -27,15 +40,41 @@ export default function AgentsPage() {
   const setCreateAgentWizardOpen = useUIStore(
     (state) => state.setCreateAgentWizardOpen,
   );
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
 
-  const { user } = useAuth();
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [agentToDelete, setAgentToDelete] = useState(null);
+  const deleteAgentMutation = useDeleteAgent(activeWorkspaceId);
+  const { canManageAgents } = useWorkspacePermissions();
+
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.agent-dropdown-container')) {
+        setOpenDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const confirmDelete = async () => {
+    if (!agentToDelete) return;
+    try {
+      await deleteAgentMutation.mutateAsync(agentToDelete.id);
+      toast.success("Agent deleted successfully");
+      setAgentToDelete(null);
+    } catch (error) {
+      toast.error("Failed to delete agent");
+    }
+  };
 
   const {
     data: agents = [],
     isError,
     isLoading,
     error,
-  } = useAgents(user?.id);
+  } = useAgents(activeWorkspaceId);
 
   if (isLoading) {
     return (
@@ -49,31 +88,31 @@ export default function AgentsPage() {
     <div>
       <div className="flex items-center justify-between mb-10">
         <div>
-          <h1 className="text-4xl font-bold text-slate-900">AI Agents</h1>
+          <h1 className="text-4xl font-bold text-foreground">AI Agents</h1>
 
-          <p className="text-slate-500 mt-2">
+          <p className="text-muted-foreground mt-2">
             Build and manage custom RAG assistants.
           </p>
         </div>
 
-        <button
-          onClick={() => setCreateAgentWizardOpen(true)}
-          className="
+        {canManageAgents && (
+          <button onClick={() => setCreateAgentWizardOpen(true)}
+            className="
             flex
             items-center
             gap-2
             px-5
             py-3
             rounded-2xl
-            bg-indigo-600
+            btn-primary
             text-white
-            hover:bg-indigo-700
             transition-all
           "
-        >
-          <Plus size={18} />
-          Create Agent
-        </button>
+          >
+            <Plus size={18} />
+            Create Agent
+          </button>
+        )}
       </div>
 
       {isError && (
@@ -88,105 +127,123 @@ export default function AgentsPage() {
           title="No agents yet"
           description="Create your first AI agent to connect models, instructions, and knowledge settings."
           action={
-            <button
-              onClick={() => setCreateAgentWizardOpen(true)}
-              className="
+            canManageAgents && (
+              <button onClick={() => setCreateAgentWizardOpen(true)}
+                className="
                 flex
                 items-center
                 gap-2
                 px-5
                 py-3
                 rounded-2xl
-                bg-indigo-600
+                btn-primary
                 text-white
-                hover:bg-indigo-700
                 transition-all
               "
-            >
-              <Plus size={18} />
-              Create Agent
-            </button>
+              >
+                <Plus size={18} />
+                Create Agent
+              </button>
+            )
           }
         />
       ) : (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {agents.map((agent) => (
-            <motion.div
-              key={agent.id}
-              whileHover={{
-                y: -4,
-              }}
-              className="
-              bg-white
-              rounded-3xl
-              border
-              border-slate-200
+      <div className="grid lg:grid-cols-3 gap-6">
+        {agents.map((agent) => (
+          <motion.div
+            key={agent.id}
+            whileHover={{
+              y: -4,
+            }}
+            className="
+              glass-card
               p-6
-              shadow-sm
-              hover:shadow-xl
-              transition-all
             "
-            >
-              <div className="flex items-start justify-between">
-                <div className="h-14 w-14 rounded-2xl bg-indigo-100 flex items-center justify-center">
-                  <Bot className="text-indigo-600" />
-                </div>
-
-                <button className="p-2 rounded-xl hover:bg-slate-100">
-                  <MoreHorizontal size={18} />
-                </button>
+          >
+            <div className="flex items-start justify-between">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Bot className="text-primary" />
               </div>
 
-              <h3 className="font-semibold text-lg mt-5">
-                {agent.name}
-              </h3>
-
-              {agent.description && (
-                <p className="mt-2 text-sm text-slate-500 line-clamp-2">
-                  {agent.description}
-                </p>
+              {canManageAgents && (
+                <div className="relative agent-dropdown-container">
+                  <button
+                    className="p-2 rounded-xl hover:bg-muted"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setOpenDropdownId(openDropdownId === agent.id ? null : agent.id);
+                    }}
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
+                  {openDropdownId === agent.id && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-card rounded-xl shadow-lg border border-border py-1 z-10 overflow-hidden">
+                      <button
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-500/10 flex items-center gap-2"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setAgentToDelete(agent);
+                          setOpenDropdownId(null);
+                        }}
+                      >
+                        <Trash2 size={16} /> Delete Agent
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
+            </div>
 
-              <div className="flex flex-wrap gap-2 mt-4">
-                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-medium">
-                  {agent.provider}
-                </span>
+            <h3 className="font-semibold text-lg mt-5">
+              {agent.name}
+            </h3>
 
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                  {agent.model}
+            {agent.description && (
+              <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
+                {agent.description}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                {agent.provider}
+              </span>
+
+              <span className="px-3 py-1 rounded-full bg-muted text-foreground text-xs font-medium">
+                {agent.model}
+              </span>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              <div className="flex justify-between gap-4 text-sm">
+                <span className="text-muted-foreground">Embedding</span>
+
+                <span className="text-right">
+                  {agent.embedding_model}
                 </span>
               </div>
 
-              <div className="mt-5 space-y-2">
-                <div className="flex justify-between gap-4 text-sm">
-                  <span className="text-slate-500">Embedding</span>
+              <div className="flex justify-between gap-4 text-sm">
+                <span className="text-muted-foreground">Chunking</span>
 
-                  <span className="text-right">
-                    {agent.embedding_model}
-                  </span>
-                </div>
-
-                <div className="flex justify-between gap-4 text-sm">
-                  <span className="text-slate-500">Chunking</span>
-
-                  <span className="text-right">
-                    {agent.chunk_strategy}
-                  </span>
-                </div>
-
-                <div className="flex justify-between gap-4 text-sm">
-                  <span className="text-slate-500">Created</span>
-
-                  <span className="text-right">
-                    {formatCreatedAt(agent.created_at)}
-                  </span>
-                </div>
+                <span className="text-right">
+                  {agent.chunk_strategy}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-6">
-                <Link
-                  to="/knowledge"
-                  className="
+              <div className="flex justify-between gap-4 text-sm">
+                <span className="text-muted-foreground">Created</span>
+
+                <span className="text-right">
+                  {formatCreatedAt(agent.created_at)}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <Link
+                to="/knowledge"
+                className="
                   flex
                   items-center
                   justify-center
@@ -194,35 +251,60 @@ export default function AgentsPage() {
                   py-3
                   rounded-2xl
                   border
-                  border-slate-200
-                  hover:bg-slate-50
+                  border-border
+                  hover:bg-muted
                 "
-                >
-                  <Database size={16} />
-                  Knowledge
-                </Link>
+              >
+                <Database size={16} />
+                Knowledge
+              </Link>
 
-                <Link
-                  to="/chat"
-                  className="
+              <Link
+                to="/chat"
+                className="
                   flex
                   items-center
                   justify-center
                   gap-2
                   py-3
                   rounded-2xl
-                  bg-indigo-600
+                  btn-primary
                   text-white
                 "
-                >
-                  <MessageSquare size={16} />
-                  Chat
-                </Link>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+              >
+                <MessageSquare size={16} />
+                Chat
+              </Link>
+            </div>
+          </motion.div>
+        ))}
+      </div>
       )}
+
+      <Dialog open={!!agentToDelete} onOpenChange={() => setAgentToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Agent</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the agent "{agentToDelete?.name}"?
+              This will permanently delete the agent, its settings, all vectorized documents, chat sessions, and chat history. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setAgentToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={confirmDelete}
+              disabled={deleteAgentMutation.isPending}
+            >
+              {deleteAgentMutation.isPending ? "Deleting..." : "Delete Permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

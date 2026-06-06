@@ -17,13 +17,13 @@ async function getAuthenticatedUser() {
   return user;
 }
 
-export async function getAgents(userId) {
-  if (!userId) return [];
+export async function getAgents(workspaceId) {
+  if (!workspaceId) return [];
 
   const { data, error } = await supabase
     .from("agents")
     .select("*")
-    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
     .order("created_at", {
       ascending: false,
     });
@@ -35,17 +35,21 @@ export async function getAgents(userId) {
 
 export async function createAgent(payload) {
   const user = await getAuthenticatedUser();
+  if (!payload.workspace_id) {
+    throw new Error("Workspace ID is required to create an agent.");
+  }
 
   const agentPayload = {
     name: payload.name,
     description: payload.description || "",
-    provider: payload.provider,
-    model: payload.model,
+    llm_provider: payload.provider,
+    llm_model: payload.model,
     embedding_model: payload.embedding_model,
     chunk_strategy: payload.chunk_strategy,
     system_prompt: payload.system_prompt || "",
     api_key: payload.api_key || "",
     user_id: user.id,
+    workspace_id: payload.workspace_id,
   };
 
   const { data, error } = await supabase
@@ -78,14 +82,17 @@ export async function updateAgent(
   return data;
 }
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 export async function deleteAgent(id) {
-  const user = await getAuthenticatedUser();
+  await getAuthenticatedUser(); // Verify auth locally
 
-  const { error } = await supabase
-    .from("agents")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", user.id);
+  const response = await fetch(`${API_URL}/agents/${id}`, {
+    method: "DELETE",
+  });
 
-  if (error) throw error;
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Failed to delete agent");
+  }
 }

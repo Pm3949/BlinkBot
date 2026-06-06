@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   X,
   ChevronRight,
@@ -10,10 +10,20 @@ import {
   Key,
   Check,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { useCreateAgent } from "../../hooks/useAgents";
+import { useUIStore } from "../../store/useUIStore";
+import { useWorkspacePermissions } from "../../hooks/useSettings";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 const providers = [
   {
@@ -84,7 +94,17 @@ const CHUNKING_STRATEGIES = [
 
 export default function CreateAgentWizard({ onClose }) {
   const { user } = useAuth();
-  const createAgentMutation = useCreateAgent(user?.id);
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const { canManageAgents } = useWorkspacePermissions();
+  const createAgentMutation = useCreateAgent(activeWorkspaceId);
+
+  // माउंट होने पर सुरक्षा जांच (उदा: शॉर्टकट से विज़ार्ड खुलने से रोकने के लिए)
+  useEffect(() => {
+    if (!canManageAgents) {
+      toast.error("You do not have permission to manage agents in this workspace.");
+      onClose();
+    }
+  }, [canManageAgents, onClose]);
 
   const [step, setStep] = useState(1);
   const [formError, setFormError] = useState("");
@@ -136,6 +156,11 @@ export default function CreateAgentWizard({ onClose }) {
   };
 
   const handleSubmit = async () => {
+    if (!canManageAgents) {
+      toast.error("You do not have permission to create agents in this workspace.");
+      return;
+    }
+
     if (!user?.id) {
       setFormError(
         "You must be signed in to create an agent.",
@@ -160,6 +185,7 @@ export default function CreateAgentWizard({ onClose }) {
       api_key: selectedModel?.requiresKey
         ? formData.api_key.trim()
         : null,
+      workspace_id: activeWorkspaceId,
     };
 
     try {
@@ -176,18 +202,18 @@ export default function CreateAgentWizard({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-6">
-      <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl overflow-hidden">
-        <div className="border-b border-slate-200 p-8">
+    <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex justify-center items-center p-6">
+      <div className="bg-card text-foreground rounded-[32px] shadow-2xl w-full max-w-4xl overflow-hidden border border-border">
+        <div className="border-b border-border p-8">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-3xl font-bold">Create Agent</h2>
-              <p className="text-slate-500 mt-2">Configure your AI assistant.</p>
+              <p className="text-muted-foreground mt-2">Configure your AI assistant.</p>
             </div>
 
             <button
               onClick={onClose}
-              className="p-3 rounded-2xl hover:bg-slate-100"
+              className="p-3 rounded-2xl hover:bg-muted transition-colors"
               disabled={createAgentMutation.isPending}
             >
               <X />
@@ -212,8 +238,8 @@ export default function CreateAgentWizard({ onClose }) {
                   font-semibold
                   ${
                     step >= item
-                      ? "bg-indigo-600 text-white"
-                      : "bg-slate-100 text-slate-500"
+                      ? "bg-primary text-white"
+                      : "bg-muted text-muted-foreground"
                   }
                 `}
                 >
@@ -229,8 +255,8 @@ export default function CreateAgentWizard({ onClose }) {
                     rounded-full
                     ${
                       step > item
-                        ? "bg-indigo-600"
-                        : "bg-slate-200"
+                        ? "bg-primary"
+                        : "bg-border"
                     }
                   `}
                   />
@@ -244,7 +270,7 @@ export default function CreateAgentWizard({ onClose }) {
           {step === 1 && (
             <div>
               <div className="flex items-center gap-3 mb-8">
-                <Bot className="text-indigo-600" />
+                <Bot className="text-primary" />
                 <h3 className="text-2xl font-bold">Identity</h3>
               </div>
 
@@ -259,7 +285,9 @@ export default function CreateAgentWizard({ onClose }) {
                     className="
                     w-full
                     border
-                    border-slate-200
+                    border-border
+                    bg-background
+                    text-foreground
                     rounded-2xl
                     px-4
                     py-4
@@ -279,7 +307,9 @@ export default function CreateAgentWizard({ onClose }) {
                     className="
                     w-full
                     border
-                    border-slate-200
+                    border-border
+                    bg-background
+                    text-foreground
                     rounded-2xl
                     px-4
                     py-4
@@ -294,7 +324,7 @@ export default function CreateAgentWizard({ onClose }) {
           {step === 2 && (
             <div>
               <div className="flex items-center gap-3 mb-8">
-                <Sparkles className="text-indigo-600" />
+                <Sparkles className="text-primary" />
                 <h3 className="text-2xl font-bold">AI Model</h3>
               </div>
 
@@ -311,13 +341,14 @@ export default function CreateAgentWizard({ onClose }) {
                     transition-all
                     ${
                       formData.provider === provider.id
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
                     }
+                    bg-background
                   `}
                   >
                     <h4 className="font-semibold">{provider.name}</h4>
-                    <p className="text-sm text-slate-500 mt-1">{provider.desc}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{provider.desc}</p>
                   </button>
                 ))}
               </div>
@@ -334,9 +365,10 @@ export default function CreateAgentWizard({ onClose }) {
                     text-left
                     ${
                       formData.model === model.id
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
                     }
+                    bg-background
                   `}
                   >
                     {model.name}
@@ -349,7 +381,7 @@ export default function CreateAgentWizard({ onClose }) {
           {step === 3 && (
             <div>
               <div className="flex items-center gap-3 mb-8">
-                <Brain className="text-indigo-600" />
+                <Brain className="text-primary" />
                 <h3 className="text-2xl font-bold">Knowledge</h3>
               </div>
 
@@ -365,46 +397,40 @@ export default function CreateAgentWizard({ onClose }) {
                     text-left
                     ${
                       formData.embedding_model === item.id
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
                     }
+                    bg-background
                   `}
                   >
                     <h4 className="font-semibold">{item.name}</h4>
-                    <p className="text-sm text-slate-500 mt-1"></p>
+                    <p className="text-sm text-muted-foreground mt-1"></p>
                   </button>
                 ))}
               </div>
 
-              <select
+              <Select
                 value={formData.chunk_strategy}
-                onChange={(event) =>
-                  updateField("chunk_strategy", event.target.value)
-                }
-                className="
-                w-full
-                border
-                border-slate-200
-                rounded-2xl
-                p-4
-              "
+                onValueChange={(value) => updateField("chunk_strategy", value)}
               >
-                {CHUNKING_STRATEGIES.map((strategy) => (
-                  <option
-                    key={strategy.id}
-                    value={strategy.id}
-                  >
-                    {strategy.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full h-14">
+                  <SelectValue placeholder="Select Strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHUNKING_STRATEGIES.map((strategy) => (
+                    <SelectItem key={strategy.id} value={strategy.id}>
+                      {strategy.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {step === 4 && (
             <div>
               <div className="flex items-center gap-3 mb-8">
-                <FileText className="text-indigo-600" />
+                <FileText className="text-primary" />
                 <h3 className="text-2xl font-bold">Instructions</h3>
               </div>
 
@@ -419,7 +445,9 @@ export default function CreateAgentWizard({ onClose }) {
                 w-full
                 rounded-3xl
                 border
-                border-slate-200
+                border-border
+                bg-background
+                text-foreground
                 p-5
                 mb-6
               "
@@ -434,6 +462,7 @@ export default function CreateAgentWizard({ onClose }) {
                     left-4
                     top-4
                     text-slate-400
+                    dark:text-zinc-500
                   "
                   />
 
@@ -450,7 +479,9 @@ export default function CreateAgentWizard({ onClose }) {
                   py-4
                   rounded-2xl
                   border
-                  border-slate-200
+                  border-border
+                  bg-background
+                  text-foreground
                 "
                   />
                 </div>
@@ -465,7 +496,7 @@ export default function CreateAgentWizard({ onClose }) {
           </div>
         )}
 
-        <div className="border-t border-slate-200 p-6 flex justify-between">
+        <div className="border-t border-border p-6 flex justify-between">
           <button
             onClick={prevStep}
             disabled={step === 1 || createAgentMutation.isPending}
@@ -477,7 +508,8 @@ export default function CreateAgentWizard({ onClose }) {
             py-3
             rounded-2xl
             border
-            border-slate-200
+            border-border
+            hover:bg-muted
             disabled:opacity-50
           "
           >
@@ -496,8 +528,7 @@ export default function CreateAgentWizard({ onClose }) {
               px-5
               py-3
               rounded-2xl
-              bg-indigo-600
-              text-white
+              btn-primary
               disabled:opacity-70
             "
             >
@@ -515,8 +546,7 @@ export default function CreateAgentWizard({ onClose }) {
               px-6
               py-3
               rounded-2xl
-              bg-indigo-600
-              text-white
+              btn-primary
               font-medium
               disabled:opacity-70
             "
@@ -534,4 +564,3 @@ export default function CreateAgentWizard({ onClose }) {
     </div>
   );
 }
-

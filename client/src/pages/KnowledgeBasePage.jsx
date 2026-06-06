@@ -10,16 +10,21 @@ import {
   AlertCircle,
   Loader2,
   Trash2,
+  ChevronDown,
 } from "lucide-react";
+import { usePrimaryWorkspace, useWorkspacePermissions } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents } from "../hooks/useAgents";
-import {
-  useDeleteDocument,
-  useDocuments,
-  useProcessUrl,
-  useUploadDocument,
-} from "../hooks/useDocuments";
+import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import { useUIStore } from "../store/useUIStore";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 
 function getDocumentSource(document) {
   return document.filename || document.source || "Untitled";
@@ -48,6 +53,15 @@ function formatDate(value) {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function formatBytes(bytes, decimals = 2) {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 function StatusBadge({ status }) {
@@ -116,10 +130,14 @@ function StatusBadge({ status }) {
 export default function KnowledgeBasePage() {
   const fileInputRef = useRef(null);
   const { user } = useAuth();
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const { canManageDatabase } = useWorkspacePermissions();
+  const { data: workspace } = usePrimaryWorkspace();
+  const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
   const {
     data: agents = [],
     isLoading: isLoadingAgents,
-  } = useAgents(user?.id);
+  } = useAgents(activeWorkspaceId);
   const [activeAgentId, setActiveAgentId] =
     useState("");
   const [url, setUrl] = useState("");
@@ -162,6 +180,11 @@ export default function KnowledgeBasePage() {
     deleteMutation.isPending;
 
   const handleFileChange = async (event) => {
+    if (!canManageDatabase) {
+      toast.error("You do not have permission to upload files in this workspace.");
+      return;
+    }
+
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -188,6 +211,11 @@ export default function KnowledgeBasePage() {
   };
 
   const handleProcessUrl = async () => {
+    if (!canManageDatabase) {
+      toast.error("You do not have permission to scrape URLs in this workspace.");
+      return;
+    }
+
     const trimmedUrl = url.trim();
 
     if (!selectedAgentId) {
@@ -228,13 +256,13 @@ export default function KnowledgeBasePage() {
   };
 
   return (
-    <div className="p-10">
+    <div>
       <div className="mb-10">
-        <h1 className="text-4xl font-bold text-slate-900">
+        <h1 className="text-4xl font-bold text-foreground">
           Knowledge Base
         </h1>
 
-        <p className="text-slate-500 mt-2">
+        <p className="text-muted-foreground mt-2">
           Upload documents, scrape websites and manage
           your AI knowledge sources.
         </p>
@@ -242,8 +270,8 @@ export default function KnowledgeBasePage() {
 
       <div className="grid lg:grid-cols-12 gap-6">
         <div className="lg:col-span-4">
-          <div className="bg-white border border-slate-200 rounded-[32px] p-6 shadow-sm">
-            <h3 className="font-semibold text-lg mb-6">
+          <div className="glass-card p-6">
+            <h3 className="font-semibold text-lg mb-6 text-foreground">
               Upload Sources
             </h3>
 
@@ -251,154 +279,152 @@ export default function KnowledgeBasePage() {
               Agent
             </label>
 
-            <select
-              value={selectedAgentId}
-              onChange={(event) =>
-                setActiveAgentId(event.target.value)
-              }
-              disabled={isLoadingAgents || agents.length === 0}
-              className="
-              w-full
-              border
-              border-slate-200
-              rounded-2xl
-              px-4
-              py-4
-              mb-6
-            "
-            >
-              {agents.length === 0 ? (
-                <option value="">
-                  No agents available
-                </option>
-              ) : (
-                agents.map((agent) => (
-                  <option
-                    key={agent.id}
-                    value={agent.id}
+            <div className="mb-6">
+              <Select
+                value={selectedAgentId}
+                onValueChange={(value) => setActiveAgentId(value)}
+                disabled={isLoadingAgents || agents.length === 0}
+              >
+                <SelectTrigger className="w-full h-14">
+                  <SelectValue placeholder={agents.length === 0 ? "No agents available" : "Select an Agent"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {canManageDatabase ? (
+              <>
+                <div
+                  className="
+                  border-2
+                  border-dashed
+                  border-primary/20
+                  rounded-[28px]
+                  h-[280px]
+                  flex
+                  flex-col
+                  items-center
+                  justify-center
+                  text-center
+                  bg-primary/5
+                "
+                >
+                  <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <UploadCloud
+                      size={30}
+                      className="text-primary"
+                    />
+                  </div>
+
+                  <h4 className="font-semibold text-lg mt-5">
+                    Drop files here
+                  </h4>
+
+                  <p className="text-muted-foreground mt-2">
+                    PDF, DOCX, TXT, CSV
+                  </p>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt,.csv"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+
+                  <button
+                    onClick={() =>
+                      fileInputRef.current?.click()
+                    }
+                    disabled={!selectedAgentId || isMutating}
+                    className="
+                    mt-5
+                    px-5
+                    py-3
+                    rounded-2xl
+                    btn-primary
+                    disabled:opacity-60
+                  "
                   >
-                    {agent.name}
-                  </option>
-                ))
-              )}
-            </select>
+                    {uploadMutation.isPending
+                      ? "Uploading..."
+                      : "Browse Files"}
+                  </button>
+                </div>
 
-            <div
-              className="
-              border-2
-              border-dashed
-              border-indigo-200
-              rounded-[28px]
-              h-[280px]
-              flex
-              flex-col
-              items-center
-              justify-center
-              text-center
-              bg-indigo-50/40
-            "
-            >
-              <div className="h-16 w-16 rounded-full bg-indigo-100 flex items-center justify-center">
-                <UploadCloud
-                  size={30}
-                  className="text-indigo-600"
-                />
+                <div className="mt-6">
+                  <label className="font-medium block mb-3">
+                    Website URL
+                  </label>
+
+                  <div className="relative">
+                    <Globe
+                      size={18}
+                      className="
+                      absolute
+                      left-4
+                      top-4
+                      text-slate-400
+                      dark:text-zinc-500
+                    "
+                    />
+
+                    <input
+                      value={url}
+                      onChange={(event) =>
+                        setUrl(event.target.value)
+                      }
+                      placeholder="https://example.com"
+                      className="
+                      w-full
+                      border
+                      border-border
+                      bg-card
+                      text-foreground
+                      rounded-2xl
+                      pl-12
+                      py-4
+                    "
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleProcessUrl}
+                    disabled={!selectedAgentId || isMutating}
+                    className="
+                    w-full
+                    mt-4
+                    py-3
+                    rounded-2xl
+                    border
+                    border-border
+                    hover:bg-muted
+                    disabled:opacity-60
+                  "
+                  >
+                    {processUrlMutation.isPending
+                      ? "Scraping..."
+                      : "Scrape Website"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground p-5 bg-muted/20 rounded-2xl border border-border text-center">
+                You do not have permission to upload documents or scrape websites in this workspace.
               </div>
-
-              <h4 className="font-semibold text-lg mt-5">
-                Drop files here
-              </h4>
-
-              <p className="text-slate-500 mt-2">
-                PDF, DOCX, TXT, CSV
-              </p>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.docx,.txt,.csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-
-              <button
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
-                disabled={!selectedAgentId || isMutating}
-                className="
-                mt-5
-                px-5
-                py-3
-                rounded-2xl
-                bg-indigo-600
-                text-white
-                disabled:opacity-60
-              "
-              >
-                {uploadMutation.isPending
-                  ? "Uploading..."
-                  : "Browse Files"}
-              </button>
-            </div>
-
-            <div className="mt-6">
-              <label className="font-medium block mb-3">
-                Website URL
-              </label>
-
-              <div className="relative">
-                <Globe
-                  size={18}
-                  className="
-                  absolute
-                  left-4
-                  top-4
-                  text-slate-400
-                "
-                />
-
-                <input
-                  value={url}
-                  onChange={(event) =>
-                    setUrl(event.target.value)
-                  }
-                  placeholder="https://example.com"
-                  className="
-                  w-full
-                  border
-                  border-slate-200
-                  rounded-2xl
-                  pl-12
-                  py-4
-                "
-                />
-              </div>
-
-              <button
-                onClick={handleProcessUrl}
-                disabled={!selectedAgentId || isMutating}
-                className="
-                w-full
-                mt-4
-                py-3
-                rounded-2xl
-                border
-                border-slate-200
-                disabled:opacity-60
-              "
-              >
-                {processUrlMutation.isPending
-                  ? "Scraping..."
-                  : "Scrape Website"}
-              </button>
-            </div>
+            )}
           </div>
         </div>
 
         <div className="lg:col-span-8">
-          <div className="bg-white border border-slate-200 rounded-[32px] shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-slate-200">
+          <div className="glass-card overflow-hidden">
+            <div className="p-6 border-b border-border">
               <div className="flex flex-wrap gap-4">
                 <div className="relative flex-1">
                   <Search
@@ -408,6 +434,7 @@ export default function KnowledgeBasePage() {
                     left-4
                     top-4
                     text-slate-400
+                    dark:text-zinc-500
                   "
                   />
 
@@ -420,7 +447,9 @@ export default function KnowledgeBasePage() {
                     className="
                     w-full
                     border
-                    border-slate-200
+                    border-border
+                    bg-muted
+                    text-foreground
                     rounded-2xl
                     pl-12
                     py-4
@@ -434,7 +463,8 @@ export default function KnowledgeBasePage() {
                   py-3
                   rounded-2xl
                   border
-                  border-slate-200
+                  border-border
+                  hover:bg-muted
                   flex
                   items-center
                   gap-2
@@ -456,7 +486,7 @@ export default function KnowledgeBasePage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="text-left border-b border-slate-200">
+                  <tr className="text-left border-b border-border">
                     <th className="px-6 py-4 text-sm font-semibold">
                       Source
                     </th>
@@ -467,6 +497,14 @@ export default function KnowledgeBasePage() {
 
                     <th className="px-6 py-4 text-sm font-semibold">
                       Status
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-semibold">
+                      Size
+                    </th>
+
+                    <th className="px-6 py-4 text-sm font-semibold">
+                      Chunks
                     </th>
 
                     <th className="px-6 py-4 text-sm font-semibold">
@@ -481,7 +519,7 @@ export default function KnowledgeBasePage() {
                   {isLoading && (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={7}
                         className="px-6 py-6"
                       >
                         <LoadingSkeleton
@@ -496,8 +534,8 @@ export default function KnowledgeBasePage() {
                     filteredDocuments.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
-                          className="px-6 py-10 text-center text-sm text-slate-500"
+                          colSpan={7}
+                          className="px-6 py-10 text-center text-sm text-slate-500 dark:text-zinc-400"
                         >
                           {selectedAgentId
                             ? "No documents found."
@@ -512,8 +550,8 @@ export default function KnowledgeBasePage() {
                         key={document.id}
                         className="
                         border-b
-                        border-slate-100
-                        hover:bg-slate-50
+                        border-border
+                        hover:bg-muted
                       "
                       >
                         <td className="px-6 py-5">
@@ -536,26 +574,40 @@ export default function KnowledgeBasePage() {
                           />
                         </td>
 
-                        <td className="px-6 py-5">
+                        <td className="px-6 py-5 text-sm text-muted-foreground">
+                          {formatBytes(document.file_size_bytes)}
+                        </td>
+
+                        <td className="px-6 py-5 text-sm">
+                          <span className="bg-primary/10 text-primary px-2 py-1 rounded-md font-medium">
+                            {document.chunk_count || 0}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-5 text-sm text-muted-foreground">
                           {formatDate(document.created_at)}
                         </td>
 
                         <td className="px-6 py-5">
-                          <button
-                            onClick={() =>
-                              handleDelete(document.id)
-                            }
-                            disabled={deleteMutation.isPending}
-                            className="
-                            p-2
-                            rounded-xl
-                            hover:bg-red-50
-                            hover:text-red-600
-                            disabled:opacity-60
-                          "
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {canManageDatabase && (
+                            <button
+                              onClick={() =>
+                                handleDelete(document.id)
+                              }
+                              disabled={deleteMutation.isPending}
+                              className="
+                              p-2
+                              rounded-xl
+                              hover:bg-red-50
+                              hover:text-red-600
+                              dark:hover:bg-red-500/10
+                              dark:hover:text-red-300
+                              disabled:opacity-60
+                            "
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

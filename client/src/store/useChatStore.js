@@ -111,14 +111,14 @@ export const useChatStore = create((set, get) => ({
 
   ensureSession: ({ agentId, agentName } = {}) => {
     const activeSession = get().activeSession;
-    const nextAgentId = normalizeAgentId(agentId);
 
-    if (normalizeAgentId(activeSession?.agentId) === nextAgentId) {
+    if (activeSession) {
+      // If we already have an active session, continue it instead of creating a new one.
       return activeSession;
     }
 
     return get().startSession({
-      agentId: nextAgentId,
+      agentId,
       agentName,
     });
   },

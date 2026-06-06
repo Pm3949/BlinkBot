@@ -11,18 +11,18 @@ import {
   updateAgent,
 } from "../services/agentService";
 
-export function useAgents(userId) {
+export function useAgents(workspaceId) {
   return useQuery({
-    queryKey: ["agents", userId],
+    queryKey: ["agents", workspaceId],
 
     queryFn: () =>
-      getAgents(userId),
+      getAgents(workspaceId),
 
-    enabled: !!userId,
+    enabled: !!workspaceId,
   });
 }
 
-export function useCreateAgent(userId) {
+export function useCreateAgent(workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -30,13 +30,13 @@ export function useCreateAgent(userId) {
 
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["agents", userId],
+        queryKey: ["agents", workspaceId],
       });
     },
   });
 }
 
-export function useUpdateAgent(userId) {
+export function useUpdateAgent(workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -45,13 +45,13 @@ export function useUpdateAgent(userId) {
 
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["agents", userId],
+        queryKey: ["agents", workspaceId],
       });
     },
   });
 }
 
-export function useDeleteAgent(userId) {
+export function useDeleteAgent(workspaceId) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -59,7 +59,7 @@ export function useDeleteAgent(userId) {
 
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["agents", userId],
+        queryKey: ["agents", workspaceId],
       });
     },
   });

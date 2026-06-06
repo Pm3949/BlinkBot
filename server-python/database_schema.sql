@@ -15,6 +15,7 @@ CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
   filename TEXT NOT NULL,
+  status TEXT DEFAULT 'completed',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -52,9 +53,12 @@ USING (auth.uid() = user_id);
 
 
 ALTER TABLE agents 
-ADD COLUMN llm_provider TEXT DEFAULT 'groq',
-ADD COLUMN llm_model TEXT DEFAULT 'llama-3.1-8b-instant',
-ADD COLUMN api_key TEXT;
+ADD COLUMN provider TEXT DEFAULT 'groq',
+ADD COLUMN model TEXT DEFAULT 'llama-3.1-8b-instant',
+ADD COLUMN api_key TEXT,
+ADD COLUMN description TEXT,
+ADD COLUMN embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',
+ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph';
 
 -- 1. CHAT SESSIONS TABLE (ChatGPT ke left sidebar ki lists ke liye)
 CREATE TABLE chat_sessions (
@@ -81,16 +85,134 @@ CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);
 ALTER TABLE chat_sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages DISABLE ROW LEVEL SECURITY;
 
-
-create table workspaces (
-  id uuid primary key,
-  name text not null,
-  created_at timestamptz default now()
+-- 4. Workspaces Table
+CREATE TABLE workspaces (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-create table workspace_members (
-  id uuid primary key,
-  workspace_id uuid,
-  user_id uuid,
-  role text
+-- 5. Workspace Members Table
+CREATE TABLE workspace_members (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT,
+  name TEXT,
+  role TEXT DEFAULT 'Viewer',
+  permissions JSONB DEFAULT '{"agents": false, "database": false, "notes": false}'::jsonb,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  UNIQUE(workspace_id, user_id)
+);
+
+-- 6. User Subscriptions Table (Billing)
+CREATE TABLE user_subscriptions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  plan_tier TEXT DEFAULT 'Starter',
+  billing_cycle TEXT DEFAULT 'monthly',
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Workspace Policies
+CREATE POLICY "Users can view workspaces they are members of" ON workspaces
+  FOR SELECT TO authenticated
+  USING (id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid()) OR owner_id = auth.uid());
+
+CREATE POLICY "Users can create workspaces" ON workspaces
+  FOR INSERT TO authenticated
+  WITH CHECK (owner_id = auth.uid());
+
+-- Workspace Members Policies
+CREATE POLICY "Users can view members of their workspaces" ON workspace_members
+  FOR SELECT TO authenticated
+  USING (workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid()));
+
+CREATE POLICY "Admins can manage workspace members" ON workspace_members
+  FOR ALL TO authenticated
+  USING (workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid() AND role = 'Admin'));
+
+-- User Subscriptions Policies
+CREATE POLICY "Users can view own subscription" ON user_subscriptions
+  FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can manage own subscription" ON user_subscriptions
+  FOR ALL TO authenticated
+  USING (user_id = auth.uid());
+
+-- 7. User Settings Table
+CREATE TABLE user_settings (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  openai_api_key TEXT,
+  groq_api_key TEXT,
+  gemini_api_key TEXT,
+  two_factor_enabled BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own settings" ON user_settings
+  FOR SELECT TO authenticated
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can manage own settings" ON user_settings
+  FOR ALL TO authenticated
+  USING (user_id = auth.uid());
+
+-- 8. Triggers for Automatic Workspace Creation
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+DECLARE
+  new_workspace_id UUID;
+BEGIN
+  -- Link any existing placeholder invites
+  UPDATE public.workspace_members
+  SET user_id = NEW.id,
+      name = COALESCE(NEW.raw_user_meta_data->>'full_name', public.workspace_members.name)
+  WHERE email = NEW.email AND user_id IS NULL;
+
+  -- Create a default personal workspace
+  INSERT INTO public.workspaces (name, owner_id)
+  VALUES (
+    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1), 'New User') || '''s Workspace',
+    NEW.id
+  )
+  RETURNING id INTO new_workspace_id;
+
+  -- Add user as Admin to their personal workspace
+  INSERT INTO public.workspace_members (workspace_id, user_id, email, name, role, permissions)
+  VALUES (
+    new_workspace_id,
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+    'Admin',
+    '{"agents": true, "database": true, "notes": true}'::jsonb
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+  CREATE TABLE IF NOT EXISTS widget_message_logs (
+    id SERIAL PRIMARY KEY,
+    chatbot_id UUID REFERENCES chatbots(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT now()
 );

@@ -4,16 +4,21 @@ import ChatSidebar from "../components/chat/ChatSidebar";
 import ChatComposer from "../components/chat/ChatComposer";
 import MessageBubble from "../components/chat/MessageBubble";
 import ContextPanel from "../components/chat/ContextPanel";
+import { usePrimaryWorkspace } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
 import { useDocuments } from "../hooks/useDocuments";
 import { useNotes } from "../hooks/useNotes";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import { useUIStore } from "../store/useUIStore";
 
 export default function ChatPage() {
   const { user } = useAuth();
-  const { data: agents = [], isLoading: isLoadingAgents } = useAgents(user?.id);
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const { data: workspace } = usePrimaryWorkspace();
+  const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
+  const { data: agents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);
   const [activeAgentId, setActiveAgentId] = useState("");
   const {
     activeSessionId,
@@ -125,7 +130,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       <ChatSidebar
         agents={agents}
         activeAgentId={selectedAgentId}
@@ -146,7 +151,7 @@ export default function ChatPage() {
             {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
 
             {!isLoadingAgents && agents.length === 0 && (
-              <div className="text-sm text-slate-500 dark:text-zinc-400">
+              <div className="text-sm text-muted-foreground">
                 Create an agent before starting a chat.
               </div>
             )}
@@ -154,12 +159,12 @@ export default function ChatPage() {
             {!isLoadingAgents &&
               agents.length > 0 &&
               visibleMessages.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
-                <h3 className="font-semibold text-slate-900 dark:text-zinc-50">
+              <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+                <h3 className="font-semibold text-foreground">
                   {activeAgent ? activeAgent.name : "Start a chat"}
                 </h3>
 
-                <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">
+                <p className="mt-2 text-sm text-muted-foreground">
                   Select a chat from history or start a new chat with this agent.
                 </p>
               </div>
