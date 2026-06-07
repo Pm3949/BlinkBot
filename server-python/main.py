@@ -209,7 +209,7 @@ async def process_file(background_tasks: BackgroundTasks, file: UploadFile = Fil
             raise HTTPException(status_code=404, detail="Agent not found")
 
         user_id = agent_row[0]
-        embed_model = agent_row[1] if agent_row[1] else "all-MiniLM-L6-v2"
+        embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
         strategy = agent_row[2] if agent_row[2] else "sentence"
 
         # Check Storage Limit
@@ -269,7 +269,7 @@ async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
             raise HTTPException(status_code=404, detail="Agent not found")
 
         user_id = agent_row[0]
-        embed_model = agent_row[1] if agent_row[1] else "all-MiniLM-L6-v2"
+        embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
         strategy = agent_row[2] if agent_row[2] else "sentence"
 
         raw_text = rag_engine.extract_text_from_url(req.url)
@@ -661,7 +661,7 @@ async def chat_with_agent(req: ChatRequest):
             raise HTTPException(status_code=404, detail="Agent not found")
 
         user_id, agent_name, system_prompt, provider, model, custom_api_key, embed_model = agent_data
-        embed_model = embed_model or "all-MiniLM-L6-v2"
+        embed_model = embed_model or "text-embedding-3-small"
 
         # Check Message Limits
         limits = get_user_limits(user_id, cursor)
@@ -818,7 +818,7 @@ async def widget_chat(req: WidgetChatRequest):
             raise HTTPException(status_code=404, detail="Underlying Agent not found")
 
         agent_name, system_prompt, provider, model, custom_api_key, embed_model = agent_data
-        embed_model = embed_model or "all-MiniLM-L6-v2"
+        embed_model = embed_model or "text-embedding-3-small"
 
         # 3. Setup LLM
         if provider == "openai":
