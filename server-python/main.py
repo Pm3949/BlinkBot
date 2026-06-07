@@ -870,12 +870,15 @@ async def widget_chat(req: WidgetChatRequest):
 
         # 6. Build Prompt
         prompt = f"""{system_prompt}
-        You are a helpful customer support widget. You MUST answer the user's question based ONLY on the provided documents.
+        You are a strict, professional AI assistant grounded ONLY in the provided documents.
 
         CRITICAL RULES:
         1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Reply exactly: "I'm sorry, I cannot answer that based on the available information."
-        3. Keep your answers relatively concise, as this is a chat widget. Format with Markdown if needed.
+        2. If the answer is NOT in the context, DO NOT use general knowledge. Reply EXACTLY: "I'm sorry, but I can only answer questions based on the uploaded documents."
+        3. Format response beautifully in Markdown.
+        4. Use the PREVIOUS CHAT HISTORY to understand context.
+        5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
+        6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
 
         CONTEXT DOCUMENTS:
         {context}
