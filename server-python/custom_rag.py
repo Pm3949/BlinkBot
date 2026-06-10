@@ -8,8 +8,8 @@ import docx
 import os
 from dotenv import load_dotenv
 from collections import Counter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings 
-# from sentence_transformers import SentenceTransformer
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings 
+from sentence_transformers import SentenceTransformer
 from bs4 import BeautifulSoup
 load_dotenv()
 
@@ -17,40 +17,41 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 class CustomRAGEngine:
-    # def __init__(self):
-    #     """Initializes caches and keeps startup logging lightweight."""
-    #     logger.info("🧠 Initializing Custom RAG Engine (Zero LangChain)...")
-    #     self.models_cache = {}
-    #     logger.info("✅ Custom Engine Ready!")
-
-    # def _get_model(self, model_name: str):
-    #     """Loads a model dynamically or returns from cache if already loaded."""
-    #     if model_name not in self.models_cache:
-    #         logger.info("📥 Downloading/Loading embedding model: %s...", model_name)
-    #         try:
-    #             self.models_cache[model_name] = SentenceTransformer(model_name)
-    #         except Exception as exc:
-    #             raise RuntimeError(f"Failed to load embedding model '{model_name}': {exc}") from exc
-    #     return self.models_cache[model_name]
     def __init__(self):
         """Initializes caches and keeps startup logging lightweight."""
-        logger.info("🧠 Initializing Custom RAG Engine (OpenAI API based)...")
+        logger.info("🧠 Initializing Custom RAG Engine (Zero LangChain)...")
         self.models_cache = {}
         logger.info("✅ Custom Engine Ready!")
 
     def _get_model(self, model_name: str):
         """Loads a model dynamically or returns from cache if already loaded."""
         if model_name not in self.models_cache:
-            logger.info("📥 Initializing Google Gemini Embeddings...")
+            logger.info("📥 Downloading/Loading embedding model: %s...", model_name)
             try:
-                self.models_cache[model_name] = GoogleGenerativeAIEmbeddings(
-                    model="models/gemini-embedding-2",
-                    google_api_key=os.getenv("GOOGLE_API_KEY") 
-                )
-
+                self.models_cache[model_name] = SentenceTransformer(model_name)
             except Exception as exc:
-                raise RuntimeError(f"Failed to load embedding API: {exc}") from exc
+                raise RuntimeError(f"Failed to load embedding model '{model_name}': {exc}") from exc
         return self.models_cache[model_name]
+
+    # def __init__(self):
+    #     """Initializes caches and keeps startup logging lightweight."""
+    #     logger.info("🧠 Initializing Custom RAG Engine (OpenAI API based)...")
+    #     self.models_cache = {}
+    #     logger.info("✅ Custom Engine Ready!")
+
+    # def _get_model(self, model_name: str):
+    #     """Loads a model dynamically or returns from cache if already loaded."""
+    #     if model_name not in self.models_cache:
+    #         logger.info("📥 Initializing Google Gemini Embeddings...")
+    #         try:
+    #             self.models_cache[model_name] = GoogleGenerativeAIEmbeddings(
+    #                 model="models/gemini-embedding-2",
+    #                 google_api_key=os.getenv("GOOGLE_API_KEY") 
+    #             )
+
+    #         except Exception as exc:
+    #             raise RuntimeError(f"Failed to load embedding API: {exc}") from exc
+    #     return self.models_cache[model_name]
 
     # ==========================================
     # 1. RAW DATA EXTRACTION (PDF PARSING)
@@ -209,29 +210,30 @@ class CustomRAGEngine:
     # ---------------------------------------------------------
     # 1. VECTOR SEARCH (Meaning)
     # ---------------------------------------------------------
-    # def vectorize(self, chunks: list, model_name: str = "all-MiniLM-L6-v2") -> list:
-    #     """
-    #     Converts text chunks into mathematical vectors (arrays of floats) 
-    #     using a raw HuggingFace model.
-    #     """
-    #     logger.info("Generating vectors for %s chunks...", len(chunks))
-    #     # encode() returns a Numpy array. We convert it to a standard Python list of floats
-    #     # because databases like Supabase (pgvector) expect standard arrays/lists.
-    #     model = self._get_model(model_name)
-    #     embeddings = model.encode(chunks).tolist()
-        
-    #     return embeddings
-    def vectorize(self, chunks: list, model_name: str = "models/gemini-embedding-2") -> list:
+    def vectorize(self, chunks: list, model_name: str = "all-MiniLM-L6-v2") -> list:
         """
-        Converts text chunks into mathematical vectors using Google Gemini API.
+        Converts text chunks into mathematical vectors (arrays of floats) 
+        using a raw HuggingFace model.
         """
-        logger.info("Generating vectors for %s chunks using Google API...", len(chunks))
+        logger.info("Generating vectors for %s chunks...", len(chunks))
+        # encode() returns a Numpy array. We convert it to a standard Python list of floats
+        # because databases like Supabase (pgvector) expect standard arrays/lists.
         model = self._get_model(model_name)
-        
-        # Google Embeddings returns standard python lists of floats
-        embeddings = model.embed_documents(chunks)
+        embeddings = model.encode(chunks).tolist()
         
         return embeddings
+
+    # def vectorize(self, chunks: list, model_name: str = "models/gemini-embedding-2") -> list:
+    #     """
+    #     Converts text chunks into mathematical vectors using Google Gemini API.
+    #     """
+    #     logger.info("Generating vectors for %s chunks using Google API...", len(chunks))
+    #     model = self._get_model(model_name)
+        
+    #     # Google Embeddings returns standard python lists of floats
+    #     embeddings = model.embed_documents(chunks)
+        
+    #     return embeddings
 
     def hybrid_search(self, query_text: str, query_vector: list, document_texts: list, document_vectors: list, alpha: float = 0.5, top_k: int = 5) -> list:
         """

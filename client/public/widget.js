@@ -18,7 +18,10 @@
     name: 'RAGMate Assistant',
     themeColor: '#4f46e5',
     welcomeMessage: 'Hi there! How can I help you today?',
-    position: 'bottom-right'
+    position: 'bottom-right',
+    avatar: '🤖',
+    borderRadius: 'rounded',
+    fontFamily: 'system-ui'
   };
 
   let chatHistory = [];
@@ -49,6 +52,9 @@
             botSettings.themeColor = parsedSettings.themeColor || botSettings.themeColor;
             botSettings.welcomeMessage = parsedSettings.welcomeMessage || botSettings.welcomeMessage;
             botSettings.position = parsedSettings.position || botSettings.position;
+            botSettings.avatar = parsedSettings.avatar || botSettings.avatar;
+            botSettings.borderRadius = parsedSettings.borderRadius || botSettings.borderRadius;
+            botSettings.fontFamily = parsedSettings.fontFamily || botSettings.fontFamily;
           }
         }
       }
@@ -66,7 +72,7 @@
         bottom: 30px;
         width: 60px;
         height: 60px;
-        border-radius: 50%;
+        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '20px' : '50%'};
         color: white;
         cursor: pointer;
         display: flex;
@@ -103,13 +109,13 @@
         max-width: calc(100vw - 60px);
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        border-radius: 16px;
+        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '24px' : '16px'};
         box-shadow: 0 12px 36px rgba(0,0,0,0.15);
         display: none;
         flex-direction: column;
         overflow: hidden;
         z-index: 2147483641;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-family: ${botSettings.fontFamily === 'system-ui' ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' : botSettings.fontFamily + ', sans-serif'};
       }
       #ragmate-window.bottom-right {
         right: 30px;
@@ -162,7 +168,7 @@
       .rm-msg {
         max-width: 80%;
         padding: 10px 14px;
-        border-radius: 12px;
+        border-radius: ${botSettings.borderRadius === 'square' ? '0' : '12px'};
         font-size: 0.9rem;
         line-height: 1.4;
         word-wrap: break-word;
@@ -189,7 +195,7 @@
       .rm-input {
         flex: 1;
         border: 1px solid #cbd5e1;
-        border-radius: 8px;
+        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '9999px' : '8px'};
         padding: 10px 12px;
         font-size: 0.9rem;
         outline: none;
@@ -253,11 +259,11 @@
     bubble.id = 'ragmate-bubble';
     bubble.style.backgroundColor = botSettings.themeColor;
     bubble.className = botSettings.position;
-    bubble.innerHTML = `
+    bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? \`<span style="font-size: 24px;">\${botSettings.avatar}</span>\` : \`
       <svg viewBox="0 0 24 24">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
       </svg>
-    `;
+    \`;
     bubble.onclick = toggleChat;
     document.body.appendChild(bubble);
 
@@ -267,9 +273,14 @@
     windowDiv.className = `${botSettings.position}`;
     windowDiv.innerHTML = `
       <div class="rm-header" style="background-color: ${botSettings.themeColor}">
-        <div>
-          <h4>${botSettings.name}</h4>
-          <p>Online | Powered by RAGMate</p>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 16px;">
+            ${botSettings.avatar || '🤖'}
+          </div>
+          <div>
+            <h4>${botSettings.name}</h4>
+            <p>Online | Powered by RAGMate</p>
+          </div>
         </div>
         <button class="rm-close" id="ragmate-close-btn">&times;</button>
       </div>

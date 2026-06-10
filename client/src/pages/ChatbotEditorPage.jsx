@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Save, Code, Copy, CheckCircle2, Palette, ChevronDown } from "lucide-react";
+import { ArrowLeft, Save, Code, Copy, CheckCircle2, Palette, Shield, Key, Globe, Terminal, RefreshCw } from "lucide-react";
 import { useChatbotById, useUpdateChatbot } from "../hooks/useChatbots";
 import { useUIStore } from "../store/useUIStore";
 import {
@@ -24,13 +24,21 @@ export default function ChatbotEditorPage() {
     themeColor: "#3B82F6",
     welcomeMessage: "Hi there! How can I help you today?",
     position: "bottom-right",
+    avatar: "🤖",
+    borderRadius: "rounded",
+    fontFamily: "system-ui",
   });
-  const [copied, setCopied] = useState(false);
+  const [allowedDomains, setAllowedDomains] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [copiedReact, setCopiedReact] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   useEffect(() => {
     if (chatbot) {
       setName(chatbot.name);
-      
+
       let parsedSettings = chatbot.settings;
       if (typeof parsedSettings === 'string') {
         try {
@@ -39,14 +47,24 @@ export default function ChatbotEditorPage() {
           parsedSettings = {};
         }
       }
-      
+
       setSettings({
         themeColor: parsedSettings?.themeColor || "#3B82F6",
         welcomeMessage: parsedSettings?.welcomeMessage || "Hi there! How can I help you today?",
         position: parsedSettings?.position || "bottom-right",
+        avatar: parsedSettings?.avatar || "🤖",
+        borderRadius: parsedSettings?.borderRadius || "rounded",
+        fontFamily: parsedSettings?.fontFamily || "system-ui",
       });
+      setAllowedDomains(chatbot.allowed_domains || "");
+      setApiKey(chatbot.api_key || "");
     }
   }, [chatbot]);
+
+  const generateApiKey = () => {
+    const newKey = "rm_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setApiKey(newKey);
+  };
 
   const handleSave = async () => {
     try {
@@ -55,6 +73,8 @@ export default function ChatbotEditorPage() {
         payload: {
           name,
           settings,
+          allowed_domains: allowedDomains,
+          api_key: apiKey
         },
       });
       toast.success("Chatbot settings saved!");
@@ -66,15 +86,38 @@ export default function ChatbotEditorPage() {
 
   // Dynamically use the current frontend's domain for the widget.js script URL
   const embedCode = `<!-- RAGMate Chatbot Widget -->\n
-                      <script defer src="${window.location.origin}/widget.js"
-                          data-chatbot-id="${chatbotId}">
-                      </script>`;
+<script defer src="${window.location.origin}/widget.js"
+  data-chatbot-id="${chatbotId}">
+</script>`;
 
-  const copyEmbedCode = () => {
-    navigator.clipboard.writeText(embedCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("Embed code copied to clipboard!");
+  const reactCode = `import { useEffect } from 'react';
+
+export default function ChatbotWidget() {
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "${window.location.origin}/widget.js";
+    script.defer = true;
+    script.setAttribute('data-chatbot-id', "${chatbotId}");
+    document.body.appendChild(script);
+    
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  return null;
+}`;
+
+  const curlCode = `curl -X POST ${window.location.origin}/api/v1/chat \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: ${apiKey || "YOUR_API_KEY"}" \\
+  -d '{"message": "Hello!"}'`;
+
+  const copyToClipboard = (text, setter) => {
+    navigator.clipboard.writeText(text);
+    setter(true);
+    setTimeout(() => setter(false), 2000);
+    toast.success("Copied to clipboard!");
   };
 
   if (isLoading) {
@@ -170,30 +213,162 @@ export default function ChatbotEditorPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Avatar Emoji</label>
+                  <input
+                    type="text"
+                    maxLength="2"
+                    value={settings.avatar || "🤖"}
+                    onChange={(e) => setSettings({ ...settings, avatar: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-center text-xl focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Border Radius</label>
+                  <Select
+                    value={settings.borderRadius || "rounded"}
+                    onValueChange={(value) => setSettings({ ...settings, borderRadius: value })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select style" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="square">Square</SelectItem>
+                      <SelectItem value="rounded">Rounded</SelectItem>
+                      <SelectItem value="pill">Pill</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Font Family</label>
+                <Select
+                  value={settings.fontFamily || "system-ui"}
+                  onValueChange={(value) => setSettings({ ...settings, fontFamily: value })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select font" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system-ui">System Default</SelectItem>
+                    <SelectItem value="Inter">Inter</SelectItem>
+                    <SelectItem value="Roboto">Roboto</SelectItem>
+                    <SelectItem value="Outfit">Outfit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          <div className="glass-card p-6 border-blue-500/20 bg-blue-500/5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 text-lg font-semibold text-blue-600 dark:text-blue-400">
-                <Code size={20} />
-                Embed Code
-              </div>
-              <button
-                onClick={copyEmbedCode}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-500/10 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-500/20 transition dark:text-blue-400"
-              >
-                {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
-                {copied ? "Copied" : "Copy"}
-              </button>
+          <div className="glass-card p-6 border-indigo-500/20 bg-indigo-500/5">
+            <div className="flex items-center gap-2 mb-6 text-lg font-semibold text-indigo-600 dark:text-indigo-400">
+              <Shield size={20} />
+              Security & Integration
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Copy this script tag and paste it just before the closing <code>&lt;/body&gt;</code> tag of your website.
-            </p>
-            <div className="bg-slate-900 rounded-xl p-4 overflow-x-auto">
-              <code className="text-sm text-blue-300 whitespace-pre">
-                {embedCode}
-              </code>
+
+            <div className="space-y-6">
+              {/* Allowed Domains */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Globe size={16} className="text-muted-foreground" />
+                  Allowed Domains
+                </label>
+                <input
+                  type="text"
+                  value={allowedDomains}
+                  onChange={(e) => setAllowedDomains(e.target.value)}
+                  placeholder="e.g. example.com, myapp.dev (comma separated)"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Restrict the widget to only load on these domains. Leave empty to allow any domain.
+                </p>
+              </div>
+
+              {/* API Key */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Key size={16} className="text-muted-foreground" />
+                  Developer API Key
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={apiKey}
+                    readOnly
+                    placeholder="No API key generated yet"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none font-mono text-muted-foreground"
+                  />
+                  <button
+                    onClick={generateApiKey}
+                    title="Generate new API Key"
+                    className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition"
+                  >
+                    <RefreshCw size={18} />
+                  </button>
+                  <button
+                    onClick={() => copyToClipboard(apiKey, setCopiedKey)}
+                    title="Copy API Key"
+                    className="p-2.5 rounded-xl bg-muted text-muted-foreground hover:text-foreground transition"
+                  >
+                    {copiedKey ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use this key for programmatic server-side access to your chatbot.
+                </p>
+              </div>
+
+              {/* Code Snippets */}
+              <div className="space-y-4 pt-4 border-t border-border">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Code size={16} className="text-muted-foreground" />
+                  Integration Snippets
+                </label>
+
+                {/* HTML Script */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">HTML Script Tag</span>
+                    <button onClick={() => copyToClipboard(embedCode, setCopiedScript)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                      {copiedScript ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedScript ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                    <code className="text-xs text-indigo-300 whitespace-pre">{embedCode}</code>
+                  </div>
+                </div>
+
+                {/* React */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">React Component</span>
+                    <button onClick={() => copyToClipboard(reactCode, setCopiedReact)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                      {copiedReact ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedReact ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                    <code className="text-xs text-indigo-300 whitespace-pre">{reactCode}</code>
+                  </div>
+                </div>
+
+                {/* cURL */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase">REST API (cURL)</span>
+                    <button onClick={() => copyToClipboard(curlCode, setCopiedCurl)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                      {copiedCurl ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedCurl ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                    <code className="text-xs text-indigo-300 whitespace-pre">{curlCode}</code>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -207,7 +382,7 @@ export default function ChatbotEditorPage() {
             </h3>
             <p className="text-xs text-muted-foreground mt-1">This is how the widget will appear on your site.</p>
           </div>
-          
+
           <div className="flex-1 bg-white relative p-4">
             {/* Fake Website Content */}
             <div className="opacity-20 pointer-events-none space-y-4">
@@ -218,30 +393,35 @@ export default function ChatbotEditorPage() {
             </div>
 
             {/* Fake Widget UI */}
-            <div 
-              className={`absolute bottom-6 flex flex-col transition-all ${
-                settings.position === 'bottom-left' ? 'left-6 items-start' : 'right-6 items-end'
-              }`}
+            <div
+              className={`absolute bottom-6 flex flex-col transition-all ${settings.position === 'bottom-left' ? 'left-6 items-start' : 'right-6 items-end'
+                }`}
+              style={{ fontFamily: settings.fontFamily || 'system-ui' }}
             >
               {/* Chat Window */}
-              <div className="w-[340px] bg-white border border-gray-200 rounded-2xl shadow-2xl mb-4 overflow-hidden flex flex-col h-[400px]">
+              <div className={`w-[340px] bg-white border border-gray-200 shadow-2xl mb-4 overflow-hidden flex flex-col h-[400px] ${
+                settings.borderRadius === 'square' ? 'rounded-none' : 
+                settings.borderRadius === 'pill' ? 'rounded-[24px]' : 'rounded-2xl'
+              }`}>
                 {/* Header */}
-                <div 
+                <div
                   className="p-4 text-white font-semibold flex items-center justify-between"
                   style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-sm">
-                      🤖
+                      {settings.avatar || "🤖"}
                     </div>
                     <span>{name || "Chatbot"}</span>
                   </div>
                   <span className="opacity-70 cursor-pointer">✕</span>
                 </div>
-                
+
                 {/* Messages */}
                 <div className="flex-1 p-4 bg-gray-50 flex flex-col gap-3">
-                  <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-sm p-3 shadow-sm text-sm text-gray-800 self-start max-w-[85%]">
+                  <div className={`bg-white border border-gray-100 p-3 shadow-sm text-sm text-gray-800 self-start max-w-[85%] ${
+                    settings.borderRadius === 'square' ? 'rounded-none' : 'rounded-2xl rounded-tl-sm'
+                  }`}>
                     {settings.welcomeMessage || "Hi there! How can I help you today?"}
                   </div>
                 </div>
@@ -249,14 +429,20 @@ export default function ChatbotEditorPage() {
                 {/* Input */}
                 <div className="p-3 border-t border-gray-100 bg-white">
                   <div className="relative">
-                    <input 
-                      type="text" 
-                      placeholder="Type your message..." 
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                    <input
+                      type="text"
+                      placeholder="Type your message..."
+                      className={`w-full bg-gray-50 border border-gray-200 px-4 py-2.5 text-sm focus:outline-none ${
+                        settings.borderRadius === 'square' ? 'rounded-none' : 
+                        settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-xl'
+                      }`}
                       disabled
                     />
-                    <div 
-                      className="absolute right-1.5 top-1.5 h-7 w-7 rounded-lg flex items-center justify-center text-white"
+                    <div
+                      className={`absolute right-1.5 top-1.5 h-7 w-7 flex items-center justify-center text-white ${
+                        settings.borderRadius === 'square' ? 'rounded-none' : 
+                        settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-lg'
+                      }`}
                       style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -269,11 +455,16 @@ export default function ChatbotEditorPage() {
               </div>
 
               {/* Launcher Button */}
-              <div 
-                className="h-14 w-14 rounded-full shadow-lg flex items-center justify-center text-white cursor-pointer hover:scale-105 transition-transform"
+              <div
+                className={`h-14 w-14 shadow-lg flex items-center justify-center text-white cursor-pointer hover:scale-105 transition-transform text-2xl ${
+                  settings.borderRadius === 'square' ? 'rounded-none' : 
+                  settings.borderRadius === 'pill' ? 'rounded-[20px]' : 'rounded-full'
+                }`}
                 style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
               >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                {settings.avatar && settings.avatar !== "🤖" ? settings.avatar : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                )}
               </div>
             </div>
           </div>

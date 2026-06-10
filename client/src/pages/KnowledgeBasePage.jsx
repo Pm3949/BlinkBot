@@ -185,9 +185,9 @@ export default function KnowledgeBasePage() {
       return;
     }
 
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
 
-    if (!file) return;
+    if (files.length === 0) return;
 
     if (!selectedAgentId) {
       toast.error("Select an agent before uploading.");
@@ -195,15 +195,22 @@ export default function KnowledgeBasePage() {
     }
 
     try {
-      await uploadMutation.mutateAsync({
-        agentId: selectedAgentId,
-        file,
-      });
-      toast.success("File uploaded for processing");
+      const uploadPromises = files.map((file) =>
+        uploadMutation.mutateAsync({
+          agentId: selectedAgentId,
+          file,
+        })
+      );
+      await Promise.all(uploadPromises);
+      toast.success(
+        files.length > 1
+          ? `${files.length} files uploaded for processing`
+          : "File uploaded for processing"
+      );
     } catch (uploadError) {
       toast.error(
         uploadError.message ||
-          "Unable to upload file.",
+          "Unable to upload one or more files.",
       );
     } finally {
       event.target.value = "";
@@ -333,6 +340,7 @@ export default function KnowledgeBasePage() {
                   <input
                     ref={fileInputRef}
                     type="file"
+                    multiple
                     accept=".pdf,.docx,.txt,.csv"
                     className="hidden"
                     onChange={handleFileChange}

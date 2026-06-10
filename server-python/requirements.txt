@@ -9,7 +9,7 @@ pydantic==2.13.4
 python-dotenv==1.2.2
 python_docx==1.2.0
 Requests==2.34.2
-# sentence_transformers==5.5.1
+sentence_transformers
 numpy
 gunicorn
 uvicorn==0.48.0

@@ -11,6 +11,8 @@ import remarkGfm from "remark-gfm";
 import EmptyState from "../components/shared/EmptyState";
 import { useNotes } from "../hooks/useNotes";
 import { useWorkspacePermissions } from "../hooks/useSettings";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 const markdownComponents = {
   h1: ({ ...props }) => (
@@ -41,17 +43,20 @@ const markdownComponents = {
       {...props}
     />
   ),
-  code: ({ className, children, ...props }) => {
-    const isBlock = className?.includes("language-");
+  code: ({ node, inline, className, children, ...props }) => {
+    const match = /language-(\w+)/.exec(className || "");
 
-    if (isBlock) {
+    if (!inline && match) {
       return (
-        <code
-          className="block overflow-x-auto rounded-xl bg-slate-950 p-4 text-xs leading-6 text-slate-50"
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={match[1]}
+          PreTag="div"
+          className="rounded-md text-xs"
           {...props}
         >
-          {children}
-        </code>
+          {String(children).replace(/\n$/, "")}
+        </SyntaxHighlighter>
       );
     }
 
