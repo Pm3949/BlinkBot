@@ -31,8 +31,8 @@ export async function getDocuments(agentId) {
       message || "Failed to fetch documents.",
     );
   }
-  
-  return response.json();
+  const data = await response.json();
+  return data.documents || [];
 }
 
 export async function uploadDocument({
