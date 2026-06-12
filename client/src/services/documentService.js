@@ -16,6 +16,13 @@ export async function getDocuments(agentId) {
 
   const response = await fetch(
     `${API_BASE_URL}/agents/${agentId}/documents`,
+    {
+      method: "GET",
+      headers: {
+        "ngrok-skip-browser-warning": "69420", // Ye line Ngrok ka HTML page bypass karegi
+        "Content-Type": "application/json"
+      }
+    }
   );
 
   if (!response.ok) {
@@ -24,10 +31,8 @@ export async function getDocuments(agentId) {
       message || "Failed to fetch documents.",
     );
   }
-
-  const data = await response.json();
-
-  return data.documents || [];
+  
+  return response.json();
 }
 
 export async function uploadDocument({

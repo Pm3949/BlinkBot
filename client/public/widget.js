@@ -248,6 +248,34 @@
         0%, 80%, 100% { transform: scale(0); }
         40% { transform: scale(1.0); }
       }
+      .rm-mic {
+        border: none;
+        background: transparent;
+        color: #64748b;
+        width: 38px;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: color 0.2s;
+      }
+      .rm-mic:hover { color: #334155; }
+      .rm-mic.recording { color: #ef4444; animation: rm-pulse 1.5s infinite; }
+      @keyframes rm-pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+      .rm-tts {
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 4px;
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        border-radius: 4px;
+      }
+      .rm-tts:hover { color: #64748b; background: rgba(0,0,0,0.05); }
     `;
     document.head.appendChild(styleEl);
   }
@@ -290,6 +318,9 @@
       <div style="background: white;">
         <div class="rm-input-area">
           <input type="text" class="rm-input" id="ragmate-input" placeholder="Ask a question...">
+          <button class="rm-mic" id="ragmate-mic-btn" title="Start recording">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+          </button>
           <button class="rm-send" id="ragmate-send-btn" style="background-color: ${botSettings.themeColor}">
             <svg viewBox="0 0 24 24">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -306,9 +337,68 @@
     // Add event listeners
     document.getElementById('ragmate-close-btn').onclick = toggleChat;
     document.getElementById('ragmate-send-btn').onclick = handleSend;
+    document.getElementById('ragmate-mic-btn').onclick = toggleMic;
     document.getElementById('ragmate-input').onkeypress = function (e) {
       if (e.key === 'Enter') handleSend();
     };
+  }
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+
+  async function toggleMic() {
+    const micBtn = document.getElementById('ragmate-mic-btn');
+    const inputEl = document.getElementById('ragmate-input');
+
+    if (isRecording) {
+      if (mediaRecorder) {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      }
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>';
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.webm");
+
+        try {
+          const response = await fetch(`${apiUrl}/stt`, {
+            method: "POST",
+            body: formData,
+          });
+          if (response.ok) {
+            const data = await response.json();
+            inputEl.value = inputEl.value + (inputEl.value ? " " : "") + data.text;
+          } else {
+            console.error("STT Error:", await response.text());
+          }
+        } catch (err) {
+          console.error("Error sending audio:", err);
+        }
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12"></rect></svg>';
+    } catch (err) {
+      console.error("Error accessing mic:", err);
+    }
   }
 
   function toggleChat() {
@@ -328,6 +418,53 @@
     clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     clean = clean.replace(/`(.*?)`/g, '<code>$1</code>');
     return clean.split('\n').join('<br>');
+  }
+
+  let currentUtterance = null;
+  let isSpeaking = false;
+
+  function addTTSButton(container, text) {
+    const ttsBtn = document.createElement('button');
+    ttsBtn.className = 'rm-tts';
+    ttsBtn.title = "Read aloud";
+    ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+    
+    ttsBtn.onclick = () => {
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+        isSpeaking = false;
+        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+        return;
+      }
+
+      window.speechSynthesis.cancel(); // Cancel any ongoing speech
+      const cleanText = text
+        .replace(/!\[.*?\]\(.*?\)/g, '')
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+        .replace(/[*_~`#>-]/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      currentUtterance = new SpeechSynthesisUtterance(cleanText);
+      currentUtterance.onend = () => {
+        isSpeaking = false;
+        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+      };
+      currentUtterance.onerror = () => {
+        isSpeaking = false;
+        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+      };
+
+      window.speechSynthesis.speak(currentUtterance);
+      isSpeaking = true;
+      ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12"></rect></svg>';
+    };
+
+    const flexDiv = document.createElement('div');
+    flexDiv.style.marginTop = '4px';
+    flexDiv.appendChild(ttsBtn);
+    container.appendChild(flexDiv);
   }
 
   async function handleSend() {
@@ -394,6 +531,10 @@
       // Add to conversation memory
       chatHistory.push({ role: 'user', content: text });
       chatHistory.push({ role: 'assistant', content: streamedResponse });
+
+      // Add TTS button to bot message
+      addTTSButton(botMsg, streamedResponse);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
 
     } catch (err) {
       botMsg.innerHTML = `<span style="color: #ef4444;">Error: ${err.message}</span>`;

@@ -1,5 +1,5 @@
-import { Bot, User, Copy, Share2, Bookmark } from "lucide-react";
-
+import { useState, useEffect } from "react";
+import { Bot, User, Copy, Share2, Bookmark, Volume2, Square } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -15,6 +15,41 @@ export default function MessageBubble({ role, content, agent }) {
   const { addNote, isSaved } = useNotes();
   const { canManageNotes } = useWorkspacePermissions();
   const saved = isSaved(content, agent?.id || null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [isSpeaking]);
+
+  const handleTTS = () => {
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    if (!content) return;
+
+    // Strip markdown characters to make speech natural
+    const cleanText = content
+      .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
+      .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Convert links to plain text
+      .replace(/[*_~`#>-]/g, ' ') // Replace formatting characters with spaces
+      .trim();
+
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+  };
 
   const handleCopy = async () => {
     if (!content?.trim()) {
@@ -135,6 +170,15 @@ export default function MessageBubble({ role, content, agent }) {
                 />
               </button>
             )}
+
+            <button
+              onClick={handleTTS}
+              type="button"
+              className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
+              title={isSpeaking ? "Stop speaking" : "Read aloud"}
+            >
+              {isSpeaking ? <Square size={16} fill="currentColor" /> : <Volume2 size={16} />}
+            </button>
 
             <button
               type="button"

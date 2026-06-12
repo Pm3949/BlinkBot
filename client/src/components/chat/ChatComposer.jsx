@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef } from "react";
+import { Send, Mic, Square } from "lucide-react";
 
 export default function ChatComposer({
   disabled = false,
@@ -7,6 +7,59 @@ export default function ChatComposer({
   onSend,
 }) {
   const [value, setValue] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.webm");
+
+        try {
+          const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+          const response = await fetch(`${API_URL}/stt`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setValue((prev) => prev + (prev ? " " : "") + data.text);
+          } else {
+            console.error("STT Error:", await response.text());
+          }
+        } catch (error) {
+          console.error("Error sending audio:", error);
+        }
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+    }
+  };
 
   const handleSubmit = () => {
     const message = value.trim();
@@ -72,6 +125,25 @@ export default function ChatComposer({
           focus:ring-primary/30
         "
         />
+
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={disabled || isLoading}
+          className={`
+          h-11
+          w-11
+          rounded-2xl
+          flex
+          items-center
+          justify-center
+          transition-colors
+          ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-muted text-muted-foreground hover:bg-muted/80'}
+          disabled:opacity-60
+          `}
+          title={isRecording ? "Stop recording" : "Start recording"}
+        >
+          {isRecording ? <Square size={18} fill="currentColor" /> : <Mic size={18} />}
+        </button>
 
         <button
           onClick={handleSubmit}
