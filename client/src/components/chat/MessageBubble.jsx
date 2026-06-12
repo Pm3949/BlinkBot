@@ -10,24 +10,24 @@ import { useWorkspacePermissions } from "../../hooks/useSettings";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function MessageBubble({ role, content, agent }) {
+export default function MessageBubble({ role, content, agent, chatLanguage }) {
   const isUser = role === "user";
   const { addNote, isSaved } = useNotes();
   const { canManageNotes } = useWorkspacePermissions();
   const saved = isSaved(content, agent?.id || null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const audioRef = useState(new Audio())[0];
 
   useEffect(() => {
     return () => {
-      if (isSpeaking) {
-        window.speechSynthesis.cancel();
-      }
+      audioRef.pause();
+      audioRef.src = "";
     };
-  }, [isSpeaking]);
+  }, [audioRef]);
 
-  const handleTTS = () => {
+  const handleTTS = async () => {
     if (isSpeaking) {
-      window.speechSynthesis.cancel();
+      audioRef.pause();
       setIsSpeaking(false);
       return;
     }
@@ -43,12 +43,35 @@ export default function MessageBubble({ role, content, agent }) {
 
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    try {
+      setIsSpeaking(true);
+      const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const response = await fetch(`${API_URL}/api/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: cleanText,
+          language: chatLanguage || "en"
+        })
+      });
 
-    window.speechSynthesis.speak(utterance);
-    setIsSpeaking(true);
+      if (!response.ok) throw new Error("TTS failed");
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      audioRef.src = url;
+      audioRef.onended = () => {
+        setIsSpeaking(false);
+        URL.revokeObjectURL(url);
+      };
+      
+      audioRef.play();
+    } catch (error) {
+      console.error("TTS Error:", error);
+      setIsSpeaking(false);
+      toast.error("Failed to play audio");
+    }
   };
 
   const handleCopy = async () => {

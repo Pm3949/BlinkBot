@@ -1,84 +1,53 @@
-import { supabase } from "../supabaseClient";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export async function getChatbots(workspaceId) {
-  const { data, error } = await supabase
-    .from("chatbots")
-    .select(`
-      *,
-      agents!inner (
-        workspace_id,
-        name
-      )
-    `)
-    .eq("agents.workspace_id", workspaceId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching chatbots:", error);
-    throw error;
+  const response = await fetch(`${API_URL}/api/chatbots?workspace_id=${workspaceId}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch chatbots");
   }
-
-  return data;
+  return response.json();
 }
 
 export async function getChatbotById(id) {
-  const { data, error } = await supabase
-    .from("chatbots")
-    .select(`
-      *,
-      agents!inner (
-        workspace_id,
-        name
-      )
-    `)
-    .eq("id", id)
-    .single();
-
-  if (error) {
-    console.error("Error fetching chatbot by id:", error);
-    throw error;
+  const response = await fetch(`${API_URL}/api/chatbots/${id}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch chatbot by id");
   }
-
-  return data;
+  return response.json();
 }
 
 export async function importChatbot(payload) {
-  const { data, error } = await supabase
-    .from("chatbots")
-    .insert([
-      {
-        agent_id: payload.agent_id,
-        name: payload.name,
-        settings: payload.settings || {},
-      },
-    ])
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/chatbots`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_id: payload.agent_id,
+      name: payload.name,
+      settings: payload.settings || {},
+    }),
+  });
 
-  if (error) {
-    console.error("Error importing chatbot:", error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Error importing chatbot");
   }
 
-  return data;
+  return response.json();
 }
 
 export async function updateChatbot(id, payload) {
-  const { data, error } = await supabase
-    .from("chatbots")
-    .update(payload)
-    .eq("id", id)
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/chatbots/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-  if (error) {
-    console.error("Error updating chatbot:", error);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Error updating chatbot");
   }
 
-  return data;
+  return response.json();
 }
 
 export async function deleteChatbot(id) {

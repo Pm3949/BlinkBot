@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
 
 from database import get_db_connection
 from schemas import ChatRequest, WidgetChatRequest
@@ -77,6 +78,8 @@ async def chat_with_agent(req: ChatRequest):
             if not key_to_use:
                 raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
             llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+        elif provider == "ollama":
+            llm = ChatOllama(model=model)
         else:
             key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
             if not key_to_use:
@@ -131,7 +134,7 @@ async def chat_with_agent(req: ChatRequest):
 
         CRITICAL RULES:
         1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Reply EXACTLY: "I'm sorry, but I can only answer questions based on the uploaded documents."
+        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
         3. Format response beautifully in Markdown.
         4. Use the PREVIOUS CHAT HISTORY to understand context.
         5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
@@ -145,6 +148,15 @@ async def chat_with_agent(req: ChatRequest):
 
         CURRENT USER INPUT: {req.message}
         """
+
+        lang_map = {
+            "en": "English", "es": "Spanish", "fr": "French",
+            "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
+            "ja": "Japanese", "ko": "Korean"
+        }
+        if getattr(req, 'language', None) and req.language.lower() != "en":
+            lang_name = lang_map.get(req.language.lower(), req.language)
+            prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
         async def stream_generator():
             try:
@@ -260,6 +272,8 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
             if not key_to_use:
                 raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
             llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+        elif provider == "ollama":
+            llm = ChatOllama(model=model)
         else:
             key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
             if not key_to_use:
@@ -317,7 +331,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         CRITICAL RULES:
         1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Reply EXACTLY: "I'm sorry, but I can only answer questions based on the uploaded documents."
+        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
         3. Format response beautifully in Markdown.
         4. Use the PREVIOUS CHAT HISTORY to understand context.
         5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
@@ -331,6 +345,15 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         CURRENT USER INPUT: {req.message}
         """
+
+        lang_map = {
+            "en": "English", "es": "Spanish", "fr": "French",
+            "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
+            "ja": "Japanese", "ko": "Korean"
+        }
+        if getattr(req, 'language', None) and req.language.lower() != "en":
+            lang_name = lang_map.get(req.language.lower(), req.language)
+            prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
         async def stream_generator():
             try:
@@ -369,6 +392,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 class APIChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = []
+    language: Optional[str] = None
 
 
 @router.post("/api/v1/chat")
@@ -452,6 +476,8 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
         if provider == "openai":
             key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
             llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+        elif provider == "ollama":
+            llm = ChatOllama(model=model)
         else:
             key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
             llm = ChatGroq(model_name=model, api_key=key_to_use)
@@ -490,6 +516,15 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
             history_text = "No previous conversation."
 
         prompt = f"{system_prompt}\n\nCONTEXT DOCUMENTS:\n{context}\n\nPREVIOUS CHAT HISTORY:\n{history_text}\n\nCURRENT USER INPUT: {req.message}"
+
+        lang_map = {
+            "en": "English", "es": "Spanish", "fr": "French",
+            "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
+            "ja": "Japanese", "ko": "Korean"
+        }
+        if getattr(req, 'language', None) and req.language.lower() != "en":
+            lang_name = lang_map.get(req.language.lower(), req.language)
+            prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
         async def stream_generator():
             try:

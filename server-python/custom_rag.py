@@ -58,17 +58,43 @@ class CustomRAGEngine:
     # ==========================================
     def extract_text_from_pdf(self, file_path: str) -> str:
         """
-        Opens a PDF and extracts raw text from every page.
+        Opens a PDF and extracts raw text. Falls back to OCR if a page is unreadable or scanned.
         """
-
         logger.info("Extracting text from PDF: %s", file_path)
         doc = fitz.open(file_path)
+        full_text = ""
         try:
-            full_text = "\n".join([page.get_text("text") for page in doc])
+            import pytesseract
+            from PIL import Image
+            for page in doc:
+                text = page.get_text("text").strip()
+                # If page has very little text, it might be a scanned image. Fall back to OCR!
+                if len(text) < 50:
+                    logger.info("Page %s has very little text. Attempting OCR fallback...", page.number)
+                    try:
+                        pix = page.get_pixmap(dpi=200) # Good DPI for OCR
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        ocr_text = pytesseract.image_to_string(img)
+                        text = text + "\n" + ocr_text
+                    except Exception as e:
+                        logger.error("OCR Failed for PDF page %s: %s", page.number, e)
+                full_text += text + "\n"
         finally:
             doc.close()
 
         return full_text
+    
+    def extract_text_from_image(self, file_path: str) -> str:
+        """Runs Optical Character Recognition (OCR) on an image file."""
+        logger.info("Extracting text from Image via OCR: %s", file_path)
+        try:
+            import pytesseract
+            from PIL import Image
+            img = Image.open(file_path)
+            return pytesseract.image_to_string(img)
+        except Exception as e:
+            logger.error("OCR Failed for image: %s", e)
+            raise Exception(f"Failed to run OCR on image: {str(e)}")
     
     def extract_text_from_file(self, file_path: str, filename: str) -> str:
         """Routes a file to the correct text extractor based on its extension."""
@@ -79,6 +105,9 @@ class CustomRAGEngine:
         try:
             if ext == 'pdf':
                 return self.extract_text_from_pdf(file_path)
+            
+            elif ext in ['jpg', 'jpeg', 'png']:
+                return self.extract_text_from_image(file_path)
             
             elif ext == 'txt':
                 with open(file_path, 'r', encoding='utf-8') as f:

@@ -1,12 +1,16 @@
 import os
 import tempfile
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from io import BytesIO
+from gtts import gTTS
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 
 # Import routers
-from routers import documents, analytics, admin, billing, chat, workspaces
+from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, notes
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -35,9 +39,30 @@ app.include_router(admin.router)
 app.include_router(billing.router)
 app.include_router(chat.router)
 app.include_router(workspaces.router)
+app.include_router(agents.router)
+app.include_router(chatbots.router)
+app.include_router(settings.router)
+app.include_router(notes.router)
+
+class TTSRequest(BaseModel):
+    text: str
+    language: str = "en"
+
+@app.post("/api/tts")
+async def generate_tts(req: TTSRequest):
+    try:
+        # Generate speech from text using gTTS
+        tts = gTTS(text=req.text, lang=req.language, slow=False)
+        fp = BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return StreamingResponse(fp, media_type="audio/mpeg")
+    except Exception as e:
+        logger.error(f"Error generating TTS: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/stt")
-async def speech_to_text(file: UploadFile = File(...)):
+async def speech_to_text(file: UploadFile = File(...), language: str = Form(None)):
     if not groq_client:
         raise HTTPException(status_code=500, detail="Groq client is not configured")
         
@@ -50,10 +75,14 @@ async def speech_to_text(file: UploadFile = File(...)):
         
     try:
         with open(temp_audio_path, "rb") as f:
-            transcription = groq_client.audio.transcriptions.create(
-                file=(file.filename, f.read()),
-                model="whisper-large-v3"
-            )
+            kwargs = {
+                "file": (file.filename, f.read()),
+                "model": "whisper-large-v3"
+            }
+            if language and language != "auto":
+                kwargs["language"] = language
+                
+            transcription = groq_client.audio.transcriptions.create(**kwargs)
         return {"text": transcription.text}
     except Exception as e:
         logger.error(f"Error processing audio: {e}")

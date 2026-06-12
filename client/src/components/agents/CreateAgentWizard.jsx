@@ -36,6 +36,11 @@ const providers = [
     name: "OpenAI",
     desc: "Premium Models",
   },
+  {
+    id: "ollama",
+    name: "Local (Ollama)",
+    desc: "Free Offline",
+  },
 ];
 
 const AVAILABLE_MODELS = {
@@ -64,16 +69,29 @@ const AVAILABLE_MODELS = {
       requiresKey: true,
     },
   ],
+
+  ollama: [
+    {
+      id: "llama3",
+      name: "Llama 3 (Local)",
+      requiresKey: false,
+    },
+    {
+      id: "mistral",
+      name: "Mistral (Local)",
+      requiresKey: false,
+    },
+  ],
 };
 
 const EMBEDDING_MODELS = [
   {
     id: "all-MiniLM-L6-v2",
-    name: "Sentence-Transformers MiniLM (Fast)",
+    name: "Fast & Light (all-MiniLM-L6-v2)",
   },
   {
-    id: "BAAI/bge-small-en-v1.5",
-    name: "BAAI BGE-Small (High Accuracy)",
+    id: "BAAI/bge-large-en-v1.5",
+    name: "Pro Accuracy - Local (BAAI/bge-large-en-v1.5)",
   },
 ];
 
@@ -90,6 +108,17 @@ const CHUNKING_STRATEGIES = [
     id: "paragraph",
     name: "Paragraph / Recursive (Contextual)",
   },
+];
+
+const LANGUAGES = [
+  { id: "en", name: "English" },
+  { id: "es", name: "Spanish" },
+  { id: "fr", name: "French" },
+  { id: "de", name: "German" },
+  { id: "hi", name: "Hindi" },
+  { id: "zh-CN", name: "Chinese (Simplified)" },
+  { id: "ja", name: "Japanese" },
+  { id: "ko", name: "Korean" },
 ];
 
 export default function CreateAgentWizard({ onClose }) {
@@ -118,6 +147,7 @@ export default function CreateAgentWizard({ onClose }) {
     chunk_strategy: "sentence",
     system_prompt: "",
     api_key: "",
+    language: "en",
   });
 
   const currentModels = useMemo(
@@ -185,6 +215,7 @@ export default function CreateAgentWizard({ onClose }) {
       api_key: selectedModel?.requiresKey
         ? formData.api_key.trim()
         : null,
+      language: formData.language,
       workspace_id: activeWorkspaceId,
     };
 
@@ -299,7 +330,7 @@ export default function CreateAgentWizard({ onClose }) {
                 <div>
                   <label className="font-medium block mb-2">Description</label>
                   <textarea
-                    rows={5}
+                    rows={3}
                     value={formData.description}
                     onChange={(event) =>
                       updateField("description", event.target.value)
@@ -316,6 +347,25 @@ export default function CreateAgentWizard({ onClose }) {
                   "
                     placeholder="Describe what this agent does..."
                   />
+                </div>
+
+                <div>
+                  <label className="font-medium block mb-2">Preferred Language</label>
+                  <Select
+                    value={formData.language}
+                    onValueChange={(value) => updateField("language", value)}
+                  >
+                    <SelectTrigger className="w-full h-14 rounded-2xl bg-background border-border">
+                      <SelectValue placeholder="Select Language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LANGUAGES.map((lang) => (
+                        <SelectItem key={lang.id} value={lang.id}>
+                          {lang.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>

@@ -1,5 +1,7 @@
 import { supabase } from "../supabaseClient";
 
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 async function getAuthenticatedUser() {
   const {
     data: { user },
@@ -20,17 +22,12 @@ async function getAuthenticatedUser() {
 export async function getAgents(workspaceId) {
   if (!workspaceId) return [];
 
-  const { data, error } = await supabase
-    .from("agents")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .order("created_at", {
-      ascending: false,
-    });
+  const response = await fetch(`${API_URL}/api/agents?workspace_id=${workspaceId}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch agents");
+  }
 
-  if (error) throw error;
-
-  return data || [];
+  return response.json();
 }
 
 export async function createAgent(payload) {
@@ -52,15 +49,20 @@ export async function createAgent(payload) {
     workspace_id: payload.workspace_id,
   };
 
-  const { data, error } = await supabase
-    .from("agents")
-    .insert(agentPayload)
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/agents`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(agentPayload),
+  });
 
-  if (error) throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to create agent");
+  }
 
-  return data;
+  return response.json();
 }
 
 export async function updateAgent(
@@ -69,20 +71,21 @@ export async function updateAgent(
 ) {
   const user = await getAuthenticatedUser();
 
-  const { data, error } = await supabase
-    .from("agents")
-    .update(payload)
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/agents/${id}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 
-  if (error) throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to update agent");
+  }
 
-  return data;
+  return response.json();
 }
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function deleteAgent(id) {
   await getAuthenticatedUser(); // Verify auth locally

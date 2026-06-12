@@ -10,6 +10,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["billing"])
 
+@router.get("/api/billing/subscription/{user_id}")
+async def get_subscription(user_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT plan_tier, billing_cycle, status, limits
+            FROM user_subscriptions
+            WHERE user_id = %s
+            """,
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            # Default Starter plan
+            return {
+                "plan_tier": "Starter",
+                "billing_cycle": "monthly",
+                "status": "active"
+            }
+            
+        return {
+            "plan_tier": row[0],
+            "billing_cycle": row[1],
+            "status": row[2],
+            "limits": row[3]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching subscription: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch subscription")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 @router.post("/create-razorpay-order")
 async def create_razorpay_order(req: CheckoutRequest):
     if not razorpay_client:

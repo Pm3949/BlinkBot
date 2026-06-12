@@ -5,7 +5,20 @@ export default function ChatComposer({
   disabled = false,
   isLoading = false,
   onSend,
+  agent,
+  chatLanguage,
+  setChatLanguage,
 }) {
+  const LANGUAGES = [
+    { id: "en", name: "EN" },
+    { id: "es", name: "ES" },
+    { id: "fr", name: "FR" },
+    { id: "de", name: "DE" },
+    { id: "hi", name: "HI" },
+    { id: "zh-CN", name: "ZH" },
+    { id: "ja", name: "JA" },
+    { id: "ko", name: "KO" },
+  ];
   const [value, setValue] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -27,6 +40,11 @@ export default function ChatComposer({
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         const formData = new FormData();
         formData.append("file", audioBlob, "recording.webm");
+        if (chatLanguage) {
+          formData.append("language", chatLanguage);
+        } else if (agent?.language) {
+          formData.append("language", agent.language);
+        }
 
         try {
           const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -125,6 +143,34 @@ export default function ChatComposer({
           focus:ring-primary/30
         "
         />
+
+        <select
+          value={chatLanguage}
+          onChange={(e) => setChatLanguage(e.target.value)}
+          disabled={disabled || isLoading}
+          title="Select STT/TTS Language"
+          className="
+            h-11
+            rounded-2xl
+            border border-border
+            bg-transparent
+            px-3
+            text-sm
+            font-medium
+            focus:outline-none
+            focus:ring-2
+            focus:ring-primary/30
+            cursor-pointer
+            hover:bg-muted/50
+            disabled:opacity-60
+          "
+        >
+          {LANGUAGES.map((lang) => (
+            <option key={lang.id} value={lang.id}>
+              {lang.name}
+            </option>
+          ))}
+        </select>
 
         <button
           onClick={isRecording ? stopRecording : startRecording}

@@ -1,5 +1,7 @@
 import { supabase } from "../supabaseClient";
 
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 async function getAuthenticatedUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error) throw error;
@@ -9,87 +11,64 @@ async function getAuthenticatedUser() {
 
 export async function getUserSettings() {
   const user = await getAuthenticatedUser();
-  const { data, error } = await supabase
-    .from("user_settings")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
+  const response = await fetch(`${API_URL}/api/settings/${user.id}`);
 
-  if (error && error.code !== "PGRST116") {
-    throw error;
+  if (!response.ok) {
+    throw new Error("Failed to fetch user settings");
   }
-  
-  if (!data) {
-    return {
-      openai_api_key: "",
-      groq_api_key: "",
-      gemini_api_key: "",
-      two_factor_enabled: false
-    };
-  }
-  return data;
+
+  return response.json();
 }
 
 export async function updateUserSettings(settings) {
   const user = await getAuthenticatedUser();
-  const { data, error } = await supabase
-    .from("user_settings")
-    .upsert({
-      user_id: user.id,
-      ...settings,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id' })
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/settings/${user.id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
 
-  if (error) throw error;
-  return data;
+  if (!response.ok) {
+    throw new Error("Failed to update user settings");
+  }
+
+  return response.json();
 }
 
 // Getting user's primary workspace (assuming the first one for simplicity, or the one they own)
 export async function getPrimaryWorkspace() {
   const user = await getAuthenticatedUser();
-  const { data, error } = await supabase
-    .from("workspaces")
-    .select("*")
-    .eq("owner_id", user.id)
-    .limit(1)
-    .single();
-    
-  if (error && error.code !== "PGRST116") throw error;
-  return data || { name: "" };
+  const response = await fetch(`${API_URL}/api/workspaces/primary/${user.id}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch primary workspace");
+  }
+
+  return response.json();
 }
 
 export async function updateWorkspace(id, name) {
   if (!id) throw new Error("Workspace ID is required");
-  const { data, error } = await supabase
-    .from("workspaces")
-    .update({ name })
-    .eq("id", id)
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/workspaces/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
 
-  if (error) throw error;
-  return data;
+  if (!response.ok) {
+    throw new Error("Failed to update workspace");
+  }
+
+  return response.json();
 }
 
 export async function getUserWorkspaces() {
   const user = await getAuthenticatedUser();
-  const { data, error } = await supabase
-    .from("workspace_members")
-    .select("role, permissions, workspace:workspaces(id, name, owner_id)")
-    .eq("user_id", user.id);
+  const response = await fetch(`${API_URL}/api/workspaces/user/${user.id}`);
 
-  if (error) throw error;
-  
-  // Filter out any null joins and return clean objects
-  return data
-    .filter(member => member.workspace !== null)
-    .map(member => ({
-      id: member.workspace.id,
-      name: member.workspace.name,
-      owner_id: member.workspace.owner_id,
-      role: member.role,
-      permissions: member.permissions
-    }));
+  if (!response.ok) {
+    throw new Error("Failed to fetch user workspaces");
+  }
+
+  return response.json();
 }

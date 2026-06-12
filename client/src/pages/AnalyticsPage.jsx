@@ -1,13 +1,13 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
-import { 
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import { Activity, MessageSquare, Database, Cpu, Bot } from 'lucide-react';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function fetchAnalytics() {
   const { data: { user } } = await supabase.auth.getUser();
@@ -62,7 +62,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10">
-      
+
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
@@ -73,37 +73,37 @@ export default function AnalyticsPage() {
 
       {/* Top Level Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard 
-          title="Total Internal Agents" 
-          value={metrics.totalAgents} 
-          icon={Cpu} 
-          colorClass="bg-blue-500/10 text-blue-500" 
+        <MetricCard
+          title="Total Internal Agents"
+          value={metrics.totalAgents}
+          icon={Cpu}
+          colorClass="bg-blue-500/10 text-blue-500"
         />
-        <MetricCard 
-          title="Documents Processed" 
-          value={metrics.totalDocuments} 
-          icon={Database} 
-          colorClass="bg-indigo-500/10 text-indigo-500" 
+        <MetricCard
+          title="Documents Processed"
+          value={metrics.totalDocuments}
+          icon={Database}
+          colorClass="bg-indigo-500/10 text-indigo-500"
         />
-        <MetricCard 
-          title="Vector Storage" 
-          value={`${metrics.storageUsedMB} MB`} 
-          icon={Activity} 
-          colorClass="bg-purple-500/10 text-purple-500" 
+        <MetricCard
+          title="Vector Storage"
+          value={`${metrics.storageUsedMB} MB`}
+          icon={Activity}
+          colorClass="bg-purple-500/10 text-purple-500"
         />
-        <MetricCard 
-          title="All-Time Widget Msgs" 
-          value={metrics.totalWidgetMessages} 
-          icon={MessageSquare} 
-          colorClass="bg-green-500/10 text-green-500" 
+        <MetricCard
+          title="All-Time Widget Msgs"
+          value={metrics.totalWidgetMessages}
+          icon={MessageSquare}
+          colorClass="bg-green-500/10 text-green-500"
         />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        
+
         {/* Main Chart Area */}
         <div className="lg:col-span-2 space-y-8">
-          
+
           {/* Widget Messages Chart */}
           <div className="glass-card p-6 border border-border/50">
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
@@ -116,7 +116,7 @@ export default function AnalyticsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                     <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
                       itemStyle={{ color: 'hsl(var(--foreground))' }}
                     />
@@ -143,7 +143,7 @@ export default function AnalyticsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                     <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                     <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
                       cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
                     />
@@ -162,13 +162,13 @@ export default function AnalyticsPage() {
 
         {/* Sidebar Panel */}
         <div className="lg:col-span-1 space-y-8">
-          
+
           {/* Top Chatbots */}
           <div className="glass-card p-6 border border-border/50">
             <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
               <Bot className="text-primary" /> Top Performing Widgets
             </h3>
-            
+
             {topChatbots.length > 0 ? (
               <div className="space-y-4">
                 {topChatbots.map((bot, idx) => (

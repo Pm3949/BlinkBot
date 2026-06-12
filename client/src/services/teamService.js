@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 async function getAuthenticatedUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -19,59 +19,35 @@ export async function getWorkspaceMembers(workspaceId = null) {
 
   let resolvedWorkspaceId = workspaceId;
 
-  // If no workspace ID provided, derive it from the user's memberships
+  // If no workspace ID provided, derive it from the user's primary workspace endpoint
   if (!resolvedWorkspaceId) {
-    const { data: userWorkspaces, error: wsError } = await supabase
-      .from("workspace_members")
-      .select("workspace_id")
-      .eq("user_id", user.id)
-      .limit(1);
-
-    if (wsError) throw wsError;
-    if (!userWorkspaces || userWorkspaces.length === 0) return [];
-    resolvedWorkspaceId = userWorkspaces[0].workspace_id;
+    const wsRes = await fetch(`${API_URL}/api/workspaces/primary/${user.id}`);
+    if (wsRes.ok) {
+      const wsData = await wsRes.json();
+      resolvedWorkspaceId = wsData.id;
+    }
   }
 
-  // Fetch members AND the workspace's owner_id in one go
-  const [membersRes, workspaceRes] = await Promise.all([
-    supabase
-      .from("workspace_members")
-      .select("*")
-      .eq("workspace_id", resolvedWorkspaceId)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("workspaces")
-      .select("owner_id")
-      .eq("id", resolvedWorkspaceId)
-      .single(),
-  ]);
+  if (!resolvedWorkspaceId) return [];
 
-  if (membersRes.error) throw membersRes.error;
+  const response = await fetch(`${API_URL}/api/workspaces/${resolvedWorkspaceId}/members`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch workspace members");
+  }
 
-  const ownerUserId = workspaceRes.data?.owner_id || null;
-
-  return (membersRes.data || []).map((m) => ({
-    ...m,
-    isOwner: m.user_id === ownerUserId,
-  }));
+  return response.json();
 }
 
 export async function inviteMember(email, role) {
   const user = await getAuthenticatedUser();
-  
+
   // Find current user's workspace
-  const { data: userWorkspaces } = await supabase
-    .from("workspace_members")
-    .select("workspace_id, workspaces(name)")
-    .eq("user_id", user.id)
-    .limit(1);
+  const wsRes = await fetch(`${API_URL}/api/workspaces/primary/${user.id}`);
+  if (!wsRes.ok) throw new Error("No workspace found.");
 
-  if (!userWorkspaces || userWorkspaces.length === 0) {
-    throw new Error("No workspace found.");
-  }
-
-  const workspaceId = userWorkspaces[0].workspace_id;
-  const workspaceName = userWorkspaces[0].workspaces?.name || "Shared Workspace";
+  const wsData = await wsRes.json();
+  const workspaceId = wsData.id;
+  const workspaceName = wsData.name || "Shared Workspace";
   const invitedByName = user.email; // Can change to user.user_metadata.full_name if available
 
   // FastAPI backend Call
@@ -101,43 +77,39 @@ const ADMIN_PERMISSIONS = { agents: true, database: true, notes: true };
 const DEFAULT_PERMISSIONS = { agents: false, database: false, notes: false };
 
 export async function updateMemberRole(memberId, role) {
-  await getAuthenticatedUser();
+  const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}/role`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
 
-  // When promoting to Admin → grant all permissions automatically.
-  // When demoting from Admin → reset permissions to defaults.
-  const permissionsUpdate =
-    role === "Admin" ? ADMIN_PERMISSIONS : DEFAULT_PERMISSIONS;
+  if (!response.ok) {
+    throw new Error("Failed to update member role");
+  }
 
-  const { data, error } = await supabase
-    .from("workspace_members")
-    .update({ role, permissions: permissionsUpdate })
-    .eq("id", memberId)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data;
+  return response.json();
 }
 
 export async function updateMemberPermissions(memberId, permissions) {
-  await getAuthenticatedUser();
-  const { data, error } = await supabase
-    .from("workspace_members")
-    .update({ permissions })
-    .eq("id", memberId)
-    .select()
-    .single();
+  const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permissions }),
+  });
 
-  if (error) throw error;
-  return data;
+  if (!response.ok) {
+    throw new Error("Failed to update member permissions");
+  }
+
+  return response.json();
 }
 
 export async function removeMember(memberId) {
-  await getAuthenticatedUser();
-  const { error } = await supabase
-    .from("workspace_members")
-    .delete()
-    .eq("id", memberId);
+  const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}`, {
+    method: "DELETE"
+  });
 
-  if (error) throw error;
+  if (!response.ok) {
+    throw new Error("Failed to remove member");
+  }
 }

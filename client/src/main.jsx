@@ -67,6 +67,20 @@ try {
   document.documentElement.classList.remove("dark");
 }
 
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+  let [resource, config] = args;
+  if (!config) config = {};
+  if (!config.headers) config.headers = {};
+  
+  if (config.headers instanceof Headers) {
+    config.headers.append('ngrok-skip-browser-warning', 'true');
+  } else {
+    config.headers['ngrok-skip-browser-warning'] = 'true';
+  }
+  
+  return originalFetch(resource, config);
+};
 
 
 ReactDOM.createRoot(document.getElementById("root")).render(

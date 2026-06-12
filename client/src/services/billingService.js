@@ -10,29 +10,17 @@ async function getAuthenticatedUser() {
 export async function getSubscription() {
   const user = await getAuthenticatedUser();
 
-  const { data, error } = await supabase
-    .from("user_subscriptions")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
+  const response = await fetch(`${API_URL}/api/billing/subscription/${user.id}`);
 
-  if (error && error.code !== 'PGRST116') { // PGRST116 is "No rows found"
-    throw error;
+  if (!response.ok) {
+    throw new Error("Failed to fetch subscription");
   }
 
-  // If no subscription exists, return a default Starter plan
-  if (!data) {
-    return {
-      plan_tier: "Starter",
-      billing_cycle: "monthly",
-      status: "active"
-    };
-  }
-
+  const data = await response.json();
   return data;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 const loadRazorpayScript = () => {
   return new Promise((resolve) => {
@@ -55,9 +43,9 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
     throw new Error("Razorpay SDK failed to load");
   }
 
-  const payload = { 
-    user_id: user.id, 
-    plan_tier: planTier, 
+  const payload = {
+    user_id: user.id,
+    plan_tier: planTier,
     billing_cycle: billingCycle,
     agents_limit: limits.agents || 1,
     agent_messages_limit: limits.agentMessages || 500,

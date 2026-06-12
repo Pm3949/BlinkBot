@@ -216,3 +216,20 @@ CREATE TRIGGER on_auth_user_created
     chatbot_id UUID REFERENCES chatbots(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- 9. Notes Table
+CREATE TABLE IF NOT EXISTS notes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    agent_name TEXT,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    pinned BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own notes" ON notes FOR ALL TO authenticated USING (user_id = auth.uid());
+CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);

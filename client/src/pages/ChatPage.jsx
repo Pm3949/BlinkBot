@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import ChatComposer from "../components/chat/ChatComposer";
@@ -20,6 +20,7 @@ export default function ChatPage() {
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
   const { data: agents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);
   const [activeAgentId, setActiveAgentId] = useState("");
+  const [chatLanguage, setChatLanguage] = useState("en");
   const {
     activeSessionId,
     activeSession,
@@ -42,6 +43,12 @@ export default function ChatPage() {
     () => agents.find((agent) => agent.id === selectedAgentId),
     [selectedAgentId, agents],
   );
+
+  useEffect(() => {
+    if (activeAgent?.language) {
+      setChatLanguage(activeAgent.language);
+    }
+  }, [activeAgent]);
 
   const { data: documents = [], isLoading: isLoadingDocuments } =
     useDocuments(selectedAgentId);
@@ -95,6 +102,7 @@ export default function ChatPage() {
       agentId: selectedAgentId,
       agentName: activeAgent?.name || "General",
       content,
+      language: chatLanguage,
     });
   };
 
@@ -183,6 +191,7 @@ export default function ChatPage() {
                 key={message.id}
                 role={message.role}
                 agent={activeAgent}
+                chatLanguage={chatLanguage}
                 content={
                   message.content ||
                   (message.role === "assistant" ? "Thinking..." : "")
@@ -204,6 +213,9 @@ export default function ChatPage() {
           disabled={!selectedAgentId}
           isLoading={loading}
           onSend={handleSend}
+          agent={activeAgent}
+          chatLanguage={chatLanguage}
+          setChatLanguage={setChatLanguage}
         />
       </div>
 

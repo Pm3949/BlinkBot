@@ -26,6 +26,18 @@
 
   let chatHistory = [];
   let isOpen = false;
+  let currentLanguage = 'en';
+
+  const LANGUAGES = [
+    { id: "en", name: "EN" },
+    { id: "es", name: "ES" },
+    { id: "fr", name: "FR" },
+    { id: "de", name: "DE" },
+    { id: "hi", name: "HI" },
+    { id: "zh-CN", name: "ZH" },
+    { id: "ja", name: "JA" },
+    { id: "ko", name: "KO" },
+  ];
 
   // 2. Fetch Chatbot Config from Supabase
   async function fetchConfig() {
@@ -155,6 +167,21 @@
       }
       .rm-close:hover {
         opacity: 1;
+      }
+      .rm-lang-select {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        padding: 4px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        outline: none;
+        margin-right: 12px;
+      }
+      .rm-lang-select option {
+        background: #1e293b;
+        color: white;
       }
       .rm-messages {
         flex: 1;
@@ -287,11 +314,11 @@
     bubble.id = 'ragmate-bubble';
     bubble.style.backgroundColor = botSettings.themeColor;
     bubble.className = botSettings.position;
-    bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? \`<span style="font-size: 24px;">\${botSettings.avatar}</span>\` : \`
+    bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? `<span style="font-size: 24px;">${botSettings.avatar}</span>` : `
       <svg viewBox="0 0 24 24">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
       </svg>
-    \`;
+    `;
     bubble.onclick = toggleChat;
     document.body.appendChild(bubble);
 
@@ -310,7 +337,12 @@
             <p>Online | Powered by RAGMate</p>
           </div>
         </div>
-        <button class="rm-close" id="ragmate-close-btn">&times;</button>
+        <div style="display: flex; align-items: center;">
+          <select id="ragmate-lang-select" class="rm-lang-select" title="Select STT/TTS Language">
+            ${LANGUAGES.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+          </select>
+          <button class="rm-close" id="ragmate-close-btn">&times;</button>
+        </div>
       </div>
       <div class="rm-messages" id="ragmate-messages">
         <div class="rm-msg bot">${botSettings.welcomeMessage}</div>
@@ -340,6 +372,9 @@
     document.getElementById('ragmate-mic-btn').onclick = toggleMic;
     document.getElementById('ragmate-input').onkeypress = function (e) {
       if (e.key === 'Enter') handleSend();
+    };
+    document.getElementById('ragmate-lang-select').onchange = function (e) {
+      currentLanguage = e.target.value;
     };
   }
 
@@ -375,6 +410,7 @@
         const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
         const formData = new FormData();
         formData.append("file", audioBlob, "recording.webm");
+        formData.append("language", currentLanguage);
 
         try {
           const response = await fetch(`${apiUrl}/stt`, {
@@ -420,7 +456,7 @@
     return clean.split('\n').join('<br>');
   }
 
-  let currentUtterance = null;
+  let currentAudio = null;
   let isSpeaking = false;
 
   function addTTSButton(container, text) {
@@ -429,15 +465,17 @@
     ttsBtn.title = "Read aloud";
     ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
     
-    ttsBtn.onclick = () => {
+    ttsBtn.onclick = async () => {
       if (isSpeaking) {
-        window.speechSynthesis.cancel();
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio.src = "";
+        }
         isSpeaking = false;
         ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
         return;
       }
 
-      window.speechSynthesis.cancel(); // Cancel any ongoing speech
       const cleanText = text
         .replace(/!\[.*?\]\(.*?\)/g, '')
         .replace(/\[(.*?)\]\(.*?\)/g, '$1')
@@ -446,19 +484,37 @@
 
       if (!cleanText) return;
 
-      currentUtterance = new SpeechSynthesisUtterance(cleanText);
-      currentUtterance.onend = () => {
-        isSpeaking = false;
-        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
-      };
-      currentUtterance.onerror = () => {
-        isSpeaking = false;
-        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
-      };
+      try {
+        isSpeaking = true;
+        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12"></rect></svg>';
 
-      window.speechSynthesis.speak(currentUtterance);
-      isSpeaking = true;
-      ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12"></rect></svg>';
+        const response = await fetch(`${apiUrl}/api/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: cleanText,
+            language: currentLanguage
+          })
+        });
+
+        if (!response.ok) throw new Error("TTS failed");
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        currentAudio = new Audio(url);
+        currentAudio.onended = () => {
+          isSpeaking = false;
+          ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+          URL.revokeObjectURL(url);
+        };
+        
+        currentAudio.play();
+      } catch (err) {
+        console.error("TTS Error:", err);
+        isSpeaking = false;
+        ttsBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+      }
     };
 
     const flexDiv = document.createElement('div');
@@ -503,7 +559,8 @@
         body: JSON.stringify({
           chatbot_id: chatbotId,
           message: text,
-          history: chatHistory
+          history: chatHistory,
+          language: currentLanguage
         })
       });
 

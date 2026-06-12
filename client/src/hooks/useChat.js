@@ -41,7 +41,7 @@ export function useChat() {
     }
   };
 
-  const sendMessage = async ({ agentId, agentName, content }) => {
+  const sendMessage = async ({ agentId, agentName, content, language }) => {
     const message = content.trim();
     if (!agentId) {
       toast.error("Select an agent before starting chat.");
@@ -80,6 +80,7 @@ export function useChat() {
           agent_id: agentId,
           message,
           history,
+          language,
         },
         (streamedText) => {
           setStreamingContent(streamedText);

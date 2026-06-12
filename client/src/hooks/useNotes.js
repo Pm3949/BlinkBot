@@ -1,32 +1,7 @@
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getNotes, createNote, deleteNote, togglePinNote } from "../services/noteService";
 import { useUIStore } from "../store/useUIStore";
-import { encodeId } from "../lib/idCrypt";
-
-/**
- * Returns a workspace-scoped, obfuscated localStorage key.
- * The workspace UUID is encoded so raw IDs never appear in storage.
- * Falls back to a shared "default" bucket when no workspace is active.
- */
-function getStorageKey(workspaceId) {
-  if (!workspaceId) return "ragmate_notes_default";
-  return `ragmate_notes_${encodeId(workspaceId)}`;
-}
-
-const NOTES_UPDATED_EVENT = "ragmate-notes-updated";
-
-function readNotes(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function writeNotes(key, notes) {
-  localStorage.setItem(key, JSON.stringify(notes));
-  window.dispatchEvent(new Event(NOTES_UPDATED_EVENT));
-}
+import { toast } from "sonner";
 
 function createTitle(content) {
   const firstLine = content
@@ -50,75 +25,123 @@ function createTitle(content) {
 
 export function useNotes() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
-  const storageKey = getStorageKey(activeWorkspaceId);
+  const queryClient = useQueryClient();
 
-  const [notes, setNotes] = useState(() => readNotes(storageKey));
+  const { data: notes = [], isLoading } = useQuery({
+    queryKey: ["notes", activeWorkspaceId],
+    queryFn: () => getNotes(activeWorkspaceId),
+    enabled: !!activeWorkspaceId,
+  });
 
-  // Reload notes whenever the active workspace changes
-  useEffect(() => {
-    setNotes(readNotes(storageKey));
-  }, [storageKey]);
+  const createMutation = useMutation({
+    mutationFn: createNote,
+    onMutate: async (newNote) => {
+      await queryClient.cancelQueries({ queryKey: ["notes", activeWorkspaceId] });
+      const previousNotes = queryClient.getQueryData(["notes", activeWorkspaceId]);
+      const optimisticNote = {
+        id: `temp-${Date.now()}`,
+        userId: "temp",
+        workspaceId: activeWorkspaceId,
+        agentId: newNote.agent_id,
+        agentName: newNote.agent_name,
+        title: newNote.title,
+        content: newNote.content,
+        pinned: false,
+        createdAt: new Date().toISOString()
+      };
+      queryClient.setQueryData(["notes", activeWorkspaceId], (old) => [optimisticNote, ...(old || [])]);
+      return { previousNotes };
+    },
+    onError: (err, newNote, context) => {
+      if (context?.previousNotes) {
+        queryClient.setQueryData(["notes", activeWorkspaceId], context.previousNotes);
+      }
+      toast.error("Failed to save note");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes", activeWorkspaceId] });
+    },
+  });
 
-  useEffect(() => {
-    const syncNotes = () => {
-      setNotes(readNotes(storageKey));
-    };
+  const deleteMutation = useMutation({
+    mutationFn: deleteNote,
+    onMutate: async (noteId) => {
+      await queryClient.cancelQueries({ queryKey: ["notes", activeWorkspaceId] });
+      const previousNotes = queryClient.getQueryData(["notes", activeWorkspaceId]);
+      queryClient.setQueryData(["notes", activeWorkspaceId], (old) => (old || []).filter((n) => n.id !== noteId));
+      return { previousNotes };
+    },
+    onError: (err, noteId, context) => {
+      if (context?.previousNotes) {
+        queryClient.setQueryData(["notes", activeWorkspaceId], context.previousNotes);
+      }
+      toast.error("Failed to delete note");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes", activeWorkspaceId] });
+    },
+  });
 
-    window.addEventListener("storage", syncNotes);
-    window.addEventListener(NOTES_UPDATED_EVENT, syncNotes);
-
-    return () => {
-      window.removeEventListener("storage", syncNotes);
-      window.removeEventListener(NOTES_UPDATED_EVENT, syncNotes);
-    };
-  }, [storageKey]);
+  const pinMutation = useMutation({
+    mutationFn: ({ id, pinned }) => togglePinNote(id, pinned),
+    onMutate: async ({ id, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: ["notes", activeWorkspaceId] });
+      const previousNotes = queryClient.getQueryData(["notes", activeWorkspaceId]);
+      queryClient.setQueryData(["notes", activeWorkspaceId], (old) => 
+        (old || []).map((n) => n.id === id ? { ...n, pinned } : n)
+      );
+      return { previousNotes };
+    },
+    onError: (err, variables, context) => {
+      if (context?.previousNotes) {
+        queryClient.setQueryData(["notes", activeWorkspaceId], context.previousNotes);
+      }
+      toast.error("Failed to update pin");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes", activeWorkspaceId] });
+    },
+  });
 
   const addNote = (content, agent) => {
     const text = content?.trim();
-
     if (!text) {
       toast.error("Nothing to save yet.");
       return null;
     }
 
-    const existing = readNotes(storageKey).find(
-      (note) =>
-        note.content === text && (note.agentId || null) === (agent?.id || null),
-    );
+    if (!activeWorkspaceId) {
+      toast.error("No active workspace selected.");
+      return null;
+    }
 
+    // Optimistic check
+    const existing = notes.find(
+      (note) => note.content === text && (note.agentId || null) === (agent?.id || null)
+    );
     if (existing) return existing;
 
-    const note = {
-      id: crypto.randomUUID(),
+    const payload = {
+      workspace_id: activeWorkspaceId,
+      agent_id: agent?.id || null,
+      agent_name: agent?.name || "General",
       title: createTitle(text),
       content: text,
-      agentId: agent?.id || null,
-      agentName: agent?.name || "General",
-      pinned: false,
-      createdAt: new Date().toISOString(),
     };
 
-    const updatedNotes = [note, ...readNotes(storageKey)];
-    writeNotes(storageKey, updatedNotes);
-    setNotes(updatedNotes);
-
-    return note;
+    createMutation.mutate(payload);
+    return payload; // Optimistic return
   };
 
-  const deleteNote = (noteId) => {
-    const updatedNotes = readNotes(storageKey).filter(
-      (note) => note.id !== noteId,
-    );
-    writeNotes(storageKey, updatedNotes);
-    setNotes(updatedNotes);
+  const removeNote = (noteId) => {
+    deleteMutation.mutate(noteId);
   };
 
   const togglePin = (noteId) => {
-    const updatedNotes = readNotes(storageKey).map((note) =>
-      note.id === noteId ? { ...note, pinned: !note.pinned } : note,
-    );
-    writeNotes(storageKey, updatedNotes);
-    setNotes(updatedNotes);
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      pinMutation.mutate({ id: noteId, pinned: !note.pinned });
+    }
   };
 
   const isSaved = (content, agentId = null) => {
@@ -131,8 +154,9 @@ export function useNotes() {
 
   return {
     notes,
+    isLoading,
     addNote,
-    deleteNote,
+    deleteNote: removeNote,
     togglePin,
     isSaved,
   };

@@ -3,7 +3,7 @@ fastapi==0.136.3
 pymupdf
 langchain_groq==1.1.2
 langchain_openai==1.2.2
-langchain-google-genai
+langchain-community
 psycopg2==2.9.12
 pydantic==2.13.4
 python-dotenv==1.2.2

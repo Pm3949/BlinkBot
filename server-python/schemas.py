@@ -6,11 +6,13 @@ class ChatRequest(BaseModel):
     agent_id: Optional[str] = None
     message: Optional[str] = None
     history: Optional[List[Dict[str, str]]] = []
+    language: Optional[str] = None
 
 class WidgetChatRequest(BaseModel):
     chatbot_id: str
     message: str
     history: Optional[List[Dict[str, str]]] = []
+    language: Optional[str] = None
 
 # Ye missing tha pichle code mein!
 class URLRequest(BaseModel):

@@ -18,7 +18,7 @@ async def process_file(
     agent_id: str = Form(...),
 ):
     """Upload a supported file, extract text, create a document row, and schedule ingestion."""
-    allowed_exts = {"pdf", "txt", "docx", "csv"}
+    allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg"}
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
