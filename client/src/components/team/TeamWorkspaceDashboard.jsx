@@ -183,7 +183,6 @@ export default function TeamWorkspaceDashboard() {
                   <div className="flex items-center space-x-6 mt-1 text-muted-foreground/70 text-[10px]">
                     <span className="w-12 text-center">Agents</span>
                     <span className="w-12 text-center">Databases</span>
-                    <span className="w-12 text-center">Notes</span>
                   </div>
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -279,7 +278,7 @@ export default function TeamWorkspaceDashboard() {
                     {member.isOwner || member.role === "Admin" ? (
                       // Owner / Admin — full access locked checkmarks
                       <div className="flex items-center space-x-6">
-                        {["agents", "database", "notes"].map((perm) => (
+                        {["agents", "database"].map((perm) => (
                           <div key={perm} className="w-12 flex justify-center">
                             <span
                               title={member.isOwner ? "Owner has full access" : "Admin has full access"}
@@ -311,20 +310,11 @@ export default function TeamWorkspaceDashboard() {
                             }
                           />
                         </div>
-                        <div className="w-12 flex justify-center">
-                          <Switch
-                            checked={member.permissions?.notes || false}
-                            disabled={loadingToggles[`${member.id}-notes`]}
-                            onCheckedChange={() =>
-                              handlePermissionToggle(member.id, member.permissions || {}, "notes")
-                            }
-                          />
-                        </div>
                       </div>
                     ) : (
                       // Current user is not Admin — show read-only permission dots
                       <div className="flex items-center space-x-6">
-                        {["agents", "database", "notes"].map((perm) => (
+                        {["agents", "database"].map((perm) => (
                           <div key={perm} className="w-12 flex justify-center">
                             <span
                               className={`w-2.5 h-2.5 rounded-full ${

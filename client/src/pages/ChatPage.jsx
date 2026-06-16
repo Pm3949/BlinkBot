@@ -10,7 +10,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAgents } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
 import { useDocuments } from "../hooks/useDocuments";
-
+import VerificationBanner from "../components/chat/VerificationBanner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
 
@@ -152,8 +152,9 @@ export default function ChatPage() {
            </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto pt-16">
-          <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8">
+        <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
+          <VerificationBanner />
+          <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
 
             {!isLoadingAgents && agents.length === 0 && (
@@ -179,6 +180,7 @@ export default function ChatPage() {
             {visibleMessages.map((message) => (
               <MessageBubble
                 key={message.id}
+                id={message.id}
                 role={message.role}
                 agent={activeAgent}
                 chatLanguage={chatLanguage}

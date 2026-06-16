@@ -1,21 +1,55 @@
 import { useState, useEffect } from "react";
-import { Bot, User, Copy, Share2, Bookmark, Volume2, Square, Clock } from "lucide-react";
+import { Bot, User, Copy, Share2, Volume2, Square, Clock, ThumbsUp, ThumbsDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
 import { toast } from "sonner";
+
+import { useFeedback } from "../../hooks/useFeedback";
+import FeedbackModal from "./FeedbackModal";
 
 
 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function MessageBubble({ role, content, agent, chatLanguage, latency }) {
+export default function MessageBubble({ id, role, content, agent, chatLanguage, latency }) {
   const isUser = role === "user";
 
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioRef = useState(new Audio())[0];
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [vote, setVote] = useState(null);
+  const { submitMutation } = useFeedback();
+
+  const handleUpvote = async () => {
+    if (vote) return;
+    setVote("upvote");
+    toast.success("Thank you for your feedback!");
+    // We don't hit the API for upvotes anymore to save DB space
+  };
+
+  const handleDownvote = () => {
+    if (vote) return;
+    setIsFeedbackModalOpen(true);
+  };
+
+  const handleFeedbackSubmit = async (data) => {
+    try {
+      await submitMutation.mutateAsync({
+        message_id: id,
+        agent_id: agent?.id,
+        vote_type: "downvote",
+        category: data.category,
+        comment_text: data.comment_text,
+      });
+      setVote("downvote");
+      setIsFeedbackModalOpen(false);
+      toast.success("Feedback submitted! AI memory temporarily patched.");
+    } catch (e) {
+      toast.error("Failed to submit feedback.");
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -168,6 +202,26 @@ export default function MessageBubble({ role, content, agent, chatLanguage, late
                 <Copy size={16} />
               </button>
 
+              <button
+                onClick={handleUpvote}
+                disabled={!!vote}
+                type="button"
+                className={`p-2 rounded-xl hover:bg-muted ${vote === "upvote" ? "text-green-500" : ""}`}
+                title="Helpful response"
+              >
+                <ThumbsUp size={16} />
+              </button>
+
+              <button
+                onClick={handleDownvote}
+                disabled={!!vote}
+                type="button"
+                className={`p-2 rounded-xl hover:bg-muted ${vote === "downvote" ? "text-destructive" : ""}`}
+                title="Report issue"
+              >
+                <ThumbsDown size={16} />
+              </button>
+
 
 
               <button
@@ -214,6 +268,13 @@ export default function MessageBubble({ role, content, agent, chatLanguage, late
           <User size={18} />
         </div>
       )}
+      
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        onSubmit={handleFeedbackSubmit}
+        isSubmitting={submitMutation.isPending}
+      />
     </div>
   );
 }
