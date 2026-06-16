@@ -88,10 +88,12 @@ const EMBEDDING_MODELS = [
   {
     id: "all-MiniLM-L6-v2",
     name: "Fast & Light (all-MiniLM-L6-v2)",
+    disabled: false,
   },
   {
     id: "BAAI/bge-large-en-v1.5",
     name: "Pro Accuracy - Local (BAAI/bge-large-en-v1.5)",
+    disabled: true,
   },
 ];
 
@@ -439,14 +441,17 @@ export default function CreateAgentWizard({ onClose }) {
                 {EMBEDDING_MODELS.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => updateField("embedding_model", item.id)}
+                    onClick={() => !item.disabled && updateField("embedding_model", item.id)}
+                    disabled={item.disabled}
                     className={`
                     p-5
                     rounded-3xl
                     border
                     text-left
                     ${
-                      formData.embedding_model === item.id
+                      item.disabled
+                        ? "opacity-50 cursor-not-allowed border-border"
+                        : formData.embedding_model === item.id
                         ? "border-primary bg-primary/5"
                         : "border-border hover:border-primary/50"
                     }
@@ -454,7 +459,9 @@ export default function CreateAgentWizard({ onClose }) {
                   `}
                   >
                     <h4 className="font-semibold">{item.name}</h4>
-                    <p className="text-sm text-muted-foreground mt-1"></p>
+                    {item.disabled && (
+                      <p className="text-xs text-orange-500 mt-1 font-medium">Coming Soon</p>
+                    )}
                   </button>
                 ))}
               </div>

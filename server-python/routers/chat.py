@@ -89,37 +89,14 @@ async def chat_with_agent(req: ChatRequest):
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
         cursor.execute(
-            """
-            SELECT de.content, de.embedding::text
-            FROM document_embeddings de
-            JOIN documents d ON de.document_id = d.id
-            WHERE d.agent_id = %s
-            ORDER BY de.embedding <=> %s::vector
-            LIMIT 100
-        """,
-            (req.agent_id, str(query_vector)),
+            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
+            (str(query_vector), req.agent_id),
         )
-        rows = cursor.fetchall()
+        best_matches = cursor.fetchall()
 
         context = "No specific documents found."
-        if rows:
-            doc_chunks = [row[0] for row in rows]
-            doc_vectors = [
-                json.loads(row[1]) if isinstance(row[1], str) else row[1]
-                for row in rows
-            ]
-
-            top_matches = rag_engine.hybrid_search(
-                query_text=req.message,
-                query_vector=query_vector,
-                document_texts=doc_chunks,
-                document_vectors=doc_vectors,
-                alpha=0.7,
-                top_k=3,
-            )
-
-            best_chunks = [doc_chunks[match["chunk_index"]] for match in top_matches]
-            context = "\n\n---\n\n".join(best_chunks)
+        if best_matches:
+            context = "\n\n---\n\n".join([match[0] for match in best_matches])
 
         history_items = req.history or []
         history_text = ""
@@ -284,37 +261,14 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
         cursor.execute(
-            """
-            SELECT de.content, de.embedding::text
-            FROM document_embeddings de
-            JOIN documents d ON de.document_id = d.id
-            WHERE d.agent_id = %s
-            ORDER BY de.embedding <=> %s::vector
-            LIMIT 100
-        """,
-            (agent_id, str(query_vector)),
+            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
+            (str(query_vector), agent_id),
         )
-        rows = cursor.fetchall()
+        best_matches = cursor.fetchall()
 
         context = "No specific documents found."
-        if rows:
-            doc_chunks = [row[0] for row in rows]
-            doc_vectors = [
-                json.loads(row[1]) if isinstance(row[1], str) else row[1]
-                for row in rows
-            ]
-
-            top_matches = rag_engine.hybrid_search(
-                query_text=req.message,
-                query_vector=query_vector,
-                document_texts=doc_chunks,
-                document_vectors=doc_vectors,
-                alpha=0.7,
-                top_k=3,
-            )
-
-            best_chunks = [doc_chunks[match["chunk_index"]] for match in top_matches]
-            context = "\n\n---\n\n".join(best_chunks)
+        if best_matches:
+            context = "\n\n---\n\n".join([match[0] for match in best_matches])
 
         # 5. Format Chat History (Stateless)
         history_items = req.history or []
@@ -484,28 +438,14 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
 
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
         cursor.execute(
-            "SELECT de.content, de.embedding::text FROM document_embeddings de JOIN documents d ON de.document_id = d.id WHERE d.agent_id = %s ORDER BY de.embedding <=> %s::vector LIMIT 100",
-            (agent_id, str(query_vector)),
+            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
+            (str(query_vector), agent_id),
         )
-        rows = cursor.fetchall()
+        best_matches = cursor.fetchall()
 
         context = "No specific documents found."
-        if rows:
-            doc_chunks = [row[0] for row in rows]
-            doc_vectors = [
-                json.loads(row[1]) if isinstance(row[1], str) else row[1]
-                for row in rows
-            ]
-            top_matches = rag_engine.hybrid_search(
-                query_text=req.message,
-                query_vector=query_vector,
-                document_texts=doc_chunks,
-                document_vectors=doc_vectors,
-                alpha=0.7,
-                top_k=3,
-            )
-            best_chunks = [doc_chunks[match["chunk_index"]] for match in top_matches]
-            context = "\n\n---\n\n".join(best_chunks)
+        if best_matches:
+            context = "\n\n---\n\n".join([match[0] for match in best_matches])
 
         history_items = req.history or []
         history_text = ""
