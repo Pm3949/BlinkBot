@@ -1,14 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../supabaseClient";
 import { useAuth } from "../context/AuthContext";
+import { useUIStore } from "../store/useUIStore";
 
 export function useChatSessions() {
   const { user } = useAuth();
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
 
   return useQuery({
-    queryKey: ["chat_sessions", user?.id],
+    queryKey: ["chat_sessions", user?.id, activeWorkspaceId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || !activeWorkspaceId) return [];
       const { data, error } = await supabase
         .from("chat_sessions")
         .select(`
@@ -21,6 +23,7 @@ export function useChatSessions() {
           agents(name)
         `)
         .eq("user_id", user.id)
+        .eq("workspace_id", activeWorkspaceId)
         .order("pinned", { ascending: false })
         .order("updated_at", { ascending: false });
 
@@ -65,10 +68,12 @@ export function useChatMutations() {
 
   const createSession = useMutation({
     mutationFn: async ({ agentId, title = "New chat" }) => {
+      const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
       const { data, error } = await supabase
         .from("chat_sessions")
         .insert([{
           user_id: user.id,
+          workspace_id: activeWorkspaceId,
           agent_id: agentId || null,
           title
         }])

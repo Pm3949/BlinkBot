@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+from langchain_community.tools import DuckDuckGoSearchRun
 
 from database import get_db_connection
 from schemas import ChatRequest, WidgetChatRequest
@@ -62,7 +63,7 @@ async def chat_with_agent(req: ChatRequest):
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT user_id, name, system_prompt, llm_provider, llm_model, api_key, embedding_model FROM agents WHERE id = %s",
+            "SELECT user_id, name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
             (req.agent_id,),
         )
         agent_data = cursor.fetchone()
@@ -77,6 +78,7 @@ async def chat_with_agent(req: ChatRequest):
             model,
             custom_api_key,
             embed_model,
+            web_search_enabled,
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
 
@@ -121,9 +123,18 @@ async def chat_with_agent(req: ChatRequest):
         )
         best_matches = cursor.fetchall()
 
-        context = "No specific documents found."
+        doc_context = "No specific documents found."
         if best_matches:
-            context = "\n\n---\n\n".join([match[0] for match in best_matches])
+            doc_context = "\n\n---\n\n".join([match[0] for match in best_matches])
+
+        web_context = "Web search disabled."
+        if web_search_enabled:
+            try:
+                search = DuckDuckGoSearchRun()
+                web_context = search.run(req.message)
+            except Exception as e:
+                logger.error(f"Web search failed: {e}")
+                web_context = "Web search failed or was blocked by the search engine."
 
         history_items = req.history or []
         history_text = ""
@@ -135,19 +146,36 @@ async def chat_with_agent(req: ChatRequest):
 
         memory_patch = fetch_temporary_memory_patch(cursor, req.agent_id)
 
+        if web_search_enabled:
+            grounding_rules = """
+        5. You have access to both PRIVATE DOCUMENTS CONTEXT and WEB SEARCH CONTEXT.
+        6. Answer accurately. If the contexts conflict, prioritize the Private Documents.
+        7. If you used the WEB SEARCH CONTEXT to answer any part of the question, you MUST start your entire response with the exact tag: [WEB_SOURCE]
+        8. Do not use general knowledge outside of the provided contexts.
+            """
+        else:
+            grounding_rules = """
+        5. You are a strict, professional AI assistant grounded ONLY in the provided PRIVATE DOCUMENTS CONTEXT.
+        6. For factual questions, ONLY answer using the provided CONTEXT.
+        7. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+            """
+
         prompt = f"""{system_prompt}{memory_patch}
-        You are a strict, professional AI assistant grounded ONLY in the provided documents.
+        You are a helpful assistant. Use the following context to answer the user.
 
         CRITICAL RULES:
-        1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
-        3. Format response beautifully in Markdown.
-        4. Use the PREVIOUS CHAT HISTORY to understand context.
-        5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
-        6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
+        1. Format response beautifully in Markdown.
+        2. Use the PREVIOUS CHAT HISTORY to understand context.
+        3. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
+        4. DETAIL RULE: For summaries/essays, provide highly detailed answers.{grounding_rules}
 
-        CONTEXT DOCUMENTS:
-        {context}
+        ---
+        PRIVATE DOCUMENTS CONTEXT:
+        {doc_context}
+        ---
+        WEB SEARCH CONTEXT:
+        {web_context}
+        ---
 
         PREVIOUS CHAT HISTORY:
         {history_text}

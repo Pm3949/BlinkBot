@@ -8,12 +8,14 @@ import {
   Database,
   MoreHorizontal,
   Trash2,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useAgents, useDeleteAgent } from "../hooks/useAgents";
 import { useWorkspacePermissions } from "../hooks/useSettings";
 import EmptyState from "../components/shared/EmptyState";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import AgentSettingsModal from "../components/agents/AgentSettingsModal";
 import { useUIStore } from "../store/useUIStore";
 import { toast } from "sonner";
 import {
@@ -44,6 +46,7 @@ export default function AgentsPage() {
 
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [agentToDelete, setAgentToDelete] = useState(null);
+  const [agentToEdit, setAgentToEdit] = useState(null);
   const deleteAgentMutation = useDeleteAgent(activeWorkspaceId);
   const { canManageAgents } = useWorkspacePermissions();
 
@@ -179,6 +182,16 @@ export default function AgentsPage() {
                   {openDropdownId === agent.id && (
                     <div className="absolute right-0 top-full mt-2 w-48 bg-card rounded-xl shadow-lg border border-border py-1 z-10 overflow-hidden">
                       <button
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted flex items-center gap-2"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setAgentToEdit(agent);
+                          setOpenDropdownId(null);
+                        }}
+                      >
+                        <Settings size={16} /> Agent Settings
+                      </button>
+                      <button
                         className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-500/10 flex items-center gap-2"
                         onClick={(e) => {
                           e.preventDefault();
@@ -279,6 +292,10 @@ export default function AgentsPage() {
           </motion.div>
         ))}
       </div>
+      )}
+
+      {agentToEdit && (
+        <AgentSettingsModal agent={agentToEdit} onClose={() => setAgentToEdit(null)} />
       )}
 
       <Dialog open={!!agentToDelete} onOpenChange={() => setAgentToDelete(null)}>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from './supabaseClient';
-import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity } from 'lucide-react';
+import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -19,6 +19,12 @@ async function fetchAdminStats(user) {
 async function fetchAdminUsers(user) {
   const res = await fetch(`${API_URL}/admin/users?user_id=${user.id}`);
   if (!res.ok) throw new Error("Failed to load admin users");
+  return res.json();
+}
+
+async function fetchAdminWorkspaces(user) {
+  const res = await fetch(`${API_URL}/admin/workspaces?user_id=${user.id}`);
+  if (!res.ok) throw new Error("Failed to load admin workspaces");
   return res.json();
 }
 
@@ -43,18 +49,61 @@ export default function App() {
     enabled: !!currentUser,
   });
 
+  const { data: workspacesData, isLoading: workspacesLoading } = useQuery({
+    queryKey: ['adminWorkspaces'],
+    queryFn: () => fetchAdminWorkspaces(currentUser),
+    enabled: !!currentUser,
+  });
+
+  const [activeTab, setActiveTab] = useState('users');
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [actionPassword, setActionPassword] = useState("");
+  const [pendingAction, setPendingAction] = useState(null);
+
+  const executePendingAction = (e) => {
+    e.preventDefault();
+    if (pendingAction && actionPassword) {
+      pendingAction(actionPassword);
+      setPasswordModalOpen(false);
+      setActionPassword("");
+      setPendingAction(null);
+    }
+  };
+
+  const requirePassword = (actionFn) => {
+    setPendingAction(() => actionFn);
+    setPasswordModalOpen(true);
+  };
+
   const updateSubMutation = useMutation({
-    mutationFn: async ({ targetUserId, newPlan }) => {
+    mutationFn: async ({ targetUserId, newPlan, password }) => {
       const res = await fetch(`${API_URL}/admin/users/${targetUserId}/subscription`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan_tier: newPlan, admin_user_id: currentUser.id })
+        body: JSON.stringify({ plan_tier: newPlan, admin_user_id: currentUser.id, admin_action_password: password })
       });
       if (!res.ok) throw new Error("Failed to update subscription");
       return res.json();
     },
     onSuccess: () => {
       toast.success("Subscription updated successfully!");
+      queryClient.invalidateQueries({ queryKey: ['adminUsers'] });
+    },
+    onError: (err) => toast.error(err.message)
+  });
+
+  const updateSuperAdminMutation = useMutation({
+    mutationFn: async ({ targetUserId, isSuperAdmin, password }) => {
+      const res = await fetch(`${API_URL}/admin/users/${targetUserId}/super_admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_super_admin: isSuperAdmin, admin_user_id: currentUser.id, admin_action_password: password })
+      });
+      if (!res.ok) throw new Error("Failed to update super admin status");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Super Admin status updated!");
       queryClient.invalidateQueries({ queryKey: ['adminUsers'] });
     },
     onError: (err) => toast.error(err.message)
@@ -152,69 +201,190 @@ export default function App() {
           <StatCard title="DB Storage" value={stats ? `${stats.totalStorageMB} MB` : null} icon={Database} loading={statsLoading} />
         </div>
 
-        {/* User Management Table */}
-        <div className="border border-border/50 rounded-xl overflow-hidden bg-card">
-          <div className="p-6 border-b border-border/50 flex items-center justify-between">
-            <h2 className="text-xl font-bold">Platform Users</h2>
-            <span className="text-xs font-semibold px-3 py-1 bg-primary/10 text-primary rounded-full">
-              {usersData?.users?.length || 0} Registered
-            </span>
-          </div>
+        {/* Tabs */}
+        <div className="flex border-b border-border/50 mb-6">
+          <button 
+            className={`px-4 py-2 font-semibold text-sm ${activeTab === 'users' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('users')}
+          >
+            Users
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm ${activeTab === 'workspaces' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('workspaces')}
+          >
+            Workspaces
+          </button>
+        </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="text-xs uppercase text-muted-foreground bg-muted/50 border-b border-border/50">
-                <tr>
-                  <th className="px-6 py-4">User</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Joined</th>
-                  <th className="px-6 py-4">Subscription Plan</th>
-                  <th className="px-6 py-4">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usersLoading && (
-                  <tr><td colSpan={5} className="p-6"><LoadingSkeleton className="h-12 w-full" /></td></tr>
-                )}
-                {usersData?.users?.map((u) => (
-                  <tr key={u.id} className="border-b border-border/50 hover:bg-muted/20">
-                    <td className="px-6 py-4 font-medium">
-                      {u.email}
-                      {u.is_super_admin && <span className="ml-2 text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded uppercase font-bold">Admin</span>}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="bg-green-500/10 text-green-500 px-2 py-1 rounded text-xs font-semibold">Active</span>
-                    </td>
-                    <td className="px-6 py-4 text-muted-foreground">
-                      {new Date(u.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.plan_tier === 'Enterprise' ? 'bg-purple-500/20 text-purple-500' :
-                          u.plan_tier === 'Pro' ? 'bg-blue-500/20 text-blue-500' :
-                            'bg-muted text-muted-foreground'
-                        }`}>
-                        {u.plan_tier}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <select
-                        className="bg-muted border border-border text-xs rounded px-2 py-1 disabled:opacity-50"
-                        value={u.plan_tier}
-                        disabled={updateSubMutation.isPending}
-                        onChange={(e) => updateSubMutation.mutate({ targetUserId: u.id, newPlan: e.target.value })}
-                      >
-                        <option value="Starter">Starter</option>
-                        <option value="Pro">Pro</option>
-                        <option value="Enterprise">Enterprise</option>
-                      </select>
-                    </td>
+        {/* Content based on tab */}
+        {activeTab === 'users' && (
+          <div className="border border-border/50 rounded-xl overflow-hidden bg-card">
+            <div className="p-6 border-b border-border/50 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Platform Users</h2>
+              <span className="text-xs font-semibold px-3 py-1 bg-primary/10 text-primary rounded-full">
+                {usersData?.users?.length || 0} Registered
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs uppercase text-muted-foreground bg-muted/50 border-b border-border/50">
+                  <tr>
+                    <th className="px-6 py-4">User</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Joined</th>
+                    <th className="px-6 py-4">Subscription Plan</th>
+                    <th className="px-6 py-4">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {usersLoading && (
+                    <tr><td colSpan={5} className="p-6"><LoadingSkeleton className="h-12 w-full" /></td></tr>
+                  )}
+                  {usersData?.users?.map((u) => (
+                    <tr key={u.id} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="px-6 py-4 font-medium">
+                        {u.email}
+                        {u.is_super_admin && <span className="ml-2 text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded uppercase font-bold">Admin</span>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="bg-green-500/10 text-green-500 px-2 py-1 rounded text-xs font-semibold">Active</span>
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {new Date(u.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.plan_tier === 'Enterprise' ? 'bg-purple-500/20 text-purple-500' :
+                            u.plan_tier === 'Pro' ? 'bg-blue-500/20 text-blue-500' :
+                              'bg-muted text-muted-foreground'
+                          }`}>
+                          {u.plan_tier}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 flex items-center gap-2">
+                        <select
+                          className="bg-muted border border-border text-xs rounded px-2 py-1 disabled:opacity-50"
+                          value={u.plan_tier}
+                          disabled={updateSubMutation.isPending}
+                          onChange={(e) => requirePassword((pwd) => updateSubMutation.mutate({ targetUserId: u.id, newPlan: e.target.value, password: pwd }))}
+                        >
+                          <option value="Starter">Starter</option>
+                          <option value="Pro">Pro</option>
+                          <option value="Enterprise">Enterprise</option>
+                        </select>
+                        <button
+                          disabled={updateSuperAdminMutation.isPending || u.id === currentUser.id}
+                          onClick={() => requirePassword((pwd) => updateSuperAdminMutation.mutate({ targetUserId: u.id, isSuperAdmin: !u.is_super_admin, password: pwd }))}
+                          className="px-3 py-1 bg-muted hover:bg-muted/80 text-xs font-semibold rounded border border-border disabled:opacity-50"
+                        >
+                          {u.is_super_admin ? 'Revoke Admin' : 'Make Admin'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'workspaces' && (
+          <div className="border border-border/50 rounded-xl overflow-hidden bg-card">
+            <div className="p-6 border-b border-border/50 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Workspaces</h2>
+              <span className="text-xs font-semibold px-3 py-1 bg-primary/10 text-primary rounded-full">
+                {workspacesData?.workspaces?.length || 0} Total
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs uppercase text-muted-foreground bg-muted/50 border-b border-border/50">
+                  <tr>
+                    <th className="px-6 py-4">Name</th>
+                    <th className="px-6 py-4">Owner</th>
+                    <th className="px-6 py-4">Members</th>
+                    <th className="px-6 py-4">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workspacesLoading && (
+                    <tr><td colSpan={4} className="p-6"><LoadingSkeleton className="h-12 w-full" /></td></tr>
+                  )}
+                  {workspacesData?.workspaces?.map((w) => (
+                    <tr key={w.id} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="px-6 py-4 font-medium flex items-center gap-2">
+                        <Briefcase size={14} className="text-muted-foreground" />
+                        {w.name}
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {w.owner_email || 'Unknown'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-2 py-1 bg-muted rounded text-xs font-semibold">
+                          {w.member_count}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {new Date(w.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Password Modal */}
+      {passwordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border/50 p-6 rounded-xl w-full max-w-sm shadow-2xl relative">
+            <button 
+              onClick={() => { setPasswordModalOpen(false); setActionPassword(""); setPendingAction(null); }}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+            >
+              <X size={20} />
+            </button>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
+                <Lock size={24} />
+              </div>
+              <h3 className="text-lg font-bold">Action Required</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Please enter your super admin action password to confirm this sensitive operation.</p>
+            <form onSubmit={executePendingAction}>
+              <input
+                type="password"
+                required
+                autoFocus
+                placeholder="Enter Action Password"
+                className="w-full bg-muted border border-border rounded-lg px-4 py-2 mb-4"
+                value={actionPassword}
+                onChange={(e) => setActionPassword(e.target.value)}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setPasswordModalOpen(false); setActionPassword(""); setPendingAction(null); }}
+                  className="px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-medium"
+                >
+                  Confirm Action
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

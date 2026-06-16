@@ -3,7 +3,7 @@ import { useFeedback } from "../../hooks/useFeedback";
 import { CheckCircle, XCircle } from "lucide-react";
 import { Button } from "../ui/button";
 
-export default function VerificationBanner() {
+export default function VerificationBanner({ onRetry }) {
   const { pendingVerificationsQuery, verifyMutation } = useFeedback();
   const { data: tickets = [] } = pendingVerificationsQuery;
   const [unsatisfiedTicketId, setUnsatisfiedTicketId] = useState(null);
@@ -47,6 +47,9 @@ export default function VerificationBanner() {
               
               {expandedTicketId === ticket.id && (
                 <div className="mt-3 text-sm bg-background/50 p-3.5 rounded-xl border border-border/50 text-muted-foreground">
+                  {ticket.user_message && (
+                    <div className="mb-2"><strong className="text-foreground">You Asked:</strong> {ticket.user_message}</div>
+                  )}
                   <div><strong className="text-foreground">AI Said:</strong> {ticket.message_content}</div>
                   {ticket.comment_text && (
                     <div className="mt-2 text-amber-600 dark:text-amber-500">
@@ -78,7 +81,16 @@ export default function VerificationBanner() {
           </div>
           
           {unsatisfiedTicketId !== ticket.id && (
-            <div className="flex gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0">
+            <div className="flex gap-2 shrink-0 w-full md:w-auto mt-2 md:mt-0 flex-wrap justify-end">
+              {ticket.user_message && onRetry && (
+                <Button 
+                  onClick={() => onRetry(ticket.user_message)}
+                  variant="secondary"
+                  className="flex-1 md:flex-none font-semibold shadow-sm bg-secondary text-secondary-foreground"
+                >
+                  Run Test Again
+                </Button>
+              )}
               <Button 
                 onClick={() => handleSatisfied(ticket.id)} 
                 disabled={verifyMutation.isPending}

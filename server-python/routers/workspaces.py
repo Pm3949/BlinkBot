@@ -176,3 +176,134 @@ async def get_user_workspaces(user_id: str):
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+
+@router.get("/api/workspaces/{workspace_id}/members")
+async def get_workspace_members(workspace_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT id, user_id, email, name, role, permissions, created_at
+            FROM workspace_members
+            WHERE workspace_id = %s
+            ORDER BY created_at ASC
+            """,
+            (workspace_id,)
+        )
+        rows = cursor.fetchall()
+        
+        members = []
+        for row in rows:
+            members.append({
+                "id": row[0],
+                "user_id": row[1],
+                "email": row[2],
+                "name": row[3],
+                "role": row[4],
+                "permissions": row[5],
+                "joined_at": row[6].isoformat() if row[6] else None
+            })
+            
+        return members
+    except Exception as e:
+        logger.error(f"Error fetching workspace members: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch workspace members")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+import json
+
+class UpdateRoleRequest(BaseModel):
+    role: str
+
+@router.put("/api/workspaces/members/{member_id}/role")
+async def update_member_role(member_id: str, payload: UpdateRoleRequest):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE workspace_members SET role = %s WHERE id = %s RETURNING id;",
+            (payload.role, member_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        conn.commit()
+        return {"message": "Role updated successfully"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error updating member role: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update role")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+class UpdatePermissionsRequest(BaseModel):
+    permissions: dict
+
+@router.put("/api/workspaces/members/{member_id}/permissions")
+async def update_member_permissions(member_id: str, payload: UpdatePermissionsRequest):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE workspace_members SET permissions = %s::jsonb WHERE id = %s RETURNING id;",
+            (json.dumps(payload.permissions), member_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        conn.commit()
+        return {"message": "Permissions updated successfully"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error updating permissions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update permissions")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@router.delete("/api/workspaces/members/{member_id}")
+async def remove_member(member_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "DELETE FROM workspace_members WHERE id = %s RETURNING id;",
+            (member_id,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        conn.commit()
+        return {"message": "Member removed successfully"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error removing member: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove member")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()

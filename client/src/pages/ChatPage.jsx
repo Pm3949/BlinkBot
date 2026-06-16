@@ -153,7 +153,7 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
-          <VerificationBanner />
+          <VerificationBanner onRetry={handleSend} />
           <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
 

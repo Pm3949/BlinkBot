@@ -5,6 +5,7 @@ import {
 import {
   useAuth,
 } from "./context/AuthContext";
+import PageLoader from "./components/ui/PageLoader";
 
 export default function PublicRoute({
   children,
@@ -15,7 +16,7 @@ export default function PublicRoute({
   } = useAuth();
 
   if (loading) {
-    return null;
+    return <PageLoader text="Loading RAGMate..." />;
   }
 
   if (user) {

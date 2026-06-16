@@ -10,7 +10,7 @@ router = APIRouter(tags=["feedback"])
 
 class FeedbackCreate(BaseModel):
     message_id: str
-    agent_id: str
+    agent_id: Optional[str] = None
     workspace_id: str
     vote_type: str
     category: Optional[str] = None
@@ -28,7 +28,7 @@ async def fix_db_constraint():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("ALTER TABLE message_feedback DROP CONSTRAINT IF EXISTS message_feedback_status_check;")
-        cursor.execute("ALTER TABLE message_feedback ADD CONSTRAINT message_feedback_status_check CHECK (status IN ('open', 'resolved', 'pending_verification'));")
+        cursor.execute("ALTER TABLE message_feedback ADD CONSTRAINT message_feedback_status_check CHECK (status IN ('open', 'resolved', 'pending_verification', 'closed'));")
         conn.commit()
         return {"message": "Database constraint updated successfully! You can now resolve tickets."}
     finally:
@@ -61,6 +61,20 @@ async def submit_feedback(payload: FeedbackCreate):
             )
         )
         feedback_id = cursor.fetchone()[0]
+        
+        # Insert Notification
+        cursor.execute(
+            """
+            INSERT INTO notifications (workspace_id, title, message, type)
+            VALUES (%s, %s, %s, 'feedback_new');
+            """,
+            (
+                payload.workspace_id,
+                "New Feedback",
+                f"A user flagged a response from an agent."
+            )
+        )
+        
         conn.commit()
         
         return {"id": feedback_id, "message": "Feedback submitted successfully"}
@@ -175,6 +189,20 @@ async def resolve_feedback(feedback_id: str, payload: FeedbackResolve):
             """,
             (payload.resolved_by, feedback_id)
         )
+        
+        # Insert Notification
+        cursor.execute(
+            """
+            INSERT INTO notifications (workspace_id, title, message, type)
+            VALUES (%s, %s, %s, 'feedback_resolved');
+            """,
+            (
+                workspace_id,
+                "Feedback Resolved",
+                "A teammate has resolved a feedback ticket."
+            )
+        )
+        
         conn.commit()
         
         return {"message": "Feedback resolved successfully"}
@@ -202,7 +230,16 @@ async def get_pending_verification(workspace_id: str = Query(...), user_id: str 
             SELECT f.id, f.message_id, f.agent_id, f.category, 
                    f.comment_text, f.created_at,
                    m.content as message_content,
-                   a.name as agent_name
+                   a.name as agent_name,
+                   (
+                       SELECT content 
+                       FROM chat_messages um 
+                       WHERE um.session_id = m.session_id 
+                         AND um.role = 'user' 
+                         AND um.created_at < m.created_at 
+                       ORDER BY created_at DESC 
+                       LIMIT 1
+                   ) as user_message
             FROM message_feedback f
             LEFT JOIN chat_messages m ON f.message_id = m.id
             LEFT JOIN agents a ON f.agent_id = a.id
@@ -223,7 +260,8 @@ async def get_pending_verification(workspace_id: str = Query(...), user_id: str 
                 "comment_text": row[4],
                 "created_at": row[5].isoformat() if row[5] else None,
                 "message_content": row[6],
-                "agent_name": row[7]
+                "agent_name": row[7],
+                "user_message": row[8]
             })
             
         return tickets
@@ -256,7 +294,7 @@ async def verify_feedback(feedback_id: str, payload: FeedbackVerify):
             raise HTTPException(status_code=403, detail="Not authorized to verify this feedback")
             
         if payload.is_satisfied:
-            cursor.execute("DELETE FROM message_feedback WHERE id = %s", (feedback_id,))
+            cursor.execute("UPDATE message_feedback SET status = 'closed' WHERE id = %s", (feedback_id,))
         else:
             new_comment = feedback_row[1] or ""
             if payload.comment:

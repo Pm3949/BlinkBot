@@ -11,7 +11,9 @@ import {
   Check,
   Loader2,
   ChevronDown,
+  Globe,
 } from "lucide-react";
+import { Switch } from "../ui/switch";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { useCreateAgent } from "../../hooks/useAgents";
@@ -25,7 +27,7 @@ import {
   SelectValue,
 } from "../ui/select";
 
-const providers = [
+export const providers = [
   {
     id: "groq",
     name: "Groq",
@@ -43,7 +45,7 @@ const providers = [
   },
 ];
 
-const AVAILABLE_MODELS = {
+export const AVAILABLE_MODELS = {
   groq: [
     {
       id: "llama-3.1-8b-instant",
@@ -84,7 +86,7 @@ const AVAILABLE_MODELS = {
   ],
 };
 
-const EMBEDDING_MODELS = [
+export const EMBEDDING_MODELS = [
   {
     id: "all-MiniLM-L6-v2",
     name: "Fast & Light (all-MiniLM-L6-v2)",
@@ -97,7 +99,7 @@ const EMBEDDING_MODELS = [
   },
 ];
 
-const CHUNKING_STRATEGIES = [
+export const CHUNKING_STRATEGIES = [
   {
     id: "naive",
     name: "Sliding Window (Fixed Characters)",
@@ -112,7 +114,7 @@ const CHUNKING_STRATEGIES = [
   },
 ];
 
-const LANGUAGES = [
+export const LANGUAGES = [
   { id: "en", name: "English" },
   { id: "es", name: "Spanish" },
   { id: "fr", name: "French" },
@@ -150,6 +152,7 @@ export default function CreateAgentWizard({ onClose }) {
     system_prompt: "",
     api_key: "",
     language: "en",
+    web_search_enabled: false,
   });
 
   const currentModels = useMemo(
@@ -219,6 +222,7 @@ export default function CreateAgentWizard({ onClose }) {
         : null,
       language: formData.language,
       workspace_id: activeWorkspaceId,
+      web_search_enabled: formData.web_search_enabled,
     };
 
     try {
@@ -486,6 +490,22 @@ export default function CreateAgentWizard({ onClose }) {
                   ))}
                 </SelectContent>
               </Select>
+
+              <div className="mt-8 p-5 rounded-3xl border border-border bg-background flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <Globe size={18} className="text-primary" />
+                    Web Search Fallback
+                  </h4>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Allow the agent to search the internet if the answer isn't in its documents.
+                  </p>
+                </div>
+                <Switch 
+                  checked={formData.web_search_enabled}
+                  onCheckedChange={(checked) => updateField("web_search_enabled", checked)}
+                />
+              </div>
             </div>
           )}
 

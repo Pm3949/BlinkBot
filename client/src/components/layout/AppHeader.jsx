@@ -1,6 +1,5 @@
 import {
   Search,
-  Bell,
   Moon,
   Sun,
   Command,
@@ -12,6 +11,7 @@ import { toast } from "sonner";
 import { useUIStore } from "../../store/useUIStore";
 import { useAuth } from "../../context/AuthContext";
 import { signOut } from "../../services/authService";
+import NotificationBell from "./NotificationBell";
 
 export default function AppHeader({
   onMenuClick,
@@ -162,38 +162,7 @@ export default function AppHeader({
           </button>
 
           {/* Notifications */}
-
-          <button
-            type="button"
-            className="
-        relative
-        h-11
-        w-11
-        rounded-xl
-        border
-        border-border
-        text-muted-foreground
-        flex
-        items-center
-        justify-center
-        hover:bg-muted
-        hover:text-foreground
-      "
-          >
-            <Bell size={18} />
-
-            <span
-              className="
-          absolute
-          top-2
-          right-2
-          h-2
-          w-2
-          rounded-full
-          bg-red-500
-        "
-            />
-          </button>
+          <NotificationBell />
 
           {/* Command Button */}
 

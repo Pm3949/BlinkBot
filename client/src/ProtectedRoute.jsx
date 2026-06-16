@@ -5,7 +5,7 @@ import {
 import {
   useAuth,
 } from "./context/AuthContext";
-import LoadingSkeleton from "./components/shared/LoadingSkeleton";
+import PageLoader from "./components/ui/PageLoader";
 
 export default function ProtectedRoute({
   children,
@@ -16,23 +16,7 @@ export default function ProtectedRoute({
   } = useAuth();
 
   if (loading) {
-    return (
-      <div
-        className="
-        h-screen
-        flex
-        items-center
-        justify-center
-      "
-      >
-        <div className="w-full max-w-md px-6">
-          <LoadingSkeleton
-            count={2}
-            className="h-24"
-          />
-        </div>
-      </div>
-    );
+    return <PageLoader text="Authenticating..." />;
   }
 
   if (!user) {

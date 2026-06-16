@@ -19,11 +19,13 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import LoadingSkeleton from "../shared/LoadingSkeleton";
+import { useUserWorkspaces } from "../../hooks/useSettings";
+import { useUIStore } from "../../store/useUIStore";
 
 export default function TeamWorkspaceDashboard() {
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("Viewer");
+  const [inviteRole, setInviteRole] = useState("Editor");
   const [loadingToggles, setLoadingToggles] = useState({});
 
   const { user: currentUser } = useAuth();
@@ -33,10 +35,14 @@ export default function TeamWorkspaceDashboard() {
   const updatePermissionsMutation = useUpdateMemberPermissions();
   const removeMutation = useRemoveMember();
 
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const { data: workspaces = [] } = useUserWorkspaces();
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+
   // Derive current user's capabilities from their own member row
   const currentMember = members.find((m) => m.user_id === currentUser?.id);
-  const isCurrentUserOwner = currentMember?.isOwner ?? false;
-  const isCurrentUserAdmin = isCurrentUserOwner || currentMember?.role === "Admin";
+  const isCurrentUserOwner = activeWorkspace?.owner_id === currentUser?.id;
+  const isCurrentUserAdmin = isCurrentUserOwner || currentMember?.role?.toLowerCase() === "admin";
 
   const getInitials = (name) => {
     if (!name) return "??";
@@ -87,10 +93,10 @@ export default function TeamWorkspaceDashboard() {
     if (!inviteEmail) return;
     try {
       await inviteMutation.mutateAsync({ email: inviteEmail, role: inviteRole });
+      toast.success("Invitation sent successfully!");
       setIsInviteOpen(false);
       setInviteEmail("");
-      setInviteRole("Viewer");
-      toast.success("Invitation sent");
+      setInviteRole("Editor");
     } catch (e) {
       toast.error(e.message || "Failed to send invitation");
     }
@@ -142,7 +148,6 @@ export default function TeamWorkspaceDashboard() {
                   <SelectContent>
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="Editor">Editor</SelectItem>
-                    <SelectItem value="Viewer">Viewer</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -232,7 +237,7 @@ export default function TeamWorkspaceDashboard() {
                   {/* Role column */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="w-36">
-                      {member.isOwner ? (
+                      {activeWorkspace?.owner_id === member.user_id ? (
                         // Owner row — always fixed
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-400/10 text-amber-500 border border-amber-400/20">
                           <Crown className="w-3 h-3" />
@@ -242,8 +247,8 @@ export default function TeamWorkspaceDashboard() {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
                           Pending
                         </span>
-                      ) : isCurrentUserOwner ? (
-                        // Only the Owner can change roles
+                      ) : isCurrentUserAdmin ? (
+                        // Admin/Owner can change roles
                         <Select
                           value={member.role}
                           onValueChange={(val) => handleRoleChange(member.id, val)}
@@ -254,11 +259,10 @@ export default function TeamWorkspaceDashboard() {
                           <SelectContent>
                             <SelectItem value="Admin">Admin</SelectItem>
                             <SelectItem value="Editor">Editor</SelectItem>
-                            <SelectItem value="Viewer">Viewer</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
-                        // Admin / others — role is read-only for them
+                        // Others — role is read-only for them
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
                           member.role === "Admin"
                             ? "bg-primary/10 text-primary border-primary/20"
@@ -332,19 +336,18 @@ export default function TeamWorkspaceDashboard() {
 
                   {/* Actions column */}
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {member.isOwner ? (
-                      // Owner cannot be removed
-                      <span className="text-xs text-muted-foreground/50 select-none">—</span>
-                    ) : (
+                    {activeWorkspace?.owner_id === member.user_id ? (
+                      <span className="text-muted-foreground text-xs font-semibold mr-4">Owner (Cannot Remove)</span>
+                    ) : isCurrentUserAdmin ? (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRemove(member.id)}
+                        onClick={() => handleRemoveMember(member.id)}
                         className="text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
                       >
                         Remove
                       </Button>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}

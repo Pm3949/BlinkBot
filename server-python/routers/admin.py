@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from database import get_db_connection
@@ -14,6 +15,13 @@ def check_super_admin(user_id: str, cursor):
     row = cursor.fetchone()
     if not row or not row[0]:
         raise HTTPException(status_code=403, detail="Super Admin access required")
+
+def check_action_password(password: str):
+    expected_password = os.getenv("ADMIN_ACTION_PASSWORD")
+    if not expected_password:
+        raise HTTPException(status_code=500, detail="Server configuration error: ADMIN_ACTION_PASSWORD not set")
+    if password != expected_password:
+        raise HTTPException(status_code=403, detail="Invalid action password")
 
 
 @router.get("/admin/stats")
@@ -100,6 +108,7 @@ async def get_admin_users(user_id: str):
 class UpdateSubscriptionRequest(BaseModel):
     plan_tier: str
     admin_user_id: str
+    admin_action_password: str
 
 
 @router.post("/admin/users/{target_user_id}/subscription")
@@ -107,6 +116,7 @@ async def update_user_subscription(target_user_id: str, req: UpdateSubscriptionR
     conn = None
     cursor = None
     try:
+        check_action_password(req.admin_action_password)
         conn = get_db_connection()
         cursor = conn.cursor()
         check_super_admin(req.admin_user_id, cursor)
@@ -125,7 +135,90 @@ async def update_user_subscription(target_user_id: str, req: UpdateSubscriptionR
     except Exception as e:
         if conn:
             conn.rollback()
-        logger.exception("Failed to update user subscription")
+        if not isinstance(e, HTTPException):
+            logger.exception("Failed to update user subscription")
+            raise HTTPException(status_code=500, detail=str(e))
+        raise e
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+class UpdateSuperAdminRequest(BaseModel):
+    is_super_admin: bool
+    admin_user_id: str
+    admin_action_password: str
+
+@router.post("/admin/users/{target_user_id}/super_admin")
+async def update_user_super_admin(target_user_id: str, req: UpdateSuperAdminRequest):
+    conn = None
+    cursor = None
+    try:
+        check_action_password(req.admin_action_password)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        check_super_admin(req.admin_user_id, cursor)
+
+        cursor.execute(
+            """
+            INSERT INTO user_subscriptions (user_id, is_super_admin)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) 
+            DO UPDATE SET is_super_admin = EXCLUDED.is_super_admin, updated_at = now()
+        """,
+            (target_user_id, req.is_super_admin),
+        )
+        conn.commit()
+        return {"message": "Super Admin status updated successfully"}
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        if not isinstance(e, HTTPException):
+            logger.exception("Failed to update super admin status")
+            raise HTTPException(status_code=500, detail=str(e))
+        raise e
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+@router.get("/admin/workspaces")
+async def get_admin_workspaces(user_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        check_super_admin(user_id, cursor)
+
+        cursor.execute(
+            """
+            SELECT 
+                w.id, w.name, w.created_at, w.owner_id,
+                u.email as owner_email,
+                (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) as member_count
+            FROM workspaces w
+            LEFT JOIN auth.users u ON w.owner_id = u.id
+            ORDER BY w.created_at DESC
+        """
+        )
+        workspaces = []
+        for r in cursor.fetchall():
+            workspaces.append(
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "created_at": r[2],
+                    "owner_id": r[3],
+                    "owner_email": r[4],
+                    "member_count": r[5],
+                }
+            )
+        return {"workspaces": workspaces}
+    except Exception as e:
+        logger.exception("Failed to fetch admin workspaces")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if cursor:

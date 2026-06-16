@@ -20,6 +20,7 @@ class AgentCreate(BaseModel):
     language: Optional[str] = "en"
     user_id: str
     workspace_id: str
+    web_search_enabled: bool = False
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
@@ -31,6 +32,7 @@ class AgentUpdate(BaseModel):
     system_prompt: Optional[str] = None
     api_key: Optional[str] = None
     language: Optional[str] = None
+    web_search_enabled: Optional[bool] = None
 
 @router.get("/api/agents")
 async def get_agents(workspace_id: str):
@@ -44,7 +46,8 @@ async def get_agents(workspace_id: str):
             """
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
-                   api_key, language, user_id, workspace_id, created_at 
+                   api_key, language, user_id, workspace_id, created_at,
+                   web_search_enabled
             FROM agents 
             WHERE workspace_id = %s 
             ORDER BY created_at DESC
@@ -68,7 +71,8 @@ async def get_agents(workspace_id: str):
                 "language": row[9],
                 "user_id": row[10],
                 "workspace_id": row[11],
-                "created_at": row[12].isoformat() if row[12] else None
+                "created_at": row[12].isoformat() if row[12] else None,
+                "web_search_enabled": row[13]
             })
             
         return agents
@@ -91,15 +95,15 @@ async def create_agent(agent: AgentCreate):
             """
             INSERT INTO agents (name, description, llm_provider, llm_model, 
                               embedding_model, chunk_strategy, system_prompt, 
-                              api_key, language, user_id, workspace_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              api_key, language, user_id, workspace_id, web_search_enabled)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, name, description, llm_provider, llm_model, 
                       embedding_model, chunk_strategy, system_prompt, 
-                      api_key, language, user_id, workspace_id, created_at;
+                      api_key, language, user_id, workspace_id, created_at, web_search_enabled;
             """,
             (agent.name, agent.description, agent.llm_provider, agent.llm_model,
              agent.embedding_model, agent.chunk_strategy, agent.system_prompt,
-             agent.api_key, agent.language, agent.user_id, agent.workspace_id)
+             agent.api_key, agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled)
         )
         row = cursor.fetchone()
         conn.commit()
@@ -117,7 +121,8 @@ async def create_agent(agent: AgentCreate):
             "language": row[9],
             "user_id": row[10],
             "workspace_id": row[11],
-            "created_at": row[12].isoformat() if row[12] else None
+            "created_at": row[12].isoformat() if row[12] else None,
+            "web_search_enabled": row[13]
         }
     except Exception as e:
         if conn: conn.rollback()
@@ -143,7 +148,7 @@ async def update_agent(agent_id: str, payload: dict):
         values = []
         for key, value in payload.items():
             # Allow only valid columns to be updated
-            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "api_key", "language"]:
+            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "api_key", "language", "web_search_enabled"]:
                 set_clauses.append(f"{key} = %s")
                 values.append(value)
                 
@@ -152,12 +157,25 @@ async def update_agent(agent_id: str, payload: dict):
             
         values.append(agent_id)
         
-        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, api_key, language, user_id, workspace_id, created_at;"
+        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, api_key, language, user_id, workspace_id, created_at, web_search_enabled;"
         
         cursor.execute(query, tuple(values))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Agent not found")
+            
+        # Insert Notification
+        cursor.execute(
+            """
+            INSERT INTO notifications (workspace_id, title, message, type)
+            VALUES (%s, %s, %s, 'agent_setting_updated');
+            """,
+            (
+                row[11], # workspace_id
+                "Agent Settings Updated",
+                f"Settings for agent '{row[1]}' were updated."
+            )
+        )
             
         conn.commit()
         
@@ -174,7 +192,8 @@ async def update_agent(agent_id: str, payload: dict):
             "language": row[9],
             "user_id": row[10],
             "workspace_id": row[11],
-            "created_at": row[12].isoformat() if row[12] else None
+            "created_at": row[12].isoformat() if row[12] else None,
+            "web_search_enabled": row[13]
         }
     except HTTPException:
         if conn: conn.rollback()

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, User, Copy, Share2, Volume2, Square, Clock, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Bot, User, Copy, Share2, Volume2, Square, Clock, ThumbsUp, ThumbsDown, Globe } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 export default function MessageBubble({ id, role, content, agent, chatLanguage, latency }) {
   const isUser = role === "user";
 
+  const isWebSource = content?.startsWith("[WEB_SOURCE]");
+  const displayContent = isWebSource ? content.replace("[WEB_SOURCE]", "").trim() : content;
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioRef = useState(new Audio())[0];
@@ -68,7 +70,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
     if (!content) return;
 
     // Strip markdown characters to make speech natural
-    const cleanText = content
+    const cleanText = displayContent
       .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
       .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Convert links to plain text
       .replace(/[*_~`#>-]/g, ' ') // Replace formatting characters with spaces
@@ -108,13 +110,13 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
   };
 
   const handleCopy = async () => {
-    if (!content?.trim()) {
+    if (!displayContent?.trim()) {
       toast.error("Nothing to copy yet.");
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(displayContent);
       toast.success("Copied");
     } catch {
       toast.error("Copy failed. Please try again.");
@@ -156,6 +158,12 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
       `}
       >
         <div className="prose max-w-none text-inherit dark:prose-invert whitespace-pre-wrap break-words">
+          {isWebSource && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 bg-blue-500/10 border border-blue-500/20 w-fit px-2.5 py-1 rounded-full mb-3">
+              <Globe size={12} />
+              Answered from Web
+            </div>
+          )}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -179,7 +187,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
               },
             }}
           >
-            {content}
+            {displayContent}
           </ReactMarkdown>
         </div>
         {!isUser && (
