@@ -18,42 +18,7 @@
   --color-muted-foreground: var(--muted-foreground);
 }
 
-@layer base {
-  :root {
-    --background: #f8fafc; /* Slate 50 */
-    --foreground: #09090b; /* Zinc 950 */
-    
-    --card: #ffffff;
-    --card-foreground: #09090b;
-    
-    --border: #e2e8f0; /* Slate 200 */
-    
-    /* Indigo-based Primary */
-    --primary: #4f46e5; /* Indigo 600 */
-    --primary-foreground: #ffffff;
-    --primary-hover: #4338ca; /* Indigo 700 */
-    
-    --muted: #f1f5f9; /* Slate 100 */
-    --muted-foreground: #64748b; /* Slate 500 */
-  }
-
-  .dark {
-    --background: #020817; /* Slate 950 */
-    --foreground: #f8fafc; /* Slate 50 */
-    
-    --card: #0f172a; /* Slate 900 */
-    --card-foreground: #f8fafc;
-    
-    --border: #1e293b; /* Slate 800 */
-    
-    --primary: #6366f1; /* Indigo 500 */
-    --primary-foreground: #ffffff;
-    --primary-hover: #4f46e5; /* Indigo 600 */
-    
-    --muted: #1e293b; /* Slate 800 */
-    --muted-foreground: #94a3b8; /* Slate 400 */
-  }
-}
+/* Conflicting generic theme removed to prioritize theme.css */
 
 @layer base {
   * {
