@@ -192,6 +192,7 @@ export default function ChatPage() {
                 role={message.role}
                 agent={activeAgent}
                 chatLanguage={chatLanguage}
+                latency={message.latency}
                 content={
                   message.content ||
                   (message.role === "assistant" ? "Thinking..." : "")

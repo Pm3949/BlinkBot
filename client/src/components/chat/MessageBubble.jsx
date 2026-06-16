@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, User, Copy, Share2, Bookmark, Volume2, Square } from "lucide-react";
+import { Bot, User, Copy, Share2, Bookmark, Volume2, Square, Clock } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -10,7 +10,7 @@ import { useWorkspacePermissions } from "../../hooks/useSettings";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function MessageBubble({ role, content, agent, chatLanguage }) {
+export default function MessageBubble({ role, content, agent, chatLanguage, latency }) {
   const isUser = role === "user";
   const { addNote, isSaved } = useNotes();
   const { canManageNotes } = useWorkspacePermissions();
@@ -158,58 +158,66 @@ export default function MessageBubble({ role, content, agent, chatLanguage }) {
           </ReactMarkdown>
         </div>
         {!isUser && (
-          <div
-            className="
-            flex
-            gap-2
-            mt-4
-            opacity-0
-            group-hover:opacity-100
-            transition-all
-          "
-          >
-            <button
-              onClick={handleCopy}
-              type="button"
-              className="p-2 rounded-xl hover:bg-muted"
-              title="Copy response"
+          <div className="flex items-center justify-between mt-4 gap-8">
+            <div
+              className="
+              flex
+              gap-2
+              opacity-0
+              group-hover:opacity-100
+              transition-all
+            "
             >
-              <Copy size={16} />
-            </button>
-
-            {canManageNotes && (
               <button
-                onClick={handleSave}
+                onClick={handleCopy}
                 type="button"
-                className={`p-2 rounded-xl hover:bg-muted ${
-                  saved ? "text-primary" : ""
-                }`}
-                title={saved ? "Saved to notes" : "Save response to notes"}
-                aria-pressed={saved}
+                className="p-2 rounded-xl hover:bg-muted"
+                title="Copy response"
               >
-                <Bookmark
-                  size={16}
-                  fill={saved ? "currentColor" : "none"}
-                />
+                <Copy size={16} />
               </button>
+
+              {canManageNotes && (
+                <button
+                  onClick={handleSave}
+                  type="button"
+                  className={`p-2 rounded-xl hover:bg-muted ${
+                    saved ? "text-primary" : ""
+                  }`}
+                  title={saved ? "Saved to notes" : "Save response to notes"}
+                  aria-pressed={saved}
+                >
+                  <Bookmark
+                    size={16}
+                    fill={saved ? "currentColor" : "none"}
+                  />
+                </button>
+              )}
+
+              <button
+                onClick={handleTTS}
+                type="button"
+                className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
+                title={isSpeaking ? "Stop speaking" : "Read aloud"}
+              >
+                {isSpeaking ? <Square size={16} fill="currentColor" /> : <Volume2 size={16} />}
+              </button>
+
+              <button
+                type="button"
+                className="p-2 rounded-xl hover:bg-muted"
+                title="Share response"
+              >
+                <Share2 size={16} />
+              </button>
+            </div>
+
+            {latency && (
+              <span className="text-[11px] font-mono text-muted-foreground/75 flex items-center gap-1 select-none">
+                <Clock size={12} className="text-muted-foreground/60" />
+                {latency < 1000 ? `${latency.toFixed(0)}ms` : `${(latency / 1000).toFixed(2)}s`}
+              </span>
             )}
-
-            <button
-              onClick={handleTTS}
-              type="button"
-              className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
-              title={isSpeaking ? "Stop speaking" : "Read aloud"}
-            >
-              {isSpeaking ? <Square size={16} fill="currentColor" /> : <Volume2 size={16} />}
-            </button>
-
-            <button
-              type="button"
-              className="p-2 rounded-xl hover:bg-muted"
-              title="Share response"
-            >
-              <Share2 size={16} />
-            </button>
           </div>
         )}
       </div>

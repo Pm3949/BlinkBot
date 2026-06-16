@@ -72,6 +72,7 @@ export function useChat() {
     setStreamingContent("");
 
     let finalContent = "";
+    const startTime = Date.now();
     try {
       const history = dbMessages.map(({ role, content }) => ({ role, content }));
       
@@ -90,7 +91,8 @@ export function useChat() {
       
       // Save Assistant Message to DB
       if (finalContent) {
-        await addMessage.mutateAsync({ sessionId: currentSessionId, role: "assistant", content: finalContent });
+        const latency = Date.now() - startTime;
+        await addMessage.mutateAsync({ sessionId: currentSessionId, role: "assistant", content: finalContent, latency });
       }
     } catch (error) {
       toast.error(error.message || "Unable to get a response.");

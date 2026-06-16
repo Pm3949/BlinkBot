@@ -48,7 +48,7 @@ export function useChatMessages(sessionId) {
       if (!sessionId) return [];
       const { data, error } = await supabase
         .from("chat_messages")
-        .select("id, role, content, created_at")
+        .select("id, role, content, created_at, latency")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true });
 
@@ -130,13 +130,14 @@ export function useChatMutations() {
   });
 
   const addMessage = useMutation({
-    mutationFn: async ({ sessionId, role, content }) => {
+    mutationFn: async ({ sessionId, role, content, latency }) => {
       const { data, error } = await supabase
         .from("chat_messages")
         .insert([{
           session_id: sessionId,
           role,
-          content
+          content,
+          latency: latency || null
         }])
         .select()
         .single();
