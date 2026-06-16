@@ -115,6 +115,11 @@ export default function ChatComposer({
         flex
         items-end
         gap-3
+        transition-all
+        duration-300
+        focus-within:border-primary/50
+        focus-within:ring-4
+        focus-within:ring-primary/10
       "
       >
         <textarea
@@ -130,7 +135,7 @@ export default function ChatComposer({
           flex-1
           resize-none
           border-none
-          outline-none
+          !outline-none
           bg-transparent
           text-foreground
           placeholder:text-muted-foreground
@@ -139,8 +144,9 @@ export default function ChatComposer({
           disabled:opacity-60
           transition
           focus:outline-none
-          focus:ring-2
-          focus:ring-primary/30
+          focus:!outline-none
+          focus:ring-0
+          focus:!ring-0
         "
         />
 

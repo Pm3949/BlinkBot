@@ -164,3 +164,18 @@ select:focus-visible {
 .dark *::-webkit-scrollbar-thumb {
   background: #3f3f46;
 }
+
+@keyframes message-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-message {
+  animation: message-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

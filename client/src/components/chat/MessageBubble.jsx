@@ -97,7 +97,7 @@ export default function MessageBubble({ role, content, agent, chatLanguage, late
   };
 
   return (
-    <div className={`flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`animate-message flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
         <div
           className="

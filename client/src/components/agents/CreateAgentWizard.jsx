@@ -301,7 +301,7 @@ export default function CreateAgentWizard({ onClose }) {
 
         <div className="p-8 min-h-[450px]">
           {step === 1 && (
-            <div>
+            <div className="animate-message">
               <div className="flex items-center gap-3 mb-8">
                 <Bot className="text-primary" />
                 <h3 className="text-2xl font-bold">Identity</h3>
@@ -374,7 +374,7 @@ export default function CreateAgentWizard({ onClose }) {
           )}
 
           {step === 2 && (
-            <div>
+            <div className="animate-message">
               <div className="flex items-center gap-3 mb-8">
                 <Sparkles className="text-primary" />
                 <h3 className="text-2xl font-bold">AI Model</h3>
@@ -391,6 +391,7 @@ export default function CreateAgentWizard({ onClose }) {
                     rounded-3xl
                     border
                     transition-all
+                    hover:-translate-y-1 hover:shadow-md
                     bg-background
                     ${
                       formData.provider === provider.id
@@ -415,6 +416,8 @@ export default function CreateAgentWizard({ onClose }) {
                     rounded-2xl
                     border
                     text-left
+                    transition-all
+                    hover:-translate-y-1 hover:shadow-md
                     bg-background
                     ${
                       formData.model === model.id
@@ -431,7 +434,7 @@ export default function CreateAgentWizard({ onClose }) {
           )}
 
           {step === 3 && (
-            <div>
+            <div className="animate-message">
               <div className="flex items-center gap-3 mb-8">
                 <Brain className="text-primary" />
                 <h3 className="text-2xl font-bold">Knowledge</h3>
@@ -448,6 +451,8 @@ export default function CreateAgentWizard({ onClose }) {
                     rounded-3xl
                     border
                     text-left
+                    transition-all
+                    ${!item.disabled ? "hover:-translate-y-1 hover:shadow-md" : ""}
                     bg-background
                     ${
                       item.disabled
@@ -485,7 +490,7 @@ export default function CreateAgentWizard({ onClose }) {
           )}
 
           {step === 4 && (
-            <div>
+            <div className="animate-message">
               <div className="flex items-center gap-3 mb-8">
                 <FileText className="text-primary" />
                 <h3 className="text-2xl font-bold">Instructions</h3>
