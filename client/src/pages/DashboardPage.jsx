@@ -3,7 +3,7 @@ import QuickActions from "../components/dashboard/QuickActions";
 import RecentAgents from "../components/dashboard/RecentAgents";
 import ActivityFeed from "../components/dashboard/ActivityFeed";
 import { useAuth } from "../context/AuthContext";
-import { useAgents } from "../hooks/useAgents";
+import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
 
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
@@ -20,7 +20,12 @@ export default function DashboardPage() {
   const {
     data: agents = [],
     isLoading: isLoadingAgents,
-  } = useAgents(activeWorkspaceId);
+  } = useAgents(activeWorkspaceId, true);
+  
+  const {
+    data: projects = [],
+  } = useAgentProjects(activeWorkspaceId);
+
   const totalMessages = sessions.reduce(
     (count, session) => count + (session.messages?.length || 0),
     0,
@@ -41,7 +46,7 @@ export default function DashboardPage() {
         activeAgentsCount={agents.length}
         conversationsCount={sessions.length}
         messagesCount={totalMessages}
-
+        networksCount={projects.length}
         isLoadingAgents={isLoadingAgents}
       />
 

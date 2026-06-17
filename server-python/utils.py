@@ -41,7 +41,7 @@ def background_ingestion(
         for text, vector in zip(chunks, vectors):
             cursor.execute(
                 "INSERT INTO document_embeddings (document_id, content, embedding) VALUES (%s, %s, %s::vector);",
-                (document_id, text, vector),
+                (document_id, text, str(vector)),
             )
 
         cursor.execute(

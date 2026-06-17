@@ -16,7 +16,7 @@ export default function NotificationBell() {
     // Fetch initial notifications
     const fetchNotifications = async () => {
       try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
         const res = await fetch(`${API_BASE}/api/notifications?workspace_id=${activeWorkspaceId}`);
         if (res.ok) {
           const data = await res.json();
@@ -66,7 +66,7 @@ export default function NotificationBell() {
 
   const markAsRead = async (id) => {
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
       await fetch(`${API_BASE}/api/notifications/${id}/read`, {
         method: "PUT"
       });

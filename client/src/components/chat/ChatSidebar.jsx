@@ -10,8 +10,12 @@ import {
   Pin,
 } from "lucide-react";
 
+import { useProjectSubAgents } from "../../hooks/useAgents";
+import { ChevronRight, ChevronDown, Network } from "lucide-react";
+
 export default function ChatSidebar({
-  agents = [],
+  standaloneAgents = [],
+  projects = [],
   activeAgentId,
   activeSessionId,
   sessions = [],
@@ -44,8 +48,52 @@ export default function ChatSidebar({
     setOpenMenuId(null);
   };
 
+  const ProjectFolder = ({ project }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const { data: subAgents = [], isLoading } = useProjectSubAgents(isExpanded ? project.id : null);
 
+    return (
+      <div className="mb-2">
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-between p-2 rounded-xl text-muted-foreground hover:bg-muted transition"
+        >
+          <div className="flex items-center gap-2">
+            <Network size={16} />
+            <span className="text-sm font-medium truncate">{project.name}</span>
+          </div>
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
 
+        {isExpanded && (
+          <div className="ml-4 pl-2 mt-1 border-l border-border space-y-1">
+            {isLoading ? (
+              <div className="text-xs text-muted-foreground py-2 pl-2">Loading...</div>
+            ) : subAgents.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-2 pl-2">No agents found</div>
+            ) : (
+              subAgents.map(agent => (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => onAgentSelect(agent)}
+                  className={`w-full flex items-center gap-2 p-2 rounded-xl text-sm transition ${
+                    activeAgentId === agent.id
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  <Bot size={14} />
+                  <span className="truncate">{agent.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
   return (
     <div className="w-80 border-r border-border bg-card flex flex-col">
       <div className="p-5">
@@ -75,17 +123,17 @@ export default function ChatSidebar({
           Agents
         </div>
 
-        {agents.length === 0 && (
+        {standaloneAgents.length === 0 && projects.length === 0 && (
           <div className="px-3 py-4 text-sm text-muted-foreground">
-            No agents available.
+            No agents or networks available.
           </div>
         )}
 
-        {agents.map((agent) => (
+        {standaloneAgents.map((agent) => (
           <button
             key={agent.id}
             type="button"
-            onClick={() => onAgentSelect(agent.id)}
+            onClick={() => onAgentSelect(agent)}
             className={`
             w-full
             flex
@@ -103,12 +151,23 @@ export default function ChatSidebar({
           >
             <div className="flex items-center gap-3 min-w-0">
               <Bot size={16} />
-              <span className="text-sm truncate">
+              <span className="text-sm font-medium truncate">
                 {agent.name}
               </span>
             </div>
           </button>
         ))}
+
+        {projects.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="text-xs uppercase text-muted-foreground px-3 mb-3">
+              Networks
+            </div>
+            {projects.map((project) => (
+              <ProjectFolder key={project.id} project={project} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto border-t border-border px-3 py-4">

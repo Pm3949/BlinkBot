@@ -47,7 +47,7 @@ export default function ChatComposer({
         }
 
         try {
-          const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+          const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
           const response = await fetch(`${API_URL}/stt`, {
             method: "POST",
             body: formData,

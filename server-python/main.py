@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 
 # Import routers
-from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications
+from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -24,10 +24,22 @@ except Exception as e:
     logger.warning(f"Groq client initialization failed: {e}")
     groq_client = None
 
+from dotenv import load_dotenv
+load_dotenv()
+
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+# Split by comma if multiple URLs are provided, and strip whitespace
+allow_origins = [url.strip() for url in frontend_url.split(",")] if frontend_url != "*" else ["*"]
+
+# Always allow local development URLs
+if "*" not in allow_origins:
+    allow_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=allow_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -44,6 +56,7 @@ app.include_router(chatbots.router)
 app.include_router(settings.router)
 app.include_router(feedback.router)
 app.include_router(notifications.router)
+app.include_router(meta_agent.router)
 
 class TTSRequest(BaseModel):
     text: str

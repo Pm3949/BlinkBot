@@ -7,7 +7,7 @@ import {
 import { Activity, MessageSquare, Database, Cpu, Bot } from 'lucide-react';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
 async function fetchAnalytics() {
   const { data: { user } } = await supabase.auth.getUser();

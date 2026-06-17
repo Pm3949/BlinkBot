@@ -8,7 +8,8 @@ import PermissionRoute from "../components/guards/PermissionRoute";
 
 import DashboardPage from "../pages/DashboardPage";
 import LoginPage from "../pages/LoginPage";
-import AgentsPage from "../pages/AgentsPage";
+import PlaygroundPage from "../pages/PlaygroundPage";
+import ProjectDetailsPage from "../pages/ProjectDetailsPage";
 import KnowledgeBasePage from "../pages/KnowledgeBasePage";
 import ChatPage from "../pages/ChatPage";
 import ChatbotsPage from "../pages/ChatbotsPage";
@@ -78,10 +79,18 @@ export const router = createBrowserRouter([
 
       // ── Feature-permission guarded routes ─────────────────────────
       {
-        path: "agents",
+        path: "playground",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Agents">
-            <AgentsPage />
+          <PermissionRoute permission="canManageAgents" label="Playground">
+            <PlaygroundPage />
+          </PermissionRoute>
+        ),
+      },
+      {
+        path: "playground/project/:projectId",
+        element: (
+          <PermissionRoute permission="canManageAgents" label="Agent Network">
+            <ProjectDetailsPage />
           </PermissionRoute>
         ),
       },

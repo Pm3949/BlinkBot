@@ -20,7 +20,7 @@ export default function RecentAgents({
         </h3>
 
         <Link
-          to="/agents"
+          to="/playground"
           className="text-primary hover:text-primary-hover transition-colors text-sm"
         >
           View All
@@ -45,7 +45,7 @@ export default function RecentAgents({
         {!isLoading && recentAgents.map((agent) => (
           <Link
             key={agent.id}
-            to="/agents"
+            to={agent.project_id ? `/playground/project/${agent.project_id}` : "/playground"}
             className="
             flex
             items-center

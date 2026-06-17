@@ -7,7 +7,7 @@ import MessageBubble from "../components/chat/MessageBubble";
 import ContextPanel from "../components/chat/ContextPanel";
 import { usePrimaryWorkspace } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
-import { useAgents } from "../hooks/useAgents";
+import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
 import { useDocuments } from "../hooks/useDocuments";
 import VerificationBanner from "../components/chat/VerificationBanner";
@@ -19,8 +19,10 @@ export default function ChatPage() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
-  const { data: agents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);
+  const { data: standaloneAgents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);
+  const { data: projects = [], isLoading: isLoadingProjects } = useAgentProjects(activeWorkspaceId);
   const [activeAgentId, setActiveAgentId] = useState("");
+  const [activeSubAgentDetails, setActiveSubAgentDetails] = useState(null);
   const [chatLanguage, setChatLanguage] = useState("en");
   
   // UI Toggles
@@ -43,11 +45,17 @@ export default function ChatPage() {
 
 
   const selectedAgentId =
-    activeAgentId || activeSession?.agentId || agents[0]?.id || "";
+    activeAgentId || activeSession?.agentId || standaloneAgents[0]?.id || "";
 
+  // Since we only have standaloneAgents and activeAgentId could be a sub-agent, 
+  // activeAgent needs to fetch from the server if not in standaloneAgents.
+  // Actually, we should fetch the specific agent details if it's not standalone,
+  // but for chat purposes we just need name/language. Let's pass a placeholder if not found locally.
   const activeAgent = useMemo(
-    () => agents.find((agent) => agent.id === selectedAgentId),
-    [selectedAgentId, agents],
+    () => standaloneAgents.find((agent) => agent.id === selectedAgentId) || 
+          (activeSubAgentDetails?.id === selectedAgentId ? activeSubAgentDetails : null) || 
+          { id: selectedAgentId, name: activeSession?.agentName || "Sub-Agent" },
+    [selectedAgentId, standaloneAgents, activeSession, activeSubAgentDetails],
   );
 
   useEffect(() => {
@@ -72,11 +80,13 @@ export default function ChatPage() {
     String(activeSession?.agentId || "general") === String(selectedAgentId);
   const visibleMessages = isActiveSessionForSelectedAgent ? messages : [];
 
-  const handleAgentSelect = (agentId) => {
-    setActiveAgentId(agentId);
+  const handleAgentSelect = (agent) => {
+    setActiveAgentId(agent.id);
+    setActiveSubAgentDetails(agent);
+    
     const latestAgentSession = sessions
       .filter(
-        (session) => String(session.agentId || "general") === String(agentId),
+        (session) => String(session.agentId || "general") === String(agent.id),
       )
       .sort(
         (first, second) =>
@@ -118,7 +128,8 @@ export default function ChatPage() {
     <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       {isSidebarOpen && (
         <ChatSidebar
-          agents={agents}
+          standaloneAgents={standaloneAgents}
+          projects={projects}
           activeAgentId={selectedAgentId}
           activeSessionId={isActiveSessionForSelectedAgent ? activeSessionId : null}
           sessions={selectedAgentSessions}
@@ -157,14 +168,14 @@ export default function ChatPage() {
           <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
 
-            {!isLoadingAgents && agents.length === 0 && (
+            {!isLoadingAgents && standaloneAgents.length === 0 && projects.length === 0 && (
               <div className="text-sm text-muted-foreground">
-                Create an agent before starting a chat.
+                Create an agent or network before starting a chat.
               </div>
             )}
 
             {!isLoadingAgents &&
-              agents.length > 0 &&
+              (standaloneAgents.length > 0 || projects.length > 0) &&
               visibleMessages.length === 0 && (
               <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center mt-8">
                 <h3 className="font-semibold text-foreground">

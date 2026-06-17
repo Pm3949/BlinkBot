@@ -63,7 +63,7 @@ async def chat_with_agent(req: ChatRequest):
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT user_id, name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
+            "SELECT user_id, name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id FROM agents WHERE id = %s",
             (req.agent_id,),
         )
         agent_data = cursor.fetchone()
@@ -79,8 +79,68 @@ async def chat_with_agent(req: ChatRequest):
             custom_api_key,
             embed_model,
             web_search_enabled,
+            project_id,
+            parent_agent_id
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        
+        active_agent_id = req.agent_id
+        routed_agent_name = None
+        gateway_name = agent_name
+
+        # DYNAMIC ROUTING MIDDLEWARE
+        if project_id and not parent_agent_id:
+            cursor.execute("SELECT id, name, description FROM agents WHERE project_id = %s", (project_id,))
+            sub_agents = cursor.fetchall()
+            
+            if len(sub_agents) > 1:
+                agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
+                
+                if provider == "openai":
+                    key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+                    router_llm = ChatOpenAI(model_name=model, api_key=key_to_use, temperature=0.0)
+                elif provider == "ollama":
+                    router_llm = ChatOllama(model=model, temperature=0.0)
+                else:
+                    key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+                    router_llm = ChatGroq(model_name=model, api_key=key_to_use, temperature=0.0)
+                
+                routing_prompt = f"""You are the Master Coordinator Router.
+Analyze the user's latest message and choose the best specialized sub-agent to handle it.
+
+Available Agents:
+{agent_descriptions}
+
+User's Latest Message: {req.message}
+
+Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
+                
+                try:
+                    routing_response = router_llm.invoke(routing_prompt)
+                    chosen_uuid = routing_response.content.strip()
+                    
+                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
+                    if chosen_agent and str(chosen_agent[0]) != str(req.agent_id):
+                        active_agent_id = chosen_agent[0]
+                        routed_agent_name = chosen_agent[1]
+                        
+                        # Override context with chosen sub-agent
+                        cursor.execute(
+                            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
+                            (active_agent_id,),
+                        )
+                        (
+                            agent_name,
+                            system_prompt,
+                            provider,
+                            model,
+                            custom_api_key,
+                            embed_model,
+                            web_search_enabled,
+                        ) = cursor.fetchone()
+                        embed_model = embed_model or "text-embedding-3-small"
+                except Exception as e:
+                    logger.error(f"Dynamic routing failed: {e}")
 
         # Check Message Limits
         limits = get_user_limits(user_id, cursor)
@@ -119,7 +179,7 @@ async def chat_with_agent(req: ChatRequest):
 
         cursor.execute(
             "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
-            (str(query_vector), req.agent_id),
+            (str(query_vector), active_agent_id),
         )
         best_matches = cursor.fetchall()
 
@@ -143,8 +203,7 @@ async def chat_with_agent(req: ChatRequest):
             history_text += f"{role_name}: {msg.get('content', '')}\n"
         if not history_text:
             history_text = "No previous conversation."
-
-        memory_patch = fetch_temporary_memory_patch(cursor, req.agent_id)
+        memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
         if web_search_enabled:
             grounding_rules = """
@@ -194,6 +253,8 @@ async def chat_with_agent(req: ChatRequest):
 
         async def stream_generator():
             try:
+                if routed_agent_name and routed_agent_name != gateway_name:
+                    yield f"🤖 *[Routed to: {routed_agent_name}]*\n\n"
                 for chunk in llm.stream(prompt):
                     if chunk.content:
                         yield chunk.content
@@ -404,13 +465,13 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
 class APIChatRequest(BaseModel):
     message: str
-    history: Optional[List[Dict[str, str]]] = []
+    session_id: Optional[str] = None
     language: Optional[str] = None
 
-
 @router.post("/api/v1/chat")
-async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
+async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = Header(...)):
     """Programmatic access endpoint using API Key."""
+    import uuid
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Missing x-api-key header")
 
@@ -429,76 +490,121 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
         if not chatbot_data:
             raise HTTPException(status_code=401, detail="Invalid API Key")
 
-        chatbot_id, agent_id, user_id = chatbot_data
+        chatbot_id, master_agent_id, user_id = chatbot_data
 
-        # We can reuse the logic by forwarding to the same internal function or copy-pasting for simplicity.
-        # Since it's streaming, let's reuse the internal generator from `widget_chat`.
-        # To avoid duplicating 100 lines, we'll construct a WidgetChatRequest and call widget_chat logic directly.
-        # But wait, widget_chat returns StreamingResponse. We can just call it.
-    except HTTPException:
-        if conn:
-            conn.rollback()
-        raise
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-    # We don't have request object for widget_chat, let's just duplicate the streaming logic for clarity
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Check Limits
-        limits = get_user_limits(user_id, cursor)
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(message_count), 0)
-            FROM chatbots c
-            JOIN agents a ON c.agent_id = a.id
-            WHERE a.user_id = %s
-        """,
-            (user_id,),
-        )
-        total_widget_msgs = cursor.fetchone()[0] or 0
-        if total_widget_msgs >= limits["chatbot_messages"]:
-            raise HTTPException(
-                status_code=403, detail="Monthly message limit exceeded"
+        # Handle Session
+        session_id = req.session_id
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            cursor.execute(
+                "INSERT INTO chat_sessions (id, title, agent_id) VALUES (%s, %s, %s)",
+                (session_id, req.message[:50], master_agent_id)
             )
-
+        
+        response.headers["X-Session-ID"] = session_id
+        
+        # Save User Message
+        user_msg_id = str(uuid.uuid4())
         cursor.execute(
-            "UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s",
-            (chatbot_id,),
-        )
-        cursor.execute(
-            "INSERT INTO widget_message_logs (chatbot_id) VALUES (%s)", (chatbot_id,)
+            "INSERT INTO chat_messages (id, session_id, role, content) VALUES (%s, %s, 'user', %s)",
+            (user_msg_id, session_id, req.message)
         )
         conn.commit()
 
+        # Fetch History
         cursor.execute(
-            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model FROM agents WHERE id = %s",
-            (agent_id,),
+            "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC LIMIT 10",
+            (session_id,)
+        )
+        history_rows = cursor.fetchall()
+        # Exclude the message we just inserted for memory logic
+        history_items = [{"role": row[0], "content": row[1]} for row in history_rows[:-1]]
+        
+        # Fetch Master Agent Data
+        cursor.execute(
+            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id FROM agents WHERE id = %s",
+            (master_agent_id,),
         )
         agent_data = cursor.fetchone()
-        agent_name, system_prompt, provider, model, custom_api_key, embed_model = (
-            agent_data
-        )
+        if not agent_data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        (
+            agent_name,
+            system_prompt,
+            provider,
+            model,
+            custom_api_key,
+            embed_model,
+            web_search_enabled,
+            project_id,
+            parent_agent_id
+        ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
 
-        if provider == "openai":
-            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-        elif provider == "ollama":
-            llm = ChatOllama(model=model)
-        else:
-            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-            llm = ChatGroq(model_name=model, api_key=key_to_use)
+        active_agent_id = master_agent_id
+        routed_agent_name = None
+        gateway_name = agent_name
 
+        # DYNAMIC ROUTING MIDDLEWARE
+        if project_id and not parent_agent_id:
+            cursor.execute("SELECT id, name, description FROM agents WHERE project_id = %s", (project_id,))
+            sub_agents = cursor.fetchall()
+            
+            if len(sub_agents) > 1:
+                agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
+                
+                if provider == "openai":
+                    key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+                    router_llm = ChatOpenAI(model_name=model, api_key=key_to_use, temperature=0.0)
+                elif provider == "ollama":
+                    router_llm = ChatOllama(model=model, temperature=0.0)
+                else:
+                    key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+                    router_llm = ChatGroq(model_name=model, api_key=key_to_use, temperature=0.0)
+                
+                routing_prompt = f"""You are the Master Coordinator Router.
+Analyze the user's latest message and choose the best specialized sub-agent to handle it.
+
+Available Agents:
+{agent_descriptions}
+
+User's Latest Message: {req.message}
+
+Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
+                
+                try:
+                    routing_response = router_llm.invoke(routing_prompt)
+                    chosen_uuid = routing_response.content.strip()
+                    
+                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
+                    if chosen_agent and str(chosen_agent[0]) != str(master_agent_id):
+                        active_agent_id = chosen_agent[0]
+                        routed_agent_name = chosen_agent[1]
+                        
+                        # Override context with chosen sub-agent
+                        cursor.execute(
+                            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
+                            (active_agent_id,),
+                        )
+                        (
+                            agent_name,
+                            system_prompt,
+                            provider,
+                            model,
+                            custom_api_key,
+                            embed_model,
+                            web_search_enabled,
+                        ) = cursor.fetchone()
+                        embed_model = embed_model or "text-embedding-3-small"
+                except Exception as e:
+                    logger.error(f"Dynamic routing failed: {e}")
+
+        # RAG Logic
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
         cursor.execute(
             "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
-            (str(query_vector), agent_id),
+            (str(query_vector), active_agent_id),
         )
         best_matches = cursor.fetchall()
 
@@ -506,7 +612,6 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
         if best_matches:
             context = "\n\n---\n\n".join([match[0] for match in best_matches])
 
-        history_items = req.history or []
         history_text = ""
         for msg in history_items[-6:]:
             role_name = "User" if msg.get("role") == "user" else "Assistant"
@@ -514,9 +619,27 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
         if not history_text:
             history_text = "No previous conversation."
 
-        memory_patch = fetch_temporary_memory_patch(cursor, agent_id)
+        memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
-        prompt = f"{system_prompt}{memory_patch}\n\nCONTEXT DOCUMENTS:\n{context}\n\nPREVIOUS CHAT HISTORY:\n{history_text}\n\nCURRENT USER INPUT: {req.message}"
+        prompt = f"""{system_prompt}{memory_patch}
+        You are a strict, professional AI assistant grounded ONLY in the provided documents.
+
+        CRITICAL RULES:
+        1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
+        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+        3. Format response beautifully in Markdown.
+        4. Use the PREVIOUS CHAT HISTORY to understand context.
+        5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
+        6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
+
+        CONTEXT DOCUMENTS:
+        {context}
+
+        PREVIOUS CHAT HISTORY:
+        {history_text}
+
+        CURRENT USER INPUT: {req.message}
+        """
 
         lang_map = {
             "en": "English", "es": "Spanish", "fr": "French",
@@ -527,29 +650,69 @@ async def api_v1_chat(req: APIChatRequest, x_api_key: str = Header(...)):
             lang_name = lang_map.get(req.language.lower(), req.language)
             prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
+        # Increment widget message count and log it
+        cursor.execute("UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s", (chatbot_id,))
+        cursor.execute("INSERT INTO widget_message_logs (chatbot_id) VALUES (%s)", (chatbot_id,))
+        conn.commit()
+
+        # Setup LLM
+        if provider == "openai":
+            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+            if not key_to_use:
+                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
+            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+        elif provider == "ollama":
+            llm = ChatOllama(model=model)
+        else:
+            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+            if not key_to_use:
+                raise HTTPException(status_code=400, detail="Groq API Key missing.")
+            llm = ChatGroq(model_name=model, api_key=key_to_use)
+
         async def stream_generator():
+            full_response = ""
             try:
+                if routed_agent_name and routed_agent_name != gateway_name:
+                    prefix = f"🤖 *[Routed to: {routed_agent_name}]*\n\n"
+                    full_response += prefix
+                    yield prefix
+                    
                 for chunk in llm.stream(prompt):
                     if chunk.content:
+                        full_response += chunk.content
                         yield chunk.content
+                        
+                # Save final response to DB
+                try:
+                    save_conn = get_db_connection()
+                    save_cursor = save_conn.cursor()
+                    assist_msg_id = str(uuid.uuid4())
+                    save_cursor.execute(
+                        "INSERT INTO chat_messages (id, session_id, role, content) VALUES (%s, %s, 'assistant', %s)",
+                        (assist_msg_id, session_id, full_response)
+                    )
+                    save_conn.commit()
+                    save_cursor.close()
+                    save_conn.close()
+                except Exception as db_e:
+                    logger.error(f"Failed to save assistant message: {db_e}")
+
             except Exception as exc:
-                yield f"\n\n⚠️ Error: {str(exc)}"
+                logger.exception("Streaming generation failed")
+                yield f"\n\n⚠️ Error during generation: {str(exc)}"
 
         return StreamingResponse(stream_generator(), media_type="text/plain")
-    except Exception as e:
-        if conn and not conn.closed:
-            try:
-                conn.rollback()
-            except psycopg2.InterfaceError:
-                pass
-        return StreamingResponse(
-            iter([f"Error: {str(e)}"]),
-        )
+
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as exc:
+        logger.exception("API Chat endpoint failed")
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()
 
 
 @router.delete("/agents/{agent_id}")

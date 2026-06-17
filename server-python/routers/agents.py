@@ -35,21 +35,26 @@ class AgentUpdate(BaseModel):
     web_search_enabled: Optional[bool] = None
 
 @router.get("/api/agents")
-async def get_agents(workspace_id: str):
+async def get_agents(workspace_id: str, include_gateways: bool = False):
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        if include_gateways:
+            condition = "WHERE workspace_id = %s AND (project_id IS NULL OR parent_agent_id IS NULL)"
+        else:
+            condition = "WHERE workspace_id = %s AND project_id IS NULL"
+            
         cursor.execute(
-            """
+            f"""
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled
+                   web_search_enabled, project_id
             FROM agents 
-            WHERE workspace_id = %s 
+            {condition}
             ORDER BY created_at DESC
             """,
             (workspace_id,)
@@ -72,7 +77,8 @@ async def get_agents(workspace_id: str):
                 "user_id": row[10],
                 "workspace_id": row[11],
                 "created_at": row[12].isoformat() if row[12] else None,
-                "web_search_enabled": row[13]
+                "web_search_enabled": row[13],
+                "project_id": row[14]
             })
             
         return agents
@@ -201,6 +207,245 @@ async def update_agent(agent_id: str, payload: dict):
     except Exception as e:
         if conn: conn.rollback()
         logger.error(f"Error updating agent: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@router.get("/api/agent-projects")
+async def get_agent_projects(workspace_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT id, name, description, status, created_at, blueprint_json
+            FROM agent_projects 
+            WHERE workspace_id = %s 
+            ORDER BY created_at DESC
+            """,
+            (workspace_id,)
+        )
+        rows = cursor.fetchall()
+        
+        projects = []
+        for row in rows:
+            projects.append({
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "status": row[3],
+                "created_at": row[4].isoformat() if row[4] else None,
+                "blueprint": row[5]
+            })
+            
+        return projects
+    except Exception as e:
+        logger.error(f"Error fetching agent projects: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@router.get("/api/agent-projects/{project_id}/sub-agents")
+async def get_project_sub_agents(project_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT id, name, description, llm_provider, llm_model, 
+                   embedding_model, chunk_strategy, system_prompt, 
+                   api_key, language, user_id, workspace_id, created_at,
+                   web_search_enabled, parent_agent_id
+            FROM agents 
+            WHERE project_id = %s 
+            ORDER BY created_at ASC
+            """,
+            (project_id,)
+        )
+        rows = cursor.fetchall()
+        
+        agents = []
+        for row in rows:
+            agents.append({
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "llm_provider": row[3],
+                "llm_model": row[4],
+                "embedding_model": row[5],
+                "chunk_strategy": row[6],
+                "system_prompt": row[7],
+                "api_key": row[8],
+                "language": row[9],
+                "user_id": row[10],
+                "workspace_id": row[11],
+                "created_at": row[12].isoformat() if row[12] else None,
+                "web_search_enabled": row[13],
+                "parent_agent_id": row[14]
+            })
+            
+        return agents
+    except Exception as e:
+        logger.error(f"Error fetching sub-agents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@router.delete("/api/agent-projects/{project_id}")
+async def delete_agent_project(project_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Delete all document embeddings linked to the project or its agents
+        cursor.execute("""
+            DELETE FROM document_embeddings
+            WHERE document_id IN (
+                SELECT id FROM documents WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
+                OR project_id = %s
+            )
+        """, (project_id, project_id))
+        
+        # Delete all documents linked to the project or its agents
+        cursor.execute("DELETE FROM documents WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s) OR project_id = %s", (project_id, project_id))
+        
+        # Delete all chat messages linked to the project's agents
+        cursor.execute("""
+            DELETE FROM chat_messages 
+            WHERE session_id IN (
+                SELECT id FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
+            )
+        """, (project_id,))
+        
+        # Delete all chat sessions linked to the project's agents
+        cursor.execute("DELETE FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)", (project_id,))
+        
+        # Delete all agents linked to the project
+        cursor.execute("DELETE FROM agents WHERE project_id = %s", (project_id,))
+
+        cursor.execute("DELETE FROM agent_projects WHERE id = %s", (project_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        conn.commit()
+        return {"status": "success", "message": "Project deleted successfully"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error deleting project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+class ToolUpdate(BaseModel):
+    name: str
+    config: dict
+
+@router.get("/api/agent-projects/{project_id}/tools")
+async def get_project_tools(project_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, name, config, blueprint_tool_id FROM agent_tools WHERE project_id = %s ORDER BY created_at ASC",
+            (project_id,)
+        )
+        rows = cursor.fetchall()
+        tools = []
+        for row in rows:
+            tools.append({
+                "id": row[0],
+                "name": row[1],
+                "config": row[2] if isinstance(row[2], dict) else {},
+                "blueprint_tool_id": row[3]
+            })
+        return tools
+    except Exception as e:
+        logger.error(f"Error fetching tools: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+@router.put("/api/tools/{tool_id}")
+async def update_project_tool(tool_id: str, payload: ToolUpdate):
+    import json
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "UPDATE agent_tools SET name = %s, config = %s WHERE id = %s RETURNING id;",
+            (payload.name, json.dumps(payload.config), tool_id)
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Tool not found")
+            
+        conn.commit()
+        return {"status": "success"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error updating tool: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+class ToolCreate(BaseModel):
+    name: str
+    config: dict
+
+@router.post("/api/agent-projects/{project_id}/tools")
+async def create_project_tool(project_id: str, payload: ToolCreate):
+    import json
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT workspace_id FROM agent_projects WHERE id = %s", (project_id,))
+        project_row = cursor.fetchone()
+        if not project_row:
+            raise HTTPException(status_code=404, detail="Project not found")
+            
+        workspace_id = project_row[0]
+
+        cursor.execute(
+            """
+            INSERT INTO agent_tools (project_id, workspace_id, blueprint_tool_id, name, config)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (project_id, workspace_id, "custom_tool_" + payload.name.lower().replace(" ", "_"), payload.name, json.dumps(payload.config))
+        )
+        tool_id = cursor.fetchone()[0]
+        conn.commit()
+        return {"status": "success", "id": tool_id}
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error creating tool: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if cursor: cursor.close()

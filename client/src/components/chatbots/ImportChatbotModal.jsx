@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Button } from "../ui/button";
-import { useAgents } from "../../hooks/useAgents";
+import { useAgents, useAgentProjects } from "../../hooks/useAgents";
 import { useImportChatbot } from "../../hooks/useChatbots";
 import { useUIStore } from "../../store/useUIStore";
 import { toast } from "sonner";
@@ -23,7 +23,7 @@ import LoadingSkeleton from "../shared/LoadingSkeleton";
 
 export default function ImportChatbotModal({ isOpen, onClose }) {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
-  const { data: agents = [], isLoading } = useAgents(activeWorkspaceId);
+  const { data: agents = [], isLoading } = useAgents(activeWorkspaceId, true);
   const importChatbotMutation = useImportChatbot(activeWorkspaceId);
 
   const [selectedAgentId, setSelectedAgentId] = useState("");

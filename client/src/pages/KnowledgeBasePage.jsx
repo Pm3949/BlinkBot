@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { usePrimaryWorkspace, useWorkspacePermissions } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
-import { useAgents } from "../hooks/useAgents";
+import { useAgents, useAgentProjects, useProjectSubAgents } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
@@ -135,17 +135,31 @@ export default function KnowledgeBasePage() {
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
   const {
-    data: agents = [],
+    data: standaloneAgents = [],
     isLoading: isLoadingAgents,
   } = useAgents(activeWorkspaceId);
-  const [activeAgentId, setActiveAgentId] =
-    useState("");
-  const [url, setUrl] = useState("");
-  const [searchTerm, setSearchTerm] =
-    useState("");
 
-  const selectedAgentId =
-    activeAgentId || agents[0]?.id || "";
+  const {
+    data: projects = [],
+    isLoading: isLoadingProjects,
+  } = useAgentProjects(activeWorkspaceId);
+
+  const [selectedCategory, setSelectedCategory] = useState("standalone");
+  const [activeStandaloneId, setActiveStandaloneId] = useState("");
+  const [activeSubAgentId, setActiveSubAgentId] = useState("");
+
+  const {
+    data: subAgents = [],
+    isLoading: isSubAgentsLoading,
+  } = useProjectSubAgents(selectedCategory !== "standalone" ? selectedCategory : null);
+
+  const [url, setUrl] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Determine the active agent ID based on the selected category
+  const selectedAgentId = selectedCategory === "standalone" 
+    ? (activeStandaloneId || standaloneAgents[0]?.id || "")
+    : (activeSubAgentId || subAgents[0]?.id || "");
 
   const {
     data: documents = [],
@@ -282,27 +296,77 @@ export default function KnowledgeBasePage() {
               Upload Sources
             </h3>
 
-            <label className="font-medium block mb-3">
-              Agent
-            </label>
+            <div className="mb-4 space-y-4">
+              <div>
+                <label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">
+                  Target Group
+                </label>
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(value) => {
+                    setSelectedCategory(value);
+                    if (value === "standalone") {
+                      setActiveStandaloneId(standaloneAgents[0]?.id || "");
+                    } else {
+                      setActiveSubAgentId(""); // Will default to first sub-agent once loaded
+                    }
+                  }}
+                  disabled={isLoadingAgents || isLoadingProjects}
+                >
+                  <SelectTrigger className="w-full h-12">
+                    <SelectValue placeholder="Select Group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standalone">Standalone Agents</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        Network: {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="mb-6">
-              <Select
-                value={selectedAgentId}
-                onValueChange={(value) => setActiveAgentId(value)}
-                disabled={isLoadingAgents || agents.length === 0}
-              >
-                <SelectTrigger className="w-full h-14">
-                  <SelectValue placeholder={agents.length === 0 ? "No agents available" : "Select an Agent"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div>
+                <label className="text-xs uppercase text-muted-foreground font-semibold mb-2 block">
+                  {selectedCategory === "standalone" ? "Specific Agent" : "Network Sub-Agent"}
+                </label>
+                {selectedCategory === "standalone" ? (
+                  <Select
+                    value={selectedAgentId}
+                    onValueChange={(value) => setActiveStandaloneId(value)}
+                    disabled={isLoadingAgents || standaloneAgents.length === 0}
+                  >
+                    <SelectTrigger className="w-full h-12">
+                      <SelectValue placeholder={standaloneAgents.length === 0 ? "No standalone agents" : "Select Agent"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {standaloneAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Select
+                    value={selectedAgentId}
+                    onValueChange={(value) => setActiveSubAgentId(value)}
+                    disabled={isSubAgentsLoading || subAgents.length === 0}
+                  >
+                    <SelectTrigger className="w-full h-12">
+                      <SelectValue placeholder={subAgents.length === 0 ? "No sub-agents found" : "Select Sub-Agent"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
 
             {canManageDatabase ? (

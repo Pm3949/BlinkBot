@@ -1,6 +1,6 @@
 import { supabase } from "../supabaseClient";
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
 async function getAuthenticatedUser() {
   const {
@@ -19,10 +19,11 @@ async function getAuthenticatedUser() {
   return user;
 }
 
-export async function getAgents(workspaceId) {
+export async function getAgents(workspaceId, includeGateways = false) {
   if (!workspaceId) return [];
 
-  const response = await fetch(`${API_URL}/api/agents?workspace_id=${workspaceId}`);
+  const url = `${API_URL}/api/agents?workspace_id=${workspaceId}${includeGateways ? '&include_gateways=true' : ''}`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Failed to fetch agents");
   }
@@ -97,5 +98,40 @@ export async function deleteAgent(id) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.detail || "Failed to delete agent");
+  }
+}
+
+export async function getAgentProjects(workspaceId) {
+  if (!workspaceId) return [];
+
+  const response = await fetch(`${API_URL}/api/agent-projects?workspace_id=${workspaceId}`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch agent projects");
+  }
+
+  return response.json();
+}
+
+export async function getProjectSubAgents(projectId) {
+  if (!projectId) return [];
+
+  const response = await fetch(`${API_URL}/api/agent-projects/${projectId}/sub-agents`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch sub agents");
+  }
+
+  return response.json();
+}
+
+export async function deleteAgentProject(projectId) {
+  await getAuthenticatedUser();
+
+  const response = await fetch(`${API_URL}/api/agent-projects/${projectId}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Failed to delete agent project");
   }
 }

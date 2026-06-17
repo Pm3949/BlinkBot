@@ -1,7 +1,7 @@
 import {
   Bot,
   Database,
-  MessageSquare,
+  Network,
   Brain,
 } from "lucide-react";
 
@@ -11,7 +11,7 @@ export default function KPIGrid({
   activeAgentsCount = 0,
   conversationsCount = 0,
   messagesCount = 0,
-  notesCount = 0,
+  networksCount = 0,
   isLoadingAgents = false,
 }) {
   return (
@@ -35,10 +35,10 @@ export default function KPIGrid({
       />
 
       <KPICard
-        title="Saved Notes"
-        value={notesCount.toLocaleString()}
-        change="Local workspace"
-        icon={MessageSquare}
+        title="Networks"
+        value={networksCount.toLocaleString()}
+        change="Multi-agent systems"
+        icon={Network}
       />
 
       <KPICard

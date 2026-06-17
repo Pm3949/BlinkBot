@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   Bot,
+  Wand2,
   Database,
   MessageSquare,
   BookOpen,
@@ -41,9 +42,9 @@ const groups = [
         path: "/",
       },
       {
-        label: "Agents",
+        label: "Playground",
         icon: Bot,
-        path: "/agents",
+        path: "/playground",
       },
       {
         label: "Chatbots",

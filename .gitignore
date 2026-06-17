@@ -35,3 +35,4 @@ temp_uploads/
 *.db
 *.sqlite
 server_start.txt
+next_features.txt

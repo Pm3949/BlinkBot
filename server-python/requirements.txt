@@ -15,3 +15,4 @@ gunicorn
 uvicorn==0.48.0
 razorpay==1.4.1
 python-multipart>=0.0.5
+google-genai
