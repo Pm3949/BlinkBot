@@ -66,8 +66,8 @@ def background_ingestion(
             cursor.close()
         if conn:
             conn.close()
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        # if file_path and os.path.exists(file_path):
+        #     os.remove(file_path)
 
 
 def send_invite_email(

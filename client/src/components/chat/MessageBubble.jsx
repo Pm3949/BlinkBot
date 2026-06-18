@@ -185,6 +185,15 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
                   </code>
                 );
               },
+              img({ node, ...props }) {
+                return (
+                  <img
+                    {...props}
+                    className="my-4 max-h-80 w-auto rounded-xl border border-border shadow-sm object-contain"
+                    loading="lazy"
+                  />
+                );
+              },
             }}
           >
             {displayContent}

@@ -63,7 +63,7 @@ async def chat_with_agent(req: ChatRequest):
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT user_id, name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id FROM agents WHERE id = %s",
+            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active FROM agents WHERE id = %s",
             (req.agent_id,),
         )
         agent_data = cursor.fetchone()
@@ -74,15 +74,22 @@ async def chat_with_agent(req: ChatRequest):
             user_id,
             agent_name,
             system_prompt,
+            output_format,
             provider,
             model,
             custom_api_key,
             embed_model,
             web_search_enabled,
             project_id,
-            parent_agent_id
+            parent_agent_id,
+            is_active
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        
+        if not is_active:
+            async def offline_stream():
+                yield "Sorry, our custom services department is currently offline. Please try again later."
+            return StreamingResponse(offline_stream(), media_type="text/plain")
         
         active_agent_id = req.agent_id
         routed_agent_name = None
@@ -126,7 +133,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         
                         # Override context with chosen sub-agent
                         cursor.execute(
-                            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
+                            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
                             (active_agent_id,),
                         )
                         (
@@ -137,8 +144,14 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             custom_api_key,
                             embed_model,
                             web_search_enabled,
+                            is_active
                         ) = cursor.fetchone()
                         embed_model = embed_model or "text-embedding-3-small"
+                        
+                        if not is_active:
+                            async def offline_stream():
+                                yield f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later."
+                            return StreamingResponse(offline_stream(), media_type="text/plain")
                 except Exception as e:
                     logger.error(f"Dynamic routing failed: {e}")
 
@@ -219,7 +232,11 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         7. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
             """
 
-        prompt = f"""{system_prompt}{memory_patch}
+        formatted_system_prompt = system_prompt
+        if output_format:
+            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
+            
+        prompt = f"""{formatted_system_prompt}{memory_patch}
         You are a helpful assistant. Use the following context to answer the user.
 
         CRITICAL RULES:
@@ -349,17 +366,20 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         # 2. Get the agent config
         cursor.execute(
-            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model FROM agents WHERE id = %s",
+            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, is_active FROM agents WHERE id = %s",
             (agent_id,),
         )
         agent_data = cursor.fetchone()
         if not agent_data:
             raise HTTPException(status_code=404, detail="Underlying Agent not found")
 
-        agent_name, system_prompt, provider, model, custom_api_key, embed_model = (
-            agent_data
-        )
+        agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, is_active = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        
+        if not is_active:
+            async def offline_stream():
+                yield "Sorry, our custom services department is currently offline. Please try again later."
+            return StreamingResponse(offline_stream(), media_type="text/plain")
 
         # 3. Setup LLM
         if provider == "openai":
@@ -400,7 +420,11 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         memory_patch = fetch_temporary_memory_patch(cursor, agent_id)
 
         # 6. Build Prompt
-        prompt = f"""{system_prompt}{memory_patch}
+        formatted_system_prompt = system_prompt
+        if output_format:
+            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
+            
+        prompt = f"""{formatted_system_prompt}{memory_patch}
         You are a strict, professional AI assistant grounded ONLY in the provided documents.
 
         CRITICAL RULES:
@@ -522,7 +546,7 @@ async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = 
         
         # Fetch Master Agent Data
         cursor.execute(
-            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id FROM agents WHERE id = %s",
+            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active FROM agents WHERE id = %s",
             (master_agent_id,),
         )
         agent_data = cursor.fetchone()
@@ -538,9 +562,15 @@ async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = 
             embed_model,
             web_search_enabled,
             project_id,
-            parent_agent_id
+            parent_agent_id,
+            is_active
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        
+        if not is_active:
+            async def offline_stream():
+                yield "Sorry, our custom services department is currently offline. Please try again later."
+            return StreamingResponse(offline_stream(), media_type="text/plain")
 
         active_agent_id = master_agent_id
         routed_agent_name = None
@@ -584,7 +614,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         
                         # Override context with chosen sub-agent
                         cursor.execute(
-                            "SELECT name, system_prompt, llm_provider, llm_model, api_key, embedding_model, web_search_enabled FROM agents WHERE id = %s",
+                            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
                             (active_agent_id,),
                         )
                         (
@@ -595,8 +625,14 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             custom_api_key,
                             embed_model,
                             web_search_enabled,
+                            is_active
                         ) = cursor.fetchone()
                         embed_model = embed_model or "text-embedding-3-small"
+                        
+                        if not is_active:
+                            async def offline_stream():
+                                yield f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later."
+                            return StreamingResponse(offline_stream(), media_type="text/plain")
                 except Exception as e:
                     logger.error(f"Dynamic routing failed: {e}")
 
@@ -621,7 +657,11 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
 
         memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
-        prompt = f"""{system_prompt}{memory_patch}
+        formatted_system_prompt = system_prompt
+        if output_format:
+            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
+            
+        prompt = f"""{formatted_system_prompt}{memory_patch}
         You are a strict, professional AI assistant grounded ONLY in the provided documents.
 
         CRITICAL RULES:
@@ -722,25 +762,46 @@ async def delete_agent(agent_id: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # 1. Fetch all descendant agents (including the target agent itself)
+        cursor.execute(
+            """
+            WITH RECURSIVE agent_tree AS (
+                SELECT id FROM agents WHERE id = %s
+                UNION
+                SELECT a.id 
+                FROM agents a
+                INNER JOIN agent_tree at ON a.parent_agent_id = at.id
+            )
+            SELECT id FROM agent_tree;
+            """,
+            (agent_id,)
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            return {"message": "Agent not found or already deleted"}
+            
+        descendant_ids = tuple(row[0] for row in rows)
+        
         cursor.execute(
             """
             DELETE FROM document_embeddings
-            WHERE document_id IN (SELECT id FROM documents WHERE agent_id = %s)
+            WHERE document_id IN (SELECT id FROM documents WHERE agent_id IN %s)
         """,
-            (agent_id,),
+            (descendant_ids,),
         )
-        cursor.execute("DELETE FROM documents WHERE agent_id = %s", (agent_id,))
+        cursor.execute("DELETE FROM documents WHERE agent_id IN %s", (descendant_ids,))
         cursor.execute(
             """
             DELETE FROM chat_messages 
-            WHERE session_id IN (SELECT id FROM chat_sessions WHERE agent_id = %s)
+            WHERE session_id IN (SELECT id FROM chat_sessions WHERE agent_id IN %s)
         """,
-            (agent_id,),
+            (descendant_ids,),
         )
-        cursor.execute("DELETE FROM chat_sessions WHERE agent_id = %s", (agent_id,))
-        cursor.execute("DELETE FROM agents WHERE id = %s", (agent_id,))
+        cursor.execute("DELETE FROM chat_sessions WHERE agent_id IN %s", (descendant_ids,))
+        cursor.execute("DELETE FROM agents WHERE id IN %s", (descendant_ids,))
         conn.commit()
-        return {"message": "Agent and all its memory completely wiped!"}
+        return {"message": f"Agent and {len(descendant_ids) - 1} sub-agents completely wiped!"}
     except Exception as exc:
         if conn:
             conn.rollback()

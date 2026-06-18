@@ -12,6 +12,7 @@ import {
   Loader2,
   ChevronDown,
   Globe,
+  Code,
 } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { toast } from "sonner";
@@ -125,7 +126,7 @@ export const LANGUAGES = [
   { id: "ko", name: "Korean" },
 ];
 
-export default function CreateAgentWizard({ onClose }) {
+export default function CreateAgentWizard({ onClose, projectId = null, parentAgentId = null }) {
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { canManageAgents } = useWorkspacePermissions();
@@ -141,6 +142,8 @@ export default function CreateAgentWizard({ onClose }) {
 
   const [step, setStep] = useState(1);
   const [formError, setFormError] = useState("");
+  const [autoPrompt, setAutoPrompt] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -150,6 +153,7 @@ export default function CreateAgentWizard({ onClose }) {
     embedding_model: "all-MiniLM-L6-v2",
     chunk_strategy: "sentence",
     system_prompt: "",
+    output_format: "",
     api_key: "",
     language: "en",
     web_search_enabled: false,
@@ -190,6 +194,34 @@ export default function CreateAgentWizard({ onClose }) {
     if (step > 1) setStep(step - 1);
   };
 
+  const handleAutoGenerate = async () => {
+    if (!autoPrompt.trim()) return;
+    setIsGenerating(true);
+    setFormError("");
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/meta-agent/generate-single`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: autoPrompt })
+      });
+      if (!response.ok) throw new Error('Failed to generate agent config');
+      const data = await response.json();
+      setFormData(prev => ({
+        ...prev,
+        name: data.name || prev.name,
+        description: data.description || prev.description,
+        system_prompt: data.system_prompt || prev.system_prompt,
+        output_format: data.output_format_instructions || prev.output_format
+      }));
+      toast.success("Agent configured with AI! Review the steps.");
+    } catch (error) {
+      toast.error("Failed to auto-generate agent");
+      setFormError(error.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!canManageAgents) {
       toast.error("You do not have permission to create agents in this workspace.");
@@ -217,11 +249,14 @@ export default function CreateAgentWizard({ onClose }) {
       embedding_model: formData.embedding_model,
       chunk_strategy: formData.chunk_strategy,
       system_prompt: formData.system_prompt.trim(),
+      output_format: formData.output_format.trim(),
       api_key: selectedModel?.requiresKey
         ? formData.api_key.trim()
         : null,
       language: formData.language,
       workspace_id: activeWorkspaceId,
+      project_id: projectId,
+      parent_agent_id: parentAgentId,
       web_search_enabled: formData.web_search_enabled,
     };
 
@@ -306,6 +341,31 @@ export default function CreateAgentWizard({ onClose }) {
         <div className="p-8 min-h-[450px]">
           {step === 1 && (
             <div className="animate-message">
+              <div className="mb-8 p-6 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 rounded-3xl border border-purple-500/20">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="text-purple-600 dark:text-purple-400" size={20} />
+                  <h4 className="font-bold text-purple-800 dark:text-purple-300">✨ Auto-Fill with AI</h4>
+                </div>
+                <div className="flex gap-3">
+                  <input
+                    value={autoPrompt}
+                    onChange={(e) => setAutoPrompt(e.target.value)}
+                    placeholder="Describe your agent (e.g., 'A helpful sales agent that outputs JSON...')"
+                    className="flex-1 bg-background border border-purple-500/30 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-purple-500/50"
+                    disabled={isGenerating}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAutoGenerate()}
+                  />
+                  <button
+                    onClick={handleAutoGenerate}
+                    disabled={isGenerating || !autoPrompt.trim()}
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-xl transition-all disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isGenerating ? <Loader2 size={18} className="animate-spin" /> : "Generate"}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 font-medium">Describe what you want, and we'll write the prompt, description, and formatting rules for you automatically.</p>
+              </div>
+
               <div className="flex items-center gap-3 mb-8">
                 <Bot className="text-primary" />
                 <h3 className="text-2xl font-bold">Identity</h3>
@@ -529,6 +589,28 @@ export default function CreateAgentWizard({ onClose }) {
                 border
                 border-border
                 bg-background
+                text-foreground
+                p-5
+                mb-6
+              "
+              />
+
+              <label className="font-medium block mb-2 mt-4 text-indigo-500 flex items-center gap-2">
+                <Code size={16} /> Output Format Instructions
+              </label>
+              <textarea
+                rows={4}
+                value={formData.output_format}
+                onChange={(event) =>
+                  updateField("output_format", event.target.value)
+                }
+                placeholder="Always respond in valid JSON format..."
+                className="
+                w-full
+                rounded-3xl
+                border
+                border-indigo-500/30
+                bg-indigo-500/5
                 text-foreground
                 p-5
                 mb-6

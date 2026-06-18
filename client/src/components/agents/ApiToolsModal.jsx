@@ -56,15 +56,15 @@ export default function ApiToolsModal({ project, onClose }) {
 
   const handleCreateNewTool = () => {
     createToolMutation.mutate({
-      name: "New Custom Tool",
+      name: "New API Connection",
       config: {
         base_url: "https://api.example.com",
-        endpoints: [],
-        api_key: ""
+        api_key: "",
+        headers: {}
       }
     }, {
       onSuccess: () => {
-        toast.success("New tool added!");
+        toast.success("New connection added!");
       }
     });
   };
@@ -76,10 +76,10 @@ export default function ApiToolsModal({ project, onClose }) {
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Wrench className="text-primary" size={24} />
-              API Tools Manager
+              API Connections Manager
             </DialogTitle>
             <DialogDescription>
-              Configure the base URLs, endpoints, and authentication keys for tools in {project?.name}.
+              Configure the base URLs and authentication keys for your external API services. Agents can define specific endpoints under these connections.
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -89,14 +89,14 @@ export default function ApiToolsModal({ project, onClose }) {
           <div className="w-1/3 border-r border-border bg-muted/20 p-4 overflow-y-auto flex flex-col">
             <Button variant="outline" className="w-full mb-4 justify-start border-dashed border-primary/50 text-primary hover:text-primary hover:bg-primary/10" onClick={handleCreateNewTool} disabled={createToolMutation.isPending}>
               {createToolMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-              Add Custom Tool
+              Add Connection
             </Button>
             
             {isLoading ? (
               <LoadingSkeleton count={3} className="h-12 mb-2" />
             ) : tools.length === 0 ? (
               <div className="text-sm text-muted-foreground text-center mt-10">
-                No tools configured for this network.
+                No connections configured for this network.
               </div>
             ) : (
               <div className="space-y-2">
@@ -129,7 +129,7 @@ export default function ApiToolsModal({ project, onClose }) {
               <>
                 <div className="flex-1 p-6 overflow-y-auto space-y-6">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Tool Name</label>
+                    <label className="block text-sm font-medium mb-1">Connection Name</label>
                     <input
                       type="text"
                       value={formData.name}
@@ -144,21 +144,6 @@ export default function ApiToolsModal({ project, onClose }) {
                     </h3>
                     
                     <div className="space-y-4 bg-background p-5 rounded-2xl border border-border">
-                      <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-                        <div>
-                          <h4 className="font-medium text-sm">Tool Status</h4>
-                          <p className="text-xs text-muted-foreground">Is this tool active and ready for the LangGraph agent to use?</p>
-                        </div>
-                        <div className="relative inline-flex items-center cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            className="sr-only peer" 
-                            checked={formData.config?.is_enabled ?? true}
-                            onChange={(e) => handleConfigChange("is_enabled", e.target.checked)}
-                          />
-                          <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </div>
-                      </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-1">Base URL</label>
@@ -182,23 +167,13 @@ export default function ApiToolsModal({ project, onClose }) {
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 gap-4">
                         <div>
                           <label className="block text-sm font-medium mb-1">Custom Headers (JSON)</label>
                           <textarea
                             value={typeof formData.config?.headers === 'string' ? formData.config.headers : JSON.stringify(formData.config?.headers || {})}
                             onChange={(e) => handleConfigChange("headers", e.target.value)}
                             placeholder='{"X-Firm-Token": "abc"}'
-                            rows={3}
-                            className="w-full bg-background border border-border rounded-xl px-4 py-2 font-mono text-xs resize-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium mb-1">Query Format / Payload (JSON)</label>
-                          <textarea
-                            value={typeof formData.config?.query_format === 'string' ? formData.config.query_format : JSON.stringify(formData.config?.query_format || {})}
-                            onChange={(e) => handleConfigChange("query_format", e.target.value)}
-                            placeholder='{"query": "{user_input}"}'
                             rows={3}
                             className="w-full bg-background border border-border rounded-xl px-4 py-2 font-mono text-xs resize-none"
                           />
@@ -228,7 +203,7 @@ export default function ApiToolsModal({ project, onClose }) {
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                Select a tool from the sidebar to edit its configuration.
+                Select a connection from the sidebar to edit its configuration.
               </div>
             )}
           </div>

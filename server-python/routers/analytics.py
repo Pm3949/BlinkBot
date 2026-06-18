@@ -86,6 +86,23 @@ async def get_analytics(user_id: str):
             for r in cursor.fetchall()
         ]
 
+        # 5. Recent User Questions
+        cursor.execute(
+            """
+            SELECT m.content, m.created_at, a.name as agent_name 
+            FROM chat_messages m
+            JOIN chat_sessions s ON m.session_id = s.id
+            JOIN agents a ON s.agent_id = a.id
+            WHERE a.user_id = %s AND m.role = 'user' 
+            ORDER BY m.created_at DESC LIMIT 10
+        """,
+            (user_id,),
+        )
+        recent_questions = [
+            {"content": r[0], "created_at": str(r[1]), "agent_name": r[2]}
+            for r in cursor.fetchall()
+        ]
+
         return {
             "metrics": {
                 "totalAgents": total_agents,
@@ -96,6 +113,7 @@ async def get_analytics(user_id: str):
             "internalSeries": internal_series,
             "widgetSeries": widget_series,
             "topChatbots": top_chatbots,
+            "recentQuestions": recent_questions,
         }
     except Exception as e:
         logger.exception("Failed to fetch analytics")

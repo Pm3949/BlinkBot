@@ -6,7 +6,7 @@ import logging
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from meta_agent_schemas import AgentBlueprint, DeployRequest
+from meta_agent_schemas import AgentBlueprint, DeployRequest, SingleAgentResponse
 from database import get_db_connection
 
 load_dotenv()
@@ -34,7 +34,9 @@ async def generate_blueprint(req: GenerateBlueprintRequest):
             "You are the Master Builder LLM for a No-Code Agent-Builder Platform. "
             "Your job is to analyze the client's prompt and output a structured JSON blueprint "
             "detailing the sub-agents, tools, and knowledge bases required to build their desired agent network. "
-            "Ensure the output strictly follows the schema."
+            "Ensure the output strictly follows the schema. "
+            "Based on the client's use-case, generate strict Markdown formatting rules for each specific agent in output_format_instructions. "
+            "For example, if it's an e-commerce agent, instruct it to output product images ![alt](url) and links [text](url)."
         )
 
         response = client.models.generate_content(
@@ -54,6 +56,39 @@ async def generate_blueprint(req: GenerateBlueprintRequest):
     except Exception as e:
         logger.error(f"Error generating blueprint with Gemini: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate blueprint: {str(e)}")
+
+@router.post("/generate-single", response_model=SingleAgentResponse)
+async def generate_single_agent(req: GenerateBlueprintRequest):
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY or GOOGLE_API_KEY not configured")
+
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        system_instruction = (
+            "You are an expert AI Agent Configurator. "
+            "Your job is to analyze the client's request and output a structured JSON configuring a single AI Agent. "
+            "Generate a catchy name, a clear description, a very detailed system prompt defining its persona and core rules, "
+            "and strict formatting instructions for how it should output responses."
+        )
+
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=req.prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=SingleAgentResponse,
+                system_instruction=system_instruction,
+                temperature=0.2,
+            ),
+        )
+        
+        return SingleAgentResponse.model_validate_json(response.text)
+
+    except Exception as e:
+        logger.error(f"Error generating single agent with Gemini: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate agent: {str(e)}")
 
 @router.post("/deploy")
 async def deploy_agent(req: DeployRequest):
@@ -114,14 +149,15 @@ async def deploy_agent(req: DeployRequest):
         for sub_agent in req.blueprint.sub_agents:
             cursor.execute(
                 """
-                INSERT INTO agents (name, description, system_prompt, user_id, workspace_id, project_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO agents (name, description, system_prompt, output_format, user_id, workspace_id, project_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     sub_agent.role, 
                     sub_agent.goal, 
-                    sub_agent.backstory, 
+                    sub_agent.backstory,
+                    sub_agent.output_format_instructions,
                     req.user_id, 
                     req.workspace_id, 
                     project_id

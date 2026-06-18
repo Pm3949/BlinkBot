@@ -45,9 +45,13 @@ export async function createAgent(payload) {
     embedding_model: payload.embedding_model,
     chunk_strategy: payload.chunk_strategy,
     system_prompt: payload.system_prompt || "",
+    output_format: payload.output_format || "",
     api_key: payload.api_key || "",
     user_id: user.id,
     workspace_id: payload.workspace_id,
+    web_search_enabled: payload.web_search_enabled || false,
+    project_id: payload.project_id || null,
+    parent_agent_id: payload.parent_agent_id || null,
   };
 
   const response = await fetch(`${API_URL}/api/agents`, {

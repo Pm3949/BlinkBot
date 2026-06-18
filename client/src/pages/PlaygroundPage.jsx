@@ -11,7 +11,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useAgents, useDeleteAgent, useAgentProjects, useDeleteAgentProject } from "../hooks/useAgents";
+import { useAgents, useDeleteAgent, useAgentProjects, useDeleteAgentProject, useUpdateAgent } from "../hooks/useAgents";
 import { useWorkspacePermissions } from "../hooks/useSettings";
 import EmptyState from "../components/shared/EmptyState";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
@@ -29,6 +29,7 @@ import {
   DialogFooter,
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
+import { Switch } from "../components/ui/switch";
 
 function formatCreatedAt(value) {
   if (!value) return "Not available";
@@ -52,8 +53,23 @@ export default function PlaygroundPage() {
   const [agentToEdit, setAgentToEdit] = useState(null);
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const deleteAgentMutation = useDeleteAgent(activeWorkspaceId);
+  const updateAgentMutation = useUpdateAgent(activeWorkspaceId);
   const deleteProjectMutation = useDeleteAgentProject(activeWorkspaceId);
   const { canManageAgents } = useWorkspacePermissions();
+
+  const handleToggleActive = async (agent) => {
+    try {
+      // Default is_active to true if it is undefined
+      const currentStatus = agent.is_active !== false;
+      await updateAgentMutation.mutateAsync({
+        id: agent.id,
+        payload: { is_active: !currentStatus }
+      });
+      toast.success(`Agent ${currentStatus ? 'deactivated' : 'activated'} successfully`);
+    } catch (error) {
+      toast.error("Failed to update agent status");
+    }
+  };
 
 
   useEffect(() => {
@@ -267,7 +283,15 @@ export default function PlaygroundPage() {
               </div>
 
               {canManageAgents && (
-                <div className="relative agent-dropdown-container">
+                <div className="flex items-center gap-3 relative agent-dropdown-container">
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-xs text-muted-foreground">{agent.is_active !== false ? 'Active' : 'Offline'}</span>
+                    <Switch
+                      checked={agent.is_active !== false}
+                      disabled={updateAgentMutation.isPending}
+                      onCheckedChange={() => handleToggleActive(agent)}
+                    />
+                  </div>
                   <button
                     className="p-2 rounded-xl hover:bg-muted"
                     onClick={(e) => {

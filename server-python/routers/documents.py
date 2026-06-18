@@ -226,6 +226,15 @@ async def delete_document(doc_id: str):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT filename FROM documents WHERE id = %s", (doc_id,))
+        doc = cursor.fetchone()
+        if doc and doc[0]:
+            from core.dependencies import UPLOAD_DIR
+            file_path = UPLOAD_DIR / doc[0]
+            import os
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
         cursor.execute(
             "DELETE FROM document_embeddings WHERE document_id = %s", (doc_id,)
         )

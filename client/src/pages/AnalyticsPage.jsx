@@ -191,6 +191,44 @@ export default function AnalyticsPage() {
 
       </div>
 
+      {/* Recent User Questions */}
+      <div className="glass-card overflow-hidden border border-border/50">
+        <div className="p-6 border-b border-border/50 bg-muted/10">
+          <h3 className="text-xl font-bold flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-purple-500" /> Recent User Questions
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">Real-time pulse of what your users are asking.</p>
+        </div>
+        
+        {data.recentQuestions && data.recentQuestions.length > 0 ? (
+          <div className="divide-y divide-border/50">
+            {data.recentQuestions.map((q, idx) => (
+              <div key={idx} className="p-6 hover:bg-muted/20 transition-colors flex gap-4 items-start group">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20 shadow-sm group-hover:scale-105 transition-transform">
+                  <span className="text-primary font-bold text-sm">Q</span>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-foreground font-medium text-base leading-relaxed">"{q.content}"</p>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground font-medium">
+                    <span className="flex items-center gap-1.5 bg-background border border-border px-2.5 py-1 rounded-full shadow-sm">
+                      <Bot size={12} className="text-primary" /> {q.agent_name}
+                    </span>
+                    <span className="text-border">•</span>
+                    <span>{new Date(q.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center p-16 text-muted-foreground">
+            <MessageSquare className="w-12 h-12 text-muted-foreground/30 mb-4" />
+            <p className="text-lg font-medium">No user questions found recently.</p>
+            <p className="text-sm mt-1">When users interact with your agents, their questions will appear here.</p>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

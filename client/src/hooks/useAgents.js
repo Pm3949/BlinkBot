@@ -32,6 +32,9 @@ export function useCreateAgent(workspaceId) {
       queryClient.invalidateQueries({
         queryKey: ["agents", workspaceId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["agent-projects-sub-agents"],
+      });
     },
   });
 }
@@ -47,6 +50,9 @@ export function useUpdateAgent(workspaceId) {
       queryClient.invalidateQueries({
         queryKey: ["agents", workspaceId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["agent-projects-sub-agents"],
+      });
     },
   });
 }
@@ -60,6 +66,9 @@ export function useDeleteAgent(workspaceId) {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["agents", workspaceId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["agent-projects-sub-agents"],
       });
     },
   });

@@ -11,6 +11,7 @@ import {
   Loader2,
   Trash2,
   ChevronDown,
+  Eye,
 } from "lucide-react";
 import { usePrimaryWorkspace, useWorkspacePermissions } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
@@ -25,6 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Dialog, DialogContent } from "../components/ui/dialog";
+
+const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
 function getDocumentSource(document) {
   return document.filename || document.source || "Untitled";
@@ -155,6 +159,7 @@ export default function KnowledgeBasePage() {
 
   const [url, setUrl] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   // Determine the active agent ID based on the selected category
   const selectedAgentId = selectedCategory === "standalone" 
@@ -661,7 +666,24 @@ export default function KnowledgeBasePage() {
                         </td>
 
                         <td className="px-6 py-5">
-                          {canManageDatabase && (
+                          <div className="flex items-center gap-2">
+                            {["PDF", "PNG", "JPG", "JPEG"].includes(getDocumentType(document)) && (
+                              <button
+                                onClick={() => setPreviewDoc(document)}
+                                className="
+                                p-2
+                                rounded-xl
+                                hover:bg-blue-50
+                                hover:text-blue-600
+                                dark:hover:bg-blue-500/10
+                                dark:hover:text-blue-300
+                                "
+                                title="Preview Document"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            )}
+                            {canManageDatabase && (
                             <button
                               onClick={() =>
                                 handleDelete(document.id)
@@ -680,6 +702,7 @@ export default function KnowledgeBasePage() {
                               <Trash2 size={16} />
                             </button>
                           )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -689,6 +712,33 @@ export default function KnowledgeBasePage() {
           </div>
         </div>
       </div>
+
+      {/* Document Preview Modal */}
+      <Dialog open={!!previewDoc} onOpenChange={(open) => !open && setPreviewDoc(null)}>
+        <DialogContent className="max-w-5xl h-[85vh] flex p-0 overflow-hidden border-0 bg-background shadow-2xl rounded-2xl">
+          <div className="flex-1 flex flex-col bg-muted/10 w-full h-full">
+            <div className="p-4 border-b border-border bg-card flex items-center justify-between">
+              <h3 className="font-semibold">{previewDoc?.filename}</h3>
+            </div>
+            <div className="flex-1 p-6 overflow-hidden flex items-center justify-center">
+              {previewDoc && getDocumentType(previewDoc) === "PDF" && (
+                <iframe 
+                  src={`${API_URL}/uploads/${previewDoc.filename}`} 
+                  className="w-full h-full rounded-lg border border-border bg-white"
+                  title="PDF Preview"
+                />
+              )}
+              {previewDoc && ["PNG", "JPG", "JPEG"].includes(getDocumentType(previewDoc)) && (
+                <img 
+                  src={`${API_URL}/uploads/${previewDoc.filename}`} 
+                  alt="Preview" 
+                  className="max-w-full max-h-full object-contain rounded-lg border border-border"
+                />
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

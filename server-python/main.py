@@ -9,6 +9,9 @@ from gtts import gTTS
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 
+from fastapi.staticfiles import StaticFiles
+from core.dependencies import UPLOAD_DIR
+
 # Import routers
 from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent
 
@@ -57,6 +60,9 @@ app.include_router(settings.router)
 app.include_router(feedback.router)
 app.include_router(notifications.router)
 app.include_router(meta_agent.router)
+
+# Mount uploads directory
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 class TTSRequest(BaseModel):
     text: str

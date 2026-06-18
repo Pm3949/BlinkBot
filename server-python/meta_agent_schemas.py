@@ -31,6 +31,7 @@ class SubAgentConfig(BaseModel):
     assigned_tools: List[str] = Field(..., description="List of RequiredTool IDs this agent can use")
     assigned_knowledge: List[str] = Field(..., description="List of RequiredKnowledge IDs this agent can query")
     parent_agent_id: Optional[str] = Field(None, description="If this agent reports to another sub-agent (like a Manager), put that agent's ID here. If it reports directly to the Master Coordinator, leave it null.")
+    output_format_instructions: Optional[str] = Field(None, description="Strict Markdown formatting rules for this agent (e.g. output product images ![alt](url) and links [text](url)).")
 
 class AgentBlueprint(BaseModel):
     project_name: str = Field(..., description="A catchy, relevant name for the generated project")
@@ -45,3 +46,9 @@ class DeployRequest(BaseModel):
     config_data: Dict[str, Any]
     workspace_id: str
     user_id: str
+
+class SingleAgentResponse(BaseModel):
+    name: str = Field(..., description="A catchy, relevant name for the agent")
+    description: str = Field(..., description="Brief summary of what the agent does")
+    system_prompt: str = Field(..., description="Detailed system prompt defining the agent's persona, rules, and core instructions")
+    output_format_instructions: str = Field(..., description="Strict Markdown or JSON formatting instructions for how the agent should structure its output")

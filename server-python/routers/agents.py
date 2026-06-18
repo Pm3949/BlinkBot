@@ -16,11 +16,15 @@ class AgentCreate(BaseModel):
     embedding_model: Optional[str] = "text-embedding-3-small"
     chunk_strategy: Optional[str] = "semantic"
     system_prompt: Optional[str] = ""
+    output_format: Optional[str] = ""
     api_key: Optional[str] = ""
     language: Optional[str] = "en"
     user_id: str
     workspace_id: str
     web_search_enabled: bool = False
+    project_id: Optional[str] = None
+    parent_agent_id: Optional[str] = None
+    endpoints: Optional[list] = []
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
@@ -30,9 +34,12 @@ class AgentUpdate(BaseModel):
     embedding_model: Optional[str] = None
     chunk_strategy: Optional[str] = None
     system_prompt: Optional[str] = None
+    output_format: Optional[str] = None
     api_key: Optional[str] = None
     language: Optional[str] = None
     web_search_enabled: Optional[bool] = None
+    is_active: Optional[bool] = None
+    endpoints: Optional[list] = None
 
 @router.get("/api/agents")
 async def get_agents(workspace_id: str, include_gateways: bool = False):
@@ -52,7 +59,7 @@ async def get_agents(workspace_id: str, include_gateways: bool = False):
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, project_id
+                   web_search_enabled, project_id, is_active, output_format
             FROM agents 
             {condition}
             ORDER BY created_at DESC
@@ -78,7 +85,9 @@ async def get_agents(workspace_id: str, include_gateways: bool = False):
                 "workspace_id": row[11],
                 "created_at": row[12].isoformat() if row[12] else None,
                 "web_search_enabled": row[13],
-                "project_id": row[14]
+                "project_id": row[14],
+                "is_active": row[15],
+                "output_format": row[16]
             })
             
         return agents
@@ -100,16 +109,16 @@ async def create_agent(agent: AgentCreate):
         cursor.execute(
             """
             INSERT INTO agents (name, description, llm_provider, llm_model, 
-                              embedding_model, chunk_strategy, system_prompt, 
-                              api_key, language, user_id, workspace_id, web_search_enabled)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              embedding_model, chunk_strategy, system_prompt, output_format, 
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, name, description, llm_provider, llm_model, 
-                      embedding_model, chunk_strategy, system_prompt, 
-                      api_key, language, user_id, workspace_id, created_at, web_search_enabled;
+                      embedding_model, chunk_strategy, system_prompt, output_format, 
+                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints;
             """,
             (agent.name, agent.description, agent.llm_provider, agent.llm_model,
-             agent.embedding_model, agent.chunk_strategy, agent.system_prompt,
-             agent.api_key, agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled)
+             agent.embedding_model, agent.chunk_strategy, agent.system_prompt, agent.output_format,
+             agent.api_key, agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled, agent.project_id, agent.parent_agent_id, json.dumps(agent.endpoints))
         )
         row = cursor.fetchone()
         conn.commit()
@@ -123,12 +132,14 @@ async def create_agent(agent: AgentCreate):
             "embedding_model": row[5],
             "chunk_strategy": row[6],
             "system_prompt": row[7],
-            "api_key": row[8],
-            "language": row[9],
-            "user_id": row[10],
-            "workspace_id": row[11],
-            "created_at": row[12].isoformat() if row[12] else None,
-            "web_search_enabled": row[13]
+            "output_format": row[8],
+            "api_key": row[9],
+            "language": row[10],
+            "user_id": row[11],
+            "workspace_id": row[12],
+            "created_at": row[13].isoformat() if row[13] else None,
+            "web_search_enabled": row[14],
+            "endpoints": row[17] if len(row) > 17 else []
         }
     except Exception as e:
         if conn: conn.rollback()
@@ -140,6 +151,7 @@ async def create_agent(agent: AgentCreate):
 
 @router.put("/api/agents/{agent_id}")
 async def update_agent(agent_id: str, payload: dict):
+    import json
     conn = None
     cursor = None
     try:
@@ -154,16 +166,19 @@ async def update_agent(agent_id: str, payload: dict):
         values = []
         for key, value in payload.items():
             # Allow only valid columns to be updated
-            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "api_key", "language", "web_search_enabled"]:
+            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints"]:
                 set_clauses.append(f"{key} = %s")
-                values.append(value)
+                if key == "endpoints":
+                    values.append(json.dumps(value))
+                else:
+                    values.append(value)
                 
         if not set_clauses:
             raise HTTPException(status_code=400, detail="No valid fields to update")
             
         values.append(agent_id)
         
-        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, api_key, language, user_id, workspace_id, created_at, web_search_enabled;"
+        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints;"
         
         cursor.execute(query, tuple(values))
         row = cursor.fetchone()
@@ -177,7 +192,7 @@ async def update_agent(agent_id: str, payload: dict):
             VALUES (%s, %s, %s, 'agent_setting_updated');
             """,
             (
-                row[11], # workspace_id
+                row[12], # workspace_id
                 "Agent Settings Updated",
                 f"Settings for agent '{row[1]}' were updated."
             )
@@ -194,12 +209,15 @@ async def update_agent(agent_id: str, payload: dict):
             "embedding_model": row[5],
             "chunk_strategy": row[6],
             "system_prompt": row[7],
-            "api_key": row[8],
-            "language": row[9],
-            "user_id": row[10],
-            "workspace_id": row[11],
-            "created_at": row[12].isoformat() if row[12] else None,
-            "web_search_enabled": row[13]
+            "output_format": row[8],
+            "api_key": row[9],
+            "language": row[10],
+            "user_id": row[11],
+            "workspace_id": row[12],
+            "created_at": row[13].isoformat() if row[13] else None,
+            "web_search_enabled": row[14],
+            "is_active": row[15],
+            "endpoints": row[16] if len(row) > 16 else []
         }
     except HTTPException:
         if conn: conn.rollback()
@@ -263,7 +281,7 @@ async def get_project_sub_agents(project_id: str):
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, parent_agent_id
+                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints
             FROM agents 
             WHERE project_id = %s 
             ORDER BY created_at ASC
@@ -289,7 +307,10 @@ async def get_project_sub_agents(project_id: str):
                 "workspace_id": row[11],
                 "created_at": row[12].isoformat() if row[12] else None,
                 "web_search_enabled": row[13],
-                "parent_agent_id": row[14]
+                "parent_agent_id": row[14],
+                "is_active": row[15],
+                "output_format": row[16],
+                "endpoints": row[17] if len(row) > 17 else []
             })
             
         return agents
