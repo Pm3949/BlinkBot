@@ -35,7 +35,7 @@ export default function ChatbotEditorPage() {
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
 
-  const DATA_API_URL = process.env.VITE_API_BASE_URL;
+  const DATA_API_URL = import.meta.env.VITE_API_BASE_URL;
 
   useEffect(() => {
     if (chatbot) {
