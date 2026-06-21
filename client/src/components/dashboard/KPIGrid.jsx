@@ -3,6 +3,8 @@ import {
   Database,
   Network,
   Brain,
+  HardDrive,
+  MessageCircle,
 } from "lucide-react";
 
 import KPICard from "./KPICard";
@@ -12,10 +14,24 @@ export default function KPIGrid({
   conversationsCount = 0,
   messagesCount = 0,
   networksCount = 0,
+  documentsCount = 0,
+  storageUsedMB = 0,
+  widgetMessagesCount = 0,
   isLoadingAgents = false,
+  internalSeries = [],
+  widgetSeries = [],
 }) {
+  // Generate sparkline values from actual message counts if available
+  const internalSpark = internalSeries.length > 0 
+    ? internalSeries.slice(-7).map(d => d.messages) 
+    : [2, 5, 8, 4, 10, 6, 12];
+
+  const widgetSpark = widgetSeries.length > 0 
+    ? widgetSeries.slice(-7).map(d => d.messages) 
+    : [10, 22, 15, 30, 25, 45, 60];
+
   return (
-    <div className="grid lg:grid-cols-4 gap-6">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <KPICard
         title="Active Agents"
         value={
@@ -23,30 +39,35 @@ export default function KPIGrid({
             ? "..."
             : activeAgentsCount.toLocaleString()
         }
-        change="Live"
+        change={`${networksCount.toLocaleString()} networks active`}
         icon={Bot}
+        sparklineData={[1, 2, 2, activeAgentsCount || 1, activeAgentsCount || 2, activeAgentsCount || 3, activeAgentsCount || 4]}
       />
 
       <KPICard
-        title="Conversations"
-        value={conversationsCount.toLocaleString()}
+        title="Conversations & Messages"
+        value={`${conversationsCount.toLocaleString()} chats`}
         change={`${messagesCount.toLocaleString()} messages`}
-        icon={Database}
+        icon={MessageCircle}
+        sparklineData={internalSpark}
       />
 
       <KPICard
-        title="Networks"
-        value={networksCount.toLocaleString()}
-        change="Multi-agent systems"
+        title="Widget Traffic"
+        value={`${widgetMessagesCount.toLocaleString()}`}
+        change="Widget messages all-time"
         icon={Network}
+        sparklineData={widgetSpark}
       />
 
       <KPICard
-        title="Knowledge"
-        value={activeAgentsCount > 0 ? "Ready" : "Setup"}
-        change={activeAgentsCount > 0 ? "Agents available" : "Create an agent"}
-        icon={Brain}
+        title="Vector Database Storage"
+        value={`${storageUsedMB.toFixed(2)} MB`}
+        change={`${documentsCount.toLocaleString()} source docs`}
+        icon={HardDrive}
+        sparklineData={[10, 15, 12, 18, 20, 25, storageUsedMB || 2]}
       />
     </div>
   );
 }
+

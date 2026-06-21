@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from './supabaseClient';
-import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X } from 'lucide-react';
+import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X, Calendar as CalendarIcon } from 'lucide-react';
+import AdminCalendar from './components/AdminCalendar';
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -25,6 +26,18 @@ async function fetchAdminUsers(user) {
 async function fetchAdminWorkspaces(user) {
   const res = await fetch(`${API_URL}/admin/workspaces?user_id=${user.id}`);
   if (!res.ok) throw new Error("Failed to load admin workspaces");
+  return res.json();
+}
+
+async function fetchAdminDemoRequests(user) {
+  const res = await fetch(`${API_URL}/admin/demo-requests?user_id=${user.id}`);
+  if (!res.ok) throw new Error("Failed to load admin demo requests");
+  return res.json();
+}
+
+async function fetchScheduledDemoRequests(user) {
+  const res = await fetch(`${API_URL}/admin/demo-requests/scheduled?user_id=${user.id}`);
+  if (!res.ok) throw new Error("Failed to load scheduled demo requests");
   return res.json();
 }
 
@@ -55,7 +68,19 @@ export default function App() {
     enabled: !!currentUser,
   });
 
+  const { data: demoRequestsData, isLoading: demoRequestsLoading } = useQuery({
+    queryKey: ['adminDemoRequests'],
+    queryFn: () => fetchAdminDemoRequests(currentUser),
+    enabled: !!currentUser,
+  });
+
   const [activeTab, setActiveTab] = useState('users');
+
+  const { data: scheduledData, isLoading: scheduledLoading } = useQuery({
+    queryKey: ['adminScheduledRequests'],
+    queryFn: () => fetchScheduledDemoRequests(currentUser),
+    enabled: !!currentUser && activeTab === 'calendar', // optimization
+  });
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [actionPassword, setActionPassword] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
@@ -105,6 +130,41 @@ export default function App() {
     onSuccess: () => {
       toast.success("Super Admin status updated!");
       queryClient.invalidateQueries({ queryKey: ['adminUsers'] });
+    },
+    onError: (err) => toast.error(err.message)
+  });
+
+  const updateDemoStatusMutation = useMutation({
+    mutationFn: async ({ requestId, newStatus, password }) => {
+      const res = await fetch(`${API_URL}/admin/demo-requests/${requestId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus, admin_user_id: currentUser.id, admin_action_password: password })
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Demo request status updated!");
+      queryClient.invalidateQueries({ queryKey: ['adminDemoRequests'] });
+    },
+    onError: (err) => toast.error(err.message)
+  });
+
+  const scheduleMeetingMutation = useMutation({
+    mutationFn: async ({ requestId, date, time, meeting_link, password }) => {
+      const res = await fetch(`${API_URL}/admin/demo-requests/${requestId}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, time, meeting_link, admin_user_id: currentUser.id, admin_action_password: password })
+      });
+      if (!res.ok) throw new Error("Failed to schedule meeting");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast.success("Meeting scheduled and email sent!");
+      queryClient.invalidateQueries({ queryKey: ['adminDemoRequests'] });
+      queryClient.invalidateQueries({ queryKey: ['adminScheduledRequests'] });
     },
     onError: (err) => toast.error(err.message)
   });
@@ -214,6 +274,18 @@ export default function App() {
             onClick={() => setActiveTab('workspaces')}
           >
             Workspaces
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm ${activeTab === 'demoRequests' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('demoRequests')}
+          >
+            Demo Requests
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm flex items-center gap-1 ${activeTab === 'calendar' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('calendar')}
+          >
+            <CalendarIcon size={16} /> Calendar
           </button>
         </div>
 
@@ -337,6 +409,88 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'demoRequests' && (
+          <div className="border border-border/50 rounded-xl overflow-hidden bg-card">
+            <div className="p-6 border-b border-border/50 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Demo Requests</h2>
+              <span className="text-xs font-semibold px-3 py-1 bg-primary/10 text-primary rounded-full">
+                {demoRequestsData?.requests?.length || 0} Total
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs uppercase text-muted-foreground bg-muted/50 border-b border-border/50">
+                  <tr>
+                    <th className="px-6 py-4">Requester</th>
+                    <th className="px-6 py-4">Company</th>
+                    <th className="px-6 py-4">Message</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Date</th>
+                    <th className="px-6 py-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {demoRequestsLoading && (
+                    <tr><td colSpan={6} className="p-6"><LoadingSkeleton className="h-12 w-full" /></td></tr>
+                  )}
+                  {demoRequestsData?.requests?.map((req) => (
+                    <tr key={req.id} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="px-6 py-4">
+                        <div className="font-bold">{req.name}</div>
+                        <div className="text-muted-foreground text-xs">{req.email}</div>
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {req.company || '-'}
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground max-w-[200px] truncate" title={req.message}>
+                        {req.message || '-'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          req.status === 'completed' ? 'bg-green-500/20 text-green-500' :
+                          req.status === 'processing' ? 'bg-blue-500/20 text-blue-500' :
+                          'bg-yellow-500/20 text-yellow-500'
+                        }`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">
+                        {new Date(req.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 flex items-center gap-2">
+                        <select
+                          className="bg-muted border border-border text-xs rounded px-2 py-1 disabled:opacity-50"
+                          value={req.status}
+                          disabled={updateDemoStatusMutation.isPending}
+                          onChange={(e) => requirePassword((pwd) => updateDemoStatusMutation.mutate({ requestId: req.id, newStatus: e.target.value, password: pwd }))}
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="processing">Processing</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                        <ScheduleMeetingButton 
+                          requestId={req.id} 
+                          requirePassword={requirePassword} 
+                          scheduleMeetingMutation={scheduleMeetingMutation} 
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'calendar' && (
+          scheduledLoading ? (
+            <div className="p-6"><LoadingSkeleton className="h-64 w-full" /></div>
+          ) : (
+            <AdminCalendar scheduledRequests={scheduledData?.requests || []} />
+          )
+        )}
+
       </div>
 
       {/* Password Modal */}
@@ -402,5 +556,96 @@ function StatCard({ title, value, icon: Icon, loading }) {
         <h3 className="text-2xl font-extrabold">{value}</h3>
       )}
     </div>
+  );
+}
+
+function ScheduleMeetingButton({ requestId, requirePassword, scheduleMeetingMutation }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [meetingLink, setMeetingLink] = useState("");
+
+  const handleSchedule = (e) => {
+    e.preventDefault();
+    setModalOpen(false);
+    requirePassword((pwd) => {
+      scheduleMeetingMutation.mutate({ requestId, date, time, meeting_link: meetingLink, password: pwd });
+    });
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setModalOpen(true)}
+        className="px-3 py-1 bg-primary text-primary-foreground hover:bg-primary/80 text-xs font-semibold rounded border border-primary disabled:opacity-50"
+      >
+        Schedule
+      </button>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border/50 p-6 rounded-xl w-full max-w-sm shadow-2xl relative">
+            <button 
+              onClick={() => setModalOpen(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+            >
+              <X size={20} />
+            </button>
+            <h3 className="text-lg font-bold mb-1">Schedule Meeting</h3>
+            <p className="text-xs text-muted-foreground mb-4">Provide a meeting link which will be emailed to the user.</p>
+            <form onSubmit={handleSchedule} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Date</label>
+                <input
+                  type="date"
+                  required
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-2"
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Time (e.g. 10:00 AM EST)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="10:00 AM EST"
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-2"
+                  value={time}
+                  onChange={e => setTime(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Meeting Link (e.g. Google Meet, MS Teams, Zoom)</label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://meet.google.com/..."
+                  className="w-full bg-muted border border-border rounded-lg px-4 py-2"
+                  value={meetingLink}
+                  onChange={e => setMeetingLink(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                >
+                  Confirm & Send
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

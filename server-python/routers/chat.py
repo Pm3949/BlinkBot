@@ -4,7 +4,7 @@ import os
 import psycopg2
 from typing import Optional, List, Dict
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi import APIRouter, HTTPException, Request, Header, Response
 from fastapi.responses import StreamingResponse
 
 from langchain_groq import ChatGroq
@@ -556,6 +556,7 @@ async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = 
         (
             agent_name,
             system_prompt,
+            output_format,
             provider,
             model,
             custom_api_key,
@@ -620,6 +621,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         (
                             agent_name,
                             system_prompt,
+                            output_format,
                             provider,
                             model,
                             custom_api_key,

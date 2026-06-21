@@ -4,6 +4,7 @@
 .env.development.local
 .env.test.local
 .env.production.local
+credentials.json
 
 # --- Dependencies (DON'T COMMIT) ---
 node_modules/

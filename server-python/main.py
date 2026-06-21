@@ -37,7 +37,7 @@ allow_origins = [url.strip() for url in frontend_url.split(",")] if frontend_url
 
 # Always allow local development URLs
 if "*" not in allow_origins:
-    allow_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+    allow_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"])
 
 app.add_middleware(
     CORSMiddleware,
