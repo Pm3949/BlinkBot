@@ -35,6 +35,8 @@ export default function ChatbotEditorPage() {
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
 
+  const DATA_API_URL = process.env.VITE_API_BASE_URL;
+
   useEffect(() => {
     if (chatbot) {
       setName(chatbot.name);
@@ -88,7 +90,7 @@ export default function ChatbotEditorPage() {
   const embedCode = `<!-- BlinkBot Chatbot Widget -->\n
 <script defer src="https://rag-mate-ashen.vercel.app/widget.js"
   data-chatbot-id="${chatbotId}"
-  data-api-url="https://colory-dorsoventral-sergio.ngrok-free.dev">
+  data-api-url="${DATA_API_URL}">
 </script>`;
 
   const reactCode = `import { useEffect } from 'react';
@@ -99,7 +101,7 @@ export default function ChatbotWidget() {
     script.src = "https://rag-mate-ashen.vercel.app/widget.js";
     script.defer = true;
     script.setAttribute('data-chatbot-id', "${chatbotId}");
-    script.setAttribute('data-api-url', "https://colory-dorsoventral-sergio.ngrok-free.dev");
+    script.setAttribute('data-api-url', "${DATA_API_URL}");
     document.body.appendChild(script);
     
     return () => {
@@ -110,7 +112,7 @@ export default function ChatbotWidget() {
   return null;
 }`;
 
-  const curlCode = `curl -X POST https://colory-dorsoventral-sergio.ngrok-free.dev/api/v1/chat \\
+  const curlCode = `curl -X POST ${DATA_API_URL}/api/v1/chat \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${apiKey || "YOUR_API_KEY"}" \\
   -d '{"message": "Hello!"}'`;
