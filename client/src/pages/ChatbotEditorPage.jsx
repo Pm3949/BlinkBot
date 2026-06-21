@@ -86,8 +86,9 @@ export default function ChatbotEditorPage() {
 
   // Dynamically use the current frontend's domain for the widget.js script URL
   const embedCode = `<!-- BlinkBot Chatbot Widget -->\n
-<script defer src="${window.location.origin}/widget.js"
-  data-chatbot-id="${chatbotId}">
+<script defer src="https://rag-mate-ashen.vercel.app/widget.js"
+  data-chatbot-id="${chatbotId}"
+  data-api-url="https://colory-dorsoventral-sergio.ngrok-free.dev">
 </script>`;
 
   const reactCode = `import { useEffect } from 'react';
@@ -95,9 +96,10 @@ export default function ChatbotEditorPage() {
 export default function ChatbotWidget() {
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = "${window.location.origin}/widget.js";
+    script.src = "https://rag-mate-ashen.vercel.app/widget.js";
     script.defer = true;
     script.setAttribute('data-chatbot-id', "${chatbotId}");
+    script.setAttribute('data-api-url', "https://colory-dorsoventral-sergio.ngrok-free.dev");
     document.body.appendChild(script);
     
     return () => {
@@ -108,7 +110,7 @@ export default function ChatbotWidget() {
   return null;
 }`;
 
-  const curlCode = `curl -X POST ${window.location.origin}/api/v1/chat \\
+  const curlCode = `curl -X POST https://colory-dorsoventral-sergio.ngrok-free.dev/api/v1/chat \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${apiKey || "YOUR_API_KEY"}" \\
   -d '{"message": "Hello!"}'`;
