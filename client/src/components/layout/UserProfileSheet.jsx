@@ -12,8 +12,14 @@ export default function UserProfileSheet({ open, onClose }) {
   const handleSignOut = async () => {
     try {
       await signOut();
+      // Clear all Zustand persisted state, React Query cache, and local storage
+      localStorage.clear();
       toast.success("Signed out successfully");
       onClose();
+      // Force a full page reload to wipe all in-memory React state (Zustand/Query)
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
     } catch (error) {
       toast.error(error.message || "Unable to sign out.");
     }
