@@ -10,7 +10,8 @@ import {
   signUpWithEmail,
   verifyOTP,
   requestPasswordReset,
-  resetPassword
+  resetPassword,
+  loginWith2FA
 } from "../services/authService";
 import Logo from "../components/shared/Logo";
 
@@ -46,7 +47,8 @@ export default function LoginPage() {
   usePageSeo('Log In or Sign Up', 'Sign in or create a free BlinkBot account to start building custom AI chatbots powered by your documents.');
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [mode, setMode] = useState("signin"); // 'signin', 'signup', 'otp', 'forgot-password', 'reset-password'
+  const [mode, setMode] = useState("signin"); // 'signin', 'signup', 'otp', 'forgot-password', 'reset-password', '2fa'
+  const [pendingUserId, setPendingUserId] = useState(null);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -65,6 +67,25 @@ export default function LoginPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (mode === "2fa") {
+      if (!otp.trim()) {
+        toast.error("Authenticator code is required.");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const data = await loginWith2FA({ user_id: pendingUserId, totp_code: otp.trim() });
+        login(data.access_token, data.user);
+        toast.success("Signed in");
+        navigate("/", { replace: true });
+      } catch (error) {
+        toast.error(error.message || "Invalid Code.");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     if (isOtp) {
       if (!otp.trim()) {
@@ -153,6 +174,9 @@ export default function LoginPage() {
 
       if (result.requires_otp) {
         setMode("otp");
+      } else if (result.requires_2fa) {
+        setPendingUserId(result.user_id);
+        setMode("2fa");
       } else {
         login(result.access_token, result.user);
         toast.success("Signed in");
@@ -217,6 +241,8 @@ export default function LoginPage() {
             <h1 className="text-3xl font-bold tracking-tight mb-2">
               {isOtp
                 ? "Check your email"
+                : mode === "2fa"
+                ? "Two-Factor Authentication"
                 : isForgot
                 ? "Reset your password"
                 : isReset
@@ -228,6 +254,8 @@ export default function LoginPage() {
             <p className="text-muted-foreground text-sm">
               {isOtp
                 ? `We've sent a 6-digit code to ${email}`
+                : mode === "2fa"
+                ? "Enter the 6-digit code from your authenticator app"
                 : isForgot
                 ? "Enter your email to receive a password reset code"
                 : isReset
@@ -238,7 +266,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {!isOtp && !isForgot && !isReset && (
+          {!isOtp && !isForgot && !isReset && mode !== "2fa" && (
             <>
               <a 
                 href={`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/auth/google/login`}
@@ -268,9 +296,9 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isOtp ? (
+            {isOtp || mode === "2fa" ? (
               <div className="space-y-2">
-                <Label htmlFor="otp">Verification Code</Label>
+                <Label htmlFor="otp">{mode === "2fa" ? "Authenticator Code" : "Verification Code"}</Label>
                 <Input
                   id="otp"
                   type="text"
@@ -401,7 +429,7 @@ export default function LoginPage() {
               {isSubmitting && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
               {isSubmitting
                 ? "Please wait..."
-                : isOtp
+                : isOtp || mode === "2fa"
                 ? "Verify Code"
                 : isForgot
                 ? "Send Reset Link"
@@ -414,7 +442,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-8 text-center text-sm">
-            {isOtp || isForgot || isReset ? (
+            {isOtp || isForgot || isReset || mode === "2fa" ? (
               <button
                 type="button"
                 onClick={() => setMode("signin")}

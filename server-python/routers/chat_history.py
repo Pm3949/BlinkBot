@@ -160,6 +160,27 @@ async def delete_chat_session(session_id: str):
         if cursor: cursor.close()
         if conn: conn.close()
 
+@router.delete("/api/agents/{agent_id}/chat_sessions")
+async def clear_agent_chat_history(agent_id: str):
+    """Clears all chat history for a specific agent (for GDPR/CCPA scrub)."""
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM chat_sessions WHERE agent_id = %s", (agent_id,))
+        conn.commit()
+        
+        return {"message": "All chat history for this agent has been scrubbed"}
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error clearing agent chat history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear chat history")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 @router.get("/api/chat_messages/{session_id}")
 async def get_chat_messages(session_id: str):
     conn = None

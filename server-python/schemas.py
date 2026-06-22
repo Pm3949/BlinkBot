@@ -95,3 +95,10 @@ class ResetPassword(BaseModel):
     email: str
     token: str
     new_password: str
+
+class Verify2FA(BaseModel):
+    totp_code: str
+
+class Login2FA(BaseModel):
+    user_id: str
+    totp_code: str

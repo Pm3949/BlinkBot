@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings2 } from "lucide-react";
 import ChatSidebar from "../components/chat/ChatSidebar";
@@ -30,6 +30,12 @@ export default function ChatPage() {
   // UI Toggles
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isContextOpen, setIsContextOpen] = useState(true);
+  
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const {
     activeSessionId,
@@ -81,6 +87,10 @@ export default function ChatPage() {
   const isActiveSessionForSelectedAgent =
     String(activeSession?.agentId || "general") === String(selectedAgentId);
   const visibleMessages = isActiveSessionForSelectedAgent ? messages : [];
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [visibleMessages, loading]);
 
   const handleAgentSelect = (agent) => {
     setActiveAgentId(agent.id);
@@ -225,6 +235,7 @@ export default function ChatPage() {
                 <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 

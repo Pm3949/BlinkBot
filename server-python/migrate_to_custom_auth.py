@@ -26,6 +26,8 @@ def migrate():
                 otp_expires_at TIMESTAMP WITH TIME ZONE,
                 reset_token TEXT,
                 reset_token_expires_at TIMESTAMP WITH TIME ZONE,
+                totp_secret TEXT,
+                two_factor_enabled BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
             );
         """)

@@ -11,10 +11,17 @@ import { useUIStore } from "../store/useUIStore";
 import { useUserSettings, useUpdateUserSettings, usePrimaryWorkspace, useUpdateWorkspace } from "../hooks/useSettings";
 import { toast } from "sonner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import { setup2FA, verifySetup2FA } from "../services/authService";
+import { QRCodeSVG } from "qrcode.react";
+import { useAuth } from "../context/AuthContext";
 
 export default function SettingsPage() {
   const darkMode = useUIStore((state) => state.darkMode);
   const setDarkMode = useUIStore((state) => state.setDarkMode);
+  const { user } = useAuth();
+  const [setup2FAData, setSetup2FAData] = useState(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [isSettingUp2FA, setIsSettingUp2FA] = useState(false);
 
   const { data: settings, isLoading: loadingSettings } = useUserSettings();
   const { data: workspace, isLoading: loadingWorkspace } = usePrimaryWorkspace();
@@ -214,8 +221,18 @@ export default function SettingsPage() {
             <button 
               className={`px-4 py-2 rounded-xl text-white ${settings?.two_factor_enabled ? 'bg-green-600 hover:bg-green-700' : 'btn-primary'}`}
               onClick={async () => {
-                await updateSettingsMutation.mutateAsync({ two_factor_enabled: !settings?.two_factor_enabled });
-                toast.success(settings?.two_factor_enabled ? "2FA Disabled" : "2FA Enabled");
+                if (settings?.two_factor_enabled) {
+                   await updateSettingsMutation.mutateAsync({ two_factor_enabled: false });
+                   toast.success("2FA Disabled");
+                } else {
+                   try {
+                     const data = await setup2FA(user.id);
+                     setSetup2FAData(data);
+                     setIsSettingUp2FA(true);
+                   } catch (e) {
+                     toast.error("Failed to setup 2FA");
+                   }
+                }
               }}
             >
               {settings?.two_factor_enabled ? "Enabled" : "Enable"}
@@ -247,6 +264,43 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      {isSettingUp2FA && setup2FAData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border border-border p-8 rounded-3xl max-w-sm w-full">
+            <h2 className="text-xl font-bold mb-4">Set up 2FA</h2>
+            <p className="text-sm text-muted-foreground mb-6">Scan the QR code below with your Authenticator app (like Google Authenticator or Authy).</p>
+            <div className="bg-white p-4 rounded-xl flex justify-center mb-6">
+              <QRCodeSVG value={setup2FAData.provisioning_uri} size={200} />
+            </div>
+            <input
+              type="text"
+              placeholder="6-digit code"
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value)}
+              className="w-full border border-border rounded-xl p-3 bg-background text-center tracking-[0.5em] text-lg font-bold mb-4 focus:ring-2 focus:ring-primary focus:outline-none"
+            />
+            <div className="flex gap-4">
+              <button onClick={() => setIsSettingUp2FA(false)} className="flex-1 py-3 border border-border rounded-xl hover:bg-muted">Cancel</button>
+              <button 
+                onClick={async () => {
+                  try {
+                    await verifySetup2FA({ user_id: user.id, totp_code: totpCode });
+                    await updateSettingsMutation.mutateAsync({ two_factor_enabled: true });
+                    toast.success("2FA Enabled!");
+                    setIsSettingUp2FA(false);
+                    setTotpCode("");
+                  } catch (e) {
+                    toast.error("Invalid code");
+                  }
+                }}
+                className="flex-1 py-3 btn-primary text-white rounded-xl"
+              >
+                Verify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

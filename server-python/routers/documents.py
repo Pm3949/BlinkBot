@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from database import get_db_connection
 from core.dependencies import rag_engine, UPLOAD_DIR
+from core.security import encrypt_data
 from utils import background_ingestion, get_user_limits
 from schemas import URLRequest
 
@@ -32,8 +33,15 @@ async def process_file(
     safe_filename = os.path.basename(file.filename)
     file_path = UPLOAD_DIR / safe_filename
 
+    # We will read the file and save the encrypted version, but we need raw text first
+    file_bytes = file.file.read()
+    
+    temp_path = str(file_path) + ".tmp"
+    with open(temp_path, "wb") as buffer:
+        buffer.write(file_bytes)
+        
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(encrypt_data(file_bytes))
 
     conn = None
     cursor = None
@@ -75,7 +83,7 @@ async def process_file(
                 detail="Storage limit exceeded. Please upgrade your plan.",
             )
 
-        raw_text = rag_engine.extract_text_from_file(str(file_path), safe_filename)
+        raw_text = rag_engine.extract_text_from_file(temp_path, safe_filename)
 
         cursor.execute(
             "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'processing', %s) RETURNING id;",
@@ -110,6 +118,8 @@ async def process_file(
             cursor.close()
         if conn:
             conn.close()
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @router.post("/process-url")

@@ -60,3 +60,36 @@ export async function resetPassword({ email, token, new_password }) {
   if (!response.ok) throw new Error(data.detail || data.message || "Failed to reset password");
   return data;
 }
+
+export async function loginWith2FA({ user_id, totp_code }) {
+  const response = await fetch(`${API_URL}/auth/login/2fa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id, totp_code }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || data.message || "2FA failed");
+  return data;
+}
+
+export async function setup2FA(user_id) {
+  const response = await fetch(`${API_URL}/auth/2fa/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || data.message || "Failed to setup 2FA");
+  return data;
+}
+
+export async function verifySetup2FA({ user_id, totp_code }) {
+  const response = await fetch(`${API_URL}/auth/2fa/verify-setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id, totp_code }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || data.message || "Failed to verify 2FA");
+  return data;
+}

@@ -9,7 +9,8 @@ from urllib.parse import urlencode
 
 from core.auth import get_password_hash, verify_password, create_access_token, send_otp_email, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FRONTEND_URL, send_password_reset_email
 from database import get_db_connection
-from schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword
+from schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword, Verify2FA, Login2FA
+import pyotp
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -210,7 +211,7 @@ async def login(request: Request, payload: UserLogin):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
-        cur.execute("SELECT id, password_hash, is_verified FROM public.users WHERE email = %s", (payload.email,))
+        cur.execute("SELECT id, password_hash, is_verified, two_factor_enabled FROM public.users WHERE email = %s", (payload.email,))
         user = cur.fetchone()
         
         if not user or not verify_password(payload.password, user['password_hash']):
@@ -227,6 +228,9 @@ async def login(request: Request, payload: UserLogin):
             
         create_default_workspace(cur, str(user['id']), payload.email)
         conn.commit()
+
+        if user.get('two_factor_enabled'):
+            return {"requires_2fa": True, "user_id": str(user['id'])}
 
         access_token = create_access_token(user_id=str(user['id']), email=payload.email)
         return {
@@ -305,6 +309,92 @@ async def reset_password(request: Request, payload: ResetPassword):
         raise
     except Exception as e:
         conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.post("/2fa/setup")
+async def setup_2fa(request: Request, payload: dict):
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID required")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT email, two_factor_enabled FROM public.users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if user['two_factor_enabled']:
+            raise HTTPException(status_code=400, detail="2FA already enabled")
+            
+        secret = pyotp.random_base32()
+        cur.execute("UPDATE public.users SET totp_secret = %s WHERE id = %s", (secret, user_id))
+        conn.commit()
+        
+        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user['email'], issuer_name="RAGMate")
+        return {"provisioning_uri": uri, "secret": secret}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.post("/2fa/verify-setup")
+async def verify_2fa_setup(request: Request, payload: dict):
+    user_id = payload.get("user_id")
+    totp_code = payload.get("totp_code")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT totp_secret FROM public.users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+        if not user or not user['totp_secret']:
+            raise HTTPException(status_code=400, detail="2FA setup not initiated")
+            
+        totp = pyotp.TOTP(user['totp_secret'])
+        if not totp.verify(totp_code):
+            raise HTTPException(status_code=400, detail="Invalid OTP code")
+            
+        cur.execute("UPDATE public.users SET two_factor_enabled = TRUE WHERE id = %s", (user_id,))
+        # The user_settings table has its own boolean
+        cur.execute("UPDATE user_settings SET two_factor_enabled = TRUE WHERE user_id = %s", (user_id,))
+        conn.commit()
+        return {"message": "2FA successfully enabled"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@router.post("/login/2fa")
+@limiter.limit("5/minute")
+async def login_2fa(request: Request, payload: Login2FA):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    try:
+        cur.execute("SELECT email, totp_secret, is_verified FROM public.users WHERE id = %s", (payload.user_id,))
+        user = cur.fetchone()
+        
+        if not user or not user['totp_secret']:
+            raise HTTPException(status_code=400, detail="Invalid request")
+            
+        totp = pyotp.TOTP(user['totp_secret'])
+        if not totp.verify(payload.totp_code):
+            raise HTTPException(status_code=401, detail="Invalid Authenticator code")
+            
+        access_token = create_access_token(user_id=payload.user_id, email=user['email'])
+        return {
+            "access_token": access_token, 
+            "token_type": "bearer", 
+            "user": {"id": payload.user_id, "email": user['email']}
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()

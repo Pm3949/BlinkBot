@@ -17,6 +17,8 @@ from schemas import ChatRequest, WidgetChatRequest
 from core.dependencies import rag_engine
 from utils import get_user_limits
 from core.security import decrypt_key
+from routers.auth import limiter
+from core.scrubber import scrub_pii
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,8 @@ async def chat_with_agent(req: ChatRequest):
         raise HTTPException(status_code=400, detail="agent_id is required")
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="message is required")
+
+    req.message = scrub_pii(req.message)
 
     conn = None
     cursor = None
@@ -201,7 +205,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
 
         doc_context = "No specific documents found."
         if best_matches:
-            doc_context = "\n\n---\n\n".join([match[0] for match in best_matches])
+            doc_context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
         web_context = "Web search disabled."
         if web_search_enabled:
@@ -301,12 +305,15 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
 
 
 @router.post("/api/widget/chat")
+@limiter.limit("25/minute")
 async def widget_chat(req: WidgetChatRequest, request: Request):
     """Stateless chat endpoint for external widgets."""
     if not req.chatbot_id:
         raise HTTPException(status_code=400, detail="chatbot_id is required")
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="message is required")
+
+    req.message = scrub_pii(req.message)
 
     conn = None
     cursor = None
@@ -426,7 +433,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         context = "No specific documents found."
         if best_matches:
-            context = "\n\n---\n\n".join([match[0] for match in best_matches])
+            context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
         # 5. Format Chat History (Stateless)
         history_items = req.history or []
@@ -513,7 +520,8 @@ class APIChatRequest(BaseModel):
     language: Optional[str] = None
 
 @router.post("/api/v1/chat")
-async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = Header(...)):
+@limiter.limit("25/minute")
+async def api_v1_chat(req: APIChatRequest, request: Request, response: Response, x_api_key: str = Header(...)):
     """Programmatic access endpoint using API Key."""
     import uuid
     if not x_api_key:
@@ -535,6 +543,8 @@ async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = 
             raise HTTPException(status_code=401, detail="Invalid API Key")
 
         chatbot_id, master_agent_id, user_id = chatbot_data
+
+        req.message = scrub_pii(req.message)
 
         # Handle Session
         session_id = req.session_id
@@ -670,7 +680,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
 
         context = "No specific documents found."
         if best_matches:
-            context = "\n\n---\n\n".join([match[0] for match in best_matches])
+            context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
         history_text = ""
         for msg in history_items[-6:]:

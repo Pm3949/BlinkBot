@@ -12,6 +12,8 @@ from io import BytesIO
 from gtts import gTTS
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
+from apscheduler.schedulers.background import BackgroundScheduler
+from database import get_db_connection
 
 from fastapi.staticfiles import StaticFiles
 from core.dependencies import UPLOAD_DIR
@@ -141,6 +143,34 @@ async def speech_to_text(file: UploadFile = File(...), language: str = Form(None
     finally:
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
+
+def cleanup_old_chat_data():
+    logger.info("Running automatic cleanup of old chat data (>30 days)")
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM chat_sessions WHERE created_at < NOW() - INTERVAL '30 days'")
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to cleanup old chat data: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(cleanup_old_chat_data, 'cron', hour=0, minute=0)
+
+@app.on_event("startup")
+def startup_event():
+    scheduler.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.shutdown()
 
 if __name__ == "__main__":
     import uvicorn

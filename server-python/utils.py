@@ -38,10 +38,12 @@ def background_ingestion(
 
         vectors = rag_engine.vectorize(chunks, model_name=embed_model)
 
+        from core.security import encrypt_key
         for text, vector in zip(chunks, vectors):
+            encrypted_chunk = encrypt_key(text)
             cursor.execute(
                 "INSERT INTO document_embeddings (document_id, content, embedding) VALUES (%s, %s, %s::vector);",
-                (document_id, text, str(vector)),
+                (document_id, encrypted_chunk, str(vector)),
             )
 
         cursor.execute(

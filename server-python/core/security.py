@@ -35,9 +35,28 @@ def decrypt_key(cipher_text: Optional[str]) -> Optional[str]:
     if not cipher_text:
         return cipher_text
     try:
-        # Fernet tokens always start with 'gAAAA' due to the version byte 0x80
         if cipher_text.startswith("gAAAA"):
             return fernet.decrypt(cipher_text.encode("utf-8")).decode("utf-8")
     except Exception as e:
         logger.warning(f"Decryption failed, assuming plain text or key mismatch: {e}")
     return cipher_text
+
+def encrypt_data(data: bytes) -> bytes:
+    if not data:
+        return data
+    try:
+        return fernet.encrypt(data)
+    except Exception as e:
+        logger.error(f"Data encryption failed: {e}")
+        return data
+
+def decrypt_data(cipher_data: bytes) -> bytes:
+    if not cipher_data:
+        return cipher_data
+    try:
+        # Check if it starts with the fernet signature 'gAAAA' encoded in ascii
+        if cipher_data.startswith(b"gAAAA"):
+            return fernet.decrypt(cipher_data)
+    except Exception as e:
+        logger.warning(f"Data decryption failed, assuming unencrypted data: {e}")
+    return cipher_data
