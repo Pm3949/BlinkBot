@@ -60,7 +60,7 @@ export default function UserProfileSheet({ open, onClose }) {
           {/* Account Details */}
           <div className="space-y-3">
             <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Account Details</h4>
-            
+
             <div className="space-y-2">
               <div className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/5">
                 <div className="flex items-center gap-3">
@@ -69,7 +69,7 @@ export default function UserProfileSheet({ open, onClose }) {
                 </div>
                 <span className="text-sm text-muted-foreground capitalize">Owner</span>
               </div>
-              
+
               <div className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/5">
                 <div className="flex items-center gap-3">
                   <CreditCard size={16} className="text-purple-500" />
@@ -85,15 +85,21 @@ export default function UserProfileSheet({ open, onClose }) {
             <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Preferences</h4>
             <div className="p-4 rounded-xl border border-border/50 bg-muted/5 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
               <p>Additional profile settings like password reset, 2FA, and integrations will appear here.</p>
-              <Button variant="link" href="/settings" className="h-auto p-0 text-primary">Manage in Settings <ExternalLink size={12} className="ml-1" /></Button>
+              <a
+                href="/settings"
+                className="inline-flex items-center text-primary hover:underline"
+              >
+                Manage in Settings
+                <ExternalLink size={12} className="ml-1" />
+              </a>
             </div>
           </div>
         </div>
 
         {/* Footer */}
         <div className="p-6 border-t border-border/50 bg-muted/10">
-          <Button 
-            variant="destructive" 
+          <Button
+            variant="destructive"
             className="w-full rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20"
             onClick={handleSignOut}
           >

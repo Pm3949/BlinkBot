@@ -27,6 +27,8 @@ import BlogPage from "../pages/BlogPage";
 
 import GoogleCallback from "../pages/GoogleCallback";
 
+import RouteErrorFallback from "./RouteErrorFallback";
+
 export const router = createBrowserRouter([
   // ── Public routes ───────────────────────────────────────────────
   {
@@ -69,6 +71,7 @@ export const router = createBrowserRouter([
   // ── Protected shell (all app pages live here) ────────────────────
   {
     path: "/",
+    errorElement: <RouteErrorFallback />,
     element: (
       <ProtectedRoute>
         <AppShell />
