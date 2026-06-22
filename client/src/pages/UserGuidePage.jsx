@@ -13,7 +13,7 @@ const sections = [
   { id: "creating-bots", label: "Creating AI Bots", icon: Bot },
   { id: "ai-auto-configure", label: "AI Auto-Configure", icon: Sparkles },
   { id: "knowledge-base", label: "Knowledge Base", icon: Database },
-  { id: "playground", label: "Agent Playground", icon: MessageSquare },
+  { id: "studio", label: "Agent Studio", icon: MessageSquare },
   { id: "agent-networks", label: "Agent Networks", icon: Layers },
   { id: "chat-widgets", label: "Chat Widgets", icon: Globe },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -132,7 +132,7 @@ export default function UserGuidePage() {
                 <li><strong>Workspaces:</strong> Each workspace is a silo. Data from one workspace never leaks into another.</li>
                 <li><strong>Team Members:</strong> Invite colleagues from the <strong>Team</strong> page. Choose between Admin and Member roles.</li>
                 <li><strong>Admins:</strong> Can manage billing, team, and all platform settings.</li>
-                <li><strong>Members:</strong> Can create agents, upload documents, and use the playground.</li>
+                <li><strong>Members:</strong> Can create agents, upload documents, and use the studio.</li>
               </ul>
               <InfoBox title="Tip" variant="tip">
                 You can switch between multiple workspaces from the sidebar dropdown at the bottom of the left navigation.
@@ -142,7 +142,7 @@ export default function UserGuidePage() {
             {/* 3. Creating Bots */}
             <GuideSection id="creating-bots" title="Creating AI Bots" icon={Bot}>
               <p>
-                To create a new bot, click <strong>Create Agent</strong> from the Dashboard or Playground. You'll be guided 
+                To create a new bot, click <strong>Create Agent</strong> from the Dashboard or Studio. You'll be guided 
                 through a 4-step wizard:
               </p>
               <ol className="list-decimal pl-5 space-y-3 text-muted-foreground mt-4">
@@ -192,10 +192,10 @@ export default function UserGuidePage() {
               </ul>
             </GuideSection>
 
-            {/* 6. Playground */}
-            <GuideSection id="playground" title="Agent Playground" icon={MessageSquare}>
+            {/* 6. Studio */}
+            <GuideSection id="studio" title="Agent Studio" icon={MessageSquare}>
               <p>
-                The Playground is your testing ground. Here you can see all your bots, chat with them in real-time, 
+                The Studio is your testing ground. Here you can see all your bots, chat with them in real-time, 
                 and verify that they're answering questions correctly based on their knowledge base.
               </p>
               <ul className="list-disc pl-5 space-y-1 text-muted-foreground mt-4">
@@ -213,7 +213,7 @@ export default function UserGuidePage() {
                 one umbrella.
               </p>
               <ul className="list-disc pl-5 space-y-1 text-muted-foreground mt-4">
-                <li>Create a new project from the Playground page.</li>
+                <li>Create a new project from the Studio page.</li>
                 <li>Add sub-agents to a project from the project detail view.</li>
                 <li>Configure shared API connections and global settings at the project level.</li>
               </ul>

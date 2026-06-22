@@ -22,11 +22,11 @@ export default function RecentAgents({
           <h3 className="font-bold text-lg text-foreground">
             Active Agents
           </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Quick access to playground</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Quick access to studio</p>
         </div>
 
         <Link
-          to="/playground"
+          to="/studio"
           className="text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-full transition-all flex items-center gap-1 group"
         >
           View All
@@ -53,7 +53,7 @@ export default function RecentAgents({
         {!isLoading && recentAgents.map((agent) => (
           <Link
             key={agent.id}
-            to={agent.project_id ? `/playground/project/${agent.project_id}` : "/playground"}
+            to={agent.project_id ? `/studio/project/${agent.project_id}` : "/studio"}
             className="
               flex
               items-center

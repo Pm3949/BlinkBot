@@ -1,8 +1,10 @@
 import logging
+import json
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends
 from database import get_db_connection
+from core.security import encrypt_key, decrypt_key
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ async def get_agents(workspace_id: str, include_gateways: bool = False):
                 "embedding_model": row[5],
                 "chunk_strategy": row[6],
                 "system_prompt": row[7],
-                "api_key": row[8],
+                "api_key": decrypt_key(row[8]) or "",
                 "language": row[9],
                 "user_id": row[10],
                 "workspace_id": row[11],
@@ -118,7 +120,7 @@ async def create_agent(agent: AgentCreate):
             """,
             (agent.name, agent.description, agent.llm_provider, agent.llm_model,
              agent.embedding_model, agent.chunk_strategy, agent.system_prompt, agent.output_format,
-             agent.api_key, agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled, agent.project_id, agent.parent_agent_id, json.dumps(agent.endpoints))
+             encrypt_key(agent.api_key), agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled, agent.project_id, agent.parent_agent_id, json.dumps(agent.endpoints))
         )
         row = cursor.fetchone()
         conn.commit()
@@ -133,7 +135,7 @@ async def create_agent(agent: AgentCreate):
             "chunk_strategy": row[6],
             "system_prompt": row[7],
             "output_format": row[8],
-            "api_key": row[9],
+            "api_key": decrypt_key(row[9]) or "",
             "language": row[10],
             "user_id": row[11],
             "workspace_id": row[12],
@@ -168,7 +170,9 @@ async def update_agent(agent_id: str, payload: dict):
             # Allow only valid columns to be updated
             if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints"]:
                 set_clauses.append(f"{key} = %s")
-                if key == "endpoints":
+                if key == "api_key":
+                    values.append(encrypt_key(value))
+                elif key == "endpoints":
                     values.append(json.dumps(value))
                 else:
                     values.append(value)
@@ -210,7 +214,7 @@ async def update_agent(agent_id: str, payload: dict):
             "chunk_strategy": row[6],
             "system_prompt": row[7],
             "output_format": row[8],
-            "api_key": row[9],
+            "api_key": decrypt_key(row[9]) or "",
             "language": row[10],
             "user_id": row[11],
             "workspace_id": row[12],
@@ -301,7 +305,7 @@ async def get_project_sub_agents(project_id: str):
                 "embedding_model": row[5],
                 "chunk_strategy": row[6],
                 "system_prompt": row[7],
-                "api_key": row[8],
+                "api_key": decrypt_key(row[8]) or "",
                 "language": row[9],
                 "user_id": row[10],
                 "workspace_id": row[11],

@@ -245,6 +245,41 @@ export default function AgentSettingsModal({ agent, onClose }) {
                         />
                       </div>
                     )}
+
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border mt-2">
+                      <div>
+                        <label className="block text-sm font-semibold mb-1.5 flex items-center gap-2">
+                          <FileText size={16} className="text-muted-foreground" />
+                          Embedding Model
+                        </label>
+                        <Select value={formData.embedding_model} onValueChange={(val) => updateField("embedding_model", val)}>
+                          <SelectTrigger className="w-full rounded-xl py-5">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EMBEDDING_MODELS.map((em) => (
+                              <SelectItem key={em.id} value={em.id} disabled={em.disabled}>{em.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold mb-1.5 flex items-center gap-2">
+                          <Sparkles size={16} className="text-muted-foreground" />
+                          Chunking Strategy
+                        </label>
+                        <Select value={formData.chunk_strategy} onValueChange={(val) => updateField("chunk_strategy", val)}>
+                          <SelectTrigger className="w-full rounded-xl py-5">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CHUNKING_STRATEGIES.map((cs) => (
+                              <SelectItem key={cs.id} value={cs.id}>{cs.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -281,6 +316,16 @@ export default function AgentSettingsModal({ agent, onClose }) {
                         placeholder="Always respond in valid JSON format like: { 'status': 'success' }"
                         rows={6}
                         className="w-full font-mono text-sm bg-indigo-500/5 border border-indigo-500/20 rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-indigo-500/20 transition-all outline-none"
+                      />
+                    </div>
+                    <div className="pt-4 border-t border-border mt-2 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold flex items-center gap-2"><Globe size={18} className="text-blue-500" /> Web Search Fallback</h4>
+                        <p className="text-sm text-muted-foreground mt-1">Allow the agent to search the internet if the answer isn't in documents.</p>
+                      </div>
+                      <Switch
+                        checked={formData.web_search_enabled}
+                        onCheckedChange={(val) => updateField("web_search_enabled", val)}
                       />
                     </div>
                   </div>

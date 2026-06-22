@@ -3,6 +3,7 @@ from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from database import get_db_connection
+from core.security import encrypt_key, decrypt_key
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,9 @@ async def get_user_settings(user_id: str):
             }
             
         return {
-            "openai_api_key": row[0],
-            "groq_api_key": row[1],
-            "gemini_api_key": row[2],
+            "openai_api_key": decrypt_key(row[0]) or "",
+            "groq_api_key": decrypt_key(row[1]) or "",
+            "gemini_api_key": decrypt_key(row[2]) or "",
             "two_factor_enabled": row[3]
         }
     except Exception as e:
@@ -61,6 +62,10 @@ async def update_user_settings(user_id: str, payload: UserSettingsUpdate):
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        openai_key = encrypt_key(payload.openai_api_key) if payload.openai_api_key is not None else None
+        groq_key = encrypt_key(payload.groq_api_key) if payload.groq_api_key is not None else None
+        gemini_key = encrypt_key(payload.gemini_api_key) if payload.gemini_api_key is not None else None
+
         cursor.execute(
             """
             INSERT INTO user_settings (user_id, openai_api_key, groq_api_key, gemini_api_key, two_factor_enabled, updated_at)
@@ -73,15 +78,15 @@ async def update_user_settings(user_id: str, payload: UserSettingsUpdate):
                 updated_at = now()
             RETURNING openai_api_key, groq_api_key, gemini_api_key, two_factor_enabled;
             """,
-            (user_id, payload.openai_api_key, payload.groq_api_key, payload.gemini_api_key, payload.two_factor_enabled)
+            (user_id, openai_key, groq_key, gemini_key, payload.two_factor_enabled)
         )
         row = cursor.fetchone()
         conn.commit()
         
         return {
-            "openai_api_key": row[0],
-            "groq_api_key": row[1],
-            "gemini_api_key": row[2],
+            "openai_api_key": decrypt_key(row[0]) or "",
+            "groq_api_key": decrypt_key(row[1]) or "",
+            "gemini_api_key": decrypt_key(row[2]) or "",
             "two_factor_enabled": row[3]
         }
     except Exception as e:

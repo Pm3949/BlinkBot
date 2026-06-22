@@ -33,8 +33,8 @@ export default function RoleRoute({ requiredRole = "Admin", children }) {
     );
   }
 
-  // Role hierarchy: Admin > Member > Viewer
-  const ROLE_RANK = { Admin: 3, Member: 2, Viewer: 1 };
+  // Role hierarchy: Owner > Admin > Member > Viewer
+  const ROLE_RANK = { Owner: 4, Admin: 3, Member: 2, Viewer: 1 };
   const userRank = ROLE_RANK[role] ?? 0;
   const requiredRank = ROLE_RANK[requiredRole] ?? 3;
 

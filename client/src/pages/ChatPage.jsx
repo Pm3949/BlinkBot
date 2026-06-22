@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings2 } from "lucide-react";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import ChatComposer from "../components/chat/ChatComposer";
 import MessageBubble from "../components/chat/MessageBubble";
@@ -13,6 +13,7 @@ import { useDocuments } from "../hooks/useDocuments";
 import VerificationBanner from "../components/chat/VerificationBanner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
+import AgentSettingsModal from "../components/agents/AgentSettingsModal";
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -24,6 +25,7 @@ export default function ChatPage() {
   const [activeAgentId, setActiveAgentId] = useState("");
   const [activeSubAgentDetails, setActiveSubAgentDetails] = useState(null);
   const [chatLanguage, setChatLanguage] = useState("en");
+  const [agentToEdit, setAgentToEdit] = useState(null);
   
   // UI Toggles
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -163,6 +165,19 @@ export default function ChatPage() {
            </button>
         </div>
 
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-2xl">
+          <span className="font-medium text-sm text-foreground">{activeAgent?.name || "Select an Agent"}</span>
+          {activeAgent && activeAgent.id && (
+             <button 
+               onClick={() => setAgentToEdit(activeAgent)}
+               className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+               title="Agent Settings"
+             >
+               <Settings2 size={16} />
+             </button>
+          )}
+        </div>
+
         <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
           <VerificationBanner onRetry={handleSend} />
           <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
@@ -225,6 +240,13 @@ export default function ChatPage() {
 
       {isContextOpen && (
         <ContextPanel documents={documents} isLoading={isLoadingDocuments} />
+      )}
+
+      {agentToEdit && (
+        <AgentSettingsModal
+          agent={agentToEdit}
+          onClose={() => setAgentToEdit(null)}
+        />
       )}
     </div>
   );

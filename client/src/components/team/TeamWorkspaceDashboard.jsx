@@ -194,11 +194,13 @@ export default function TeamWorkspaceDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border bg-transparent">
-              {members.map((member) => (
+              {members.map((member) => {
+                const isOwner = member.role === "Owner" || activeWorkspace?.owner_id === member.user_id;
+                return (
                 <tr
                   key={member.id}
                   className={`hover:bg-muted/30 transition-colors ${
-                    member.isOwner ? "bg-primary/5" : ""
+                    isOwner ? "bg-primary/5" : ""
                   }`}
                 >
                   {/* Member info */}
@@ -211,7 +213,7 @@ export default function TeamWorkspaceDashboard() {
                             {getInitials(member.name || member.email)}
                           </AvatarFallback>
                         </Avatar>
-                        {member.isOwner && (
+                        {isOwner && (
                           <span className="absolute -top-1 -right-1 bg-amber-400 rounded-full p-0.5">
                             <Crown className="w-2.5 h-2.5 text-white" />
                           </span>
@@ -222,7 +224,7 @@ export default function TeamWorkspaceDashboard() {
                           <p className="text-sm font-medium text-foreground">
                             {member.name || member.email}
                           </p>
-                          {member.isOwner && (
+                          {isOwner && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-400/15 text-amber-500 border border-amber-400/30">
                               <Crown className="w-2.5 h-2.5" />
                               Owner
@@ -279,13 +281,13 @@ export default function TeamWorkspaceDashboard() {
 
                   {/* Permissions column */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {member.isOwner || member.role === "Admin" ? (
+                    {isOwner || member.role === "Admin" ? (
                       // Owner / Admin — full access locked checkmarks
                       <div className="flex items-center space-x-6">
                         {["agents", "database"].map((perm) => (
                           <div key={perm} className="w-12 flex justify-center">
                             <span
-                              title={member.isOwner ? "Owner has full access" : "Admin has full access"}
+                              title={isOwner ? "Owner has full access" : "Admin has full access"}
                               className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/15 text-primary"
                             >
                               <Check className="w-3.5 h-3.5" />
@@ -350,7 +352,8 @@ export default function TeamWorkspaceDashboard() {
                     ) : null}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {members.length === 0 && (
                 <tr>
                   <td colSpan="4" className="px-6 py-8 text-center text-sm text-muted-foreground">

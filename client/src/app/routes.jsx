@@ -8,7 +8,7 @@ import PermissionRoute from "../components/guards/PermissionRoute";
 
 import DashboardPage from "../pages/DashboardPage";
 import LoginPage from "../pages/LoginPage";
-import PlaygroundPage from "../pages/PlaygroundPage";
+import StudioPage from "../pages/StudioPage";
 import ProjectDetailsPage from "../pages/ProjectDetailsPage";
 import KnowledgeBasePage from "../pages/KnowledgeBasePage";
 import ChatPage from "../pages/ChatPage";
@@ -24,6 +24,8 @@ import UserGuidePage from "../pages/UserGuidePage";
 import TermsPage from "../pages/TermsPage";
 import AboutPage from "../pages/AboutPage";
 import BlogPage from "../pages/BlogPage";
+
+import GoogleCallback from "../pages/GoogleCallback";
 
 export const router = createBrowserRouter([
   // ── Public routes ───────────────────────────────────────────────
@@ -42,6 +44,10 @@ export const router = createBrowserRouter([
         <LoginPage />
       </PublicRoute>
     ),
+  },
+  {
+    path: "/auth/callback",
+    element: <GoogleCallback />,
   },
   {
     path: "/user-guide",
@@ -89,15 +95,15 @@ export const router = createBrowserRouter([
 
       // ── Feature-permission guarded routes ─────────────────────────
       {
-        path: "playground",
+        path: "studio",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Playground">
-            <PlaygroundPage />
+          <PermissionRoute permission="canManageAgents" label="Studio">
+            <StudioPage />
           </PermissionRoute>
         ),
       },
       {
-        path: "playground/project/:projectId",
+        path: "studio/project/:projectId",
         element: (
           <PermissionRoute permission="canManageAgents" label="Agent Network">
             <ProjectDetailsPage />

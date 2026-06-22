@@ -116,7 +116,7 @@ export default function LandingPage() {
                 <div className="h-3 w-3 rounded-full bg-green-400/80"></div>
               </div>
               <div className="flex-1 mx-4">
-                <div className="bg-background border border-border/50 rounded-lg px-4 py-1.5 text-xs text-muted-foreground text-center">app.blinkbot.ai/playground</div>
+                <div className="bg-background border border-border/50 rounded-lg px-4 py-1.5 text-xs text-muted-foreground text-center">app.blinkbot.ai/studio</div>
               </div>
             </div>
             {/* Content preview */}

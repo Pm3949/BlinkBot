@@ -83,7 +83,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <Link
-            to="/playground"
+            to="/studio"
             className="self-start md:self-auto bg-primary hover:bg-primary-hover text-white font-semibold text-sm px-5 py-2.5 rounded-full shadow-lg hover:shadow-primary/20 transition-all cursor-pointer flex items-center gap-2"
           >
             <Bot size={16} />

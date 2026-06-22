@@ -10,7 +10,8 @@ import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
 async function fetchAnalytics() {
-  const { data: { user } } = await supabase.auth.getUser();
+  const userStr = localStorage.getItem("user");
+  const user = userStr ? JSON.parse(userStr) : null;
   if (!user) throw new Error("Not authenticated");
 
   const response = await fetch(`${API_URL}/analytics/${user.id}`);

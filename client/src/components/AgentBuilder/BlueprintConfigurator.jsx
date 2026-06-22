@@ -219,7 +219,7 @@ export default function BlueprintConfigurator({ blueprint, deployData, onFinish 
             type="submit"
             className="inline-flex items-center px-8 py-4 bg-primary text-primary-foreground rounded-xl font-bold shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1"
           >
-            Finish & Go to Playground
+            Finish & Go to Studio
             <CheckCircle2 className="ml-2 w-5 h-5" />
           </button>
         </motion.div>

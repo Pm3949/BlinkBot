@@ -59,7 +59,7 @@ export function useWorkspacePermissions() {
     };
   }
   const role = currentWorkspace.role;
-  const isAdmin = role === "Admin";
+  const isAdmin = role === "Admin" || role === "Owner";
   return {
     role,
     isAdmin,

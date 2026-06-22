@@ -8,4 +8,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase URL and Anon Key are required!');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    fetch: async (url, options = {}) => {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        options.headers = {
+          ...options.headers,
+          Authorization: `Bearer ${token}`,
+        };
+      }
+      return fetch(url, options);
+    },
+  },
+});

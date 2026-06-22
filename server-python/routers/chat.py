@@ -16,6 +16,7 @@ from database import get_db_connection
 from schemas import ChatRequest, WidgetChatRequest
 from core.dependencies import rag_engine
 from utils import get_user_limits
+from core.security import decrypt_key
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ async def chat_with_agent(req: ChatRequest):
             is_active
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        custom_api_key = decrypt_key(custom_api_key)
         
         if not is_active:
             async def offline_stream():
@@ -147,6 +149,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             is_active
                         ) = cursor.fetchone()
                         embed_model = embed_model or "text-embedding-3-small"
+                        custom_api_key = decrypt_key(custom_api_key)
                         
                         if not is_active:
                             async def offline_stream():
@@ -191,8 +194,8 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
         cursor.execute(
-            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
-            (str(query_vector), active_agent_id),
+            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+            (req.message, str(query_vector), active_agent_id),
         )
         best_matches = cursor.fetchall()
 
@@ -335,7 +338,20 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
                 d.strip().replace("http://", "").replace("https://", "").split(":")[0] 
                 for d in allowed_domains.split(",") if d.strip()
             ]
-            if domains and origin not in domains:
+            
+            allowed = False
+            if not domains:
+                allowed = True
+            else:
+                for d in domains:
+                    if d == origin:
+                        allowed = True
+                        break
+                    elif d.startswith("*.") and origin.endswith(d[1:]):
+                        allowed = True
+                        break
+                        
+            if not allowed:
                 raise HTTPException(status_code=403, detail="Domain not allowed")
 
         # Check Chatbot Message Limit
@@ -378,6 +394,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, is_active = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        custom_api_key = decrypt_key(custom_api_key)
         
         if not is_active:
             async def offline_stream():
@@ -402,8 +419,8 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
         cursor.execute(
-            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
-            (str(query_vector), agent_id),
+            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+            (req.message, str(query_vector), agent_id),
         )
         best_matches = cursor.fetchall()
 
@@ -570,6 +587,7 @@ async def api_v1_chat(req: APIChatRequest, response: Response, x_api_key: str = 
             is_active
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
+        custom_api_key = decrypt_key(custom_api_key)
         
         if not is_active:
             async def offline_stream():
@@ -633,6 +651,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             is_active
                         ) = cursor.fetchone()
                         embed_model = embed_model or "text-embedding-3-small"
+                        custom_api_key = decrypt_key(custom_api_key)
                         
                         if not is_active:
                             async def offline_stream():
@@ -644,8 +663,8 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         # RAG Logic
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
         cursor.execute(
-            "SELECT content, similarity FROM match_documents(%s::vector, %s, 5, 0.3)",
-            (str(query_vector), active_agent_id),
+            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+            (req.message, str(query_vector), active_agent_id),
         )
         best_matches = cursor.fetchall()
 

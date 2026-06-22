@@ -62,7 +62,7 @@ export default function AgentBuilder() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-white rounded-2xl shadow-sm border p-4 md:p-8">
+    <div className="min-h-[calc(100vh-4rem)] bg-card rounded-2xl border border-border p-4 md:p-8">
       <AnimatePresence mode="wait">
         {step === 'prompt' && (
           <PromptStep key="prompt" onSubmit={handleGenerate} />
@@ -74,17 +74,22 @@ export default function AgentBuilder() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center pt-32"
+            className="flex flex-col items-center justify-center pt-32 text-center"
           >
-            <Loader2 className="w-16 h-16 text-purple-600 animate-spin mb-8" />
-            <motion.h2 
-              animate={{ opacity: [0.5, 1, 0.5] }} 
+            <div className="mb-8 relative">
+              <div className="w-20 h-20 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              </div>
+            </div>
+            <motion.h2
+              animate={{ opacity: [0.6, 1, 0.6] }}
               transition={{ repeat: Infinity, duration: 2 }}
-              className="text-2xl font-bold text-gray-800"
+              className="text-2xl font-bold text-foreground"
             >
               {step === 'loading' ? "Master Builder is designing your network..." : "Provisioning Agent Network..."}
             </motion.h2>
-            <p className="text-gray-500 mt-2">
+            <p className="text-muted-foreground mt-2">
               {step === 'loading' ? "Analyzing requirements and selecting sub-agents" : "Saving configuration securely to the database..."}
             </p>
           </motion.div>
@@ -101,23 +106,23 @@ export default function AgentBuilder() {
             animate={{ opacity: 1, scale: 1 }}
             className="flex flex-col items-center justify-center pt-32 text-center"
           >
-            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
-              <CheckCircle2 className="w-12 h-12 text-green-600" />
+            <div className="w-24 h-24 bg-green-500/15 border border-green-500/30 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle2 className="w-12 h-12 text-green-500" />
             </div>
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">Agents Deployed & Configured!</h2>
-            <p className="text-xl text-gray-600 max-w-lg mb-8">
+            <h2 className="text-4xl font-bold text-foreground mb-4">Agents Deployed & Configured!</h2>
+            <p className="text-lg text-muted-foreground max-w-lg mb-8">
               Your custom agent network has been provisioned and is ready to be used.
             </p>
             <div className="flex gap-4">
-              <a 
-                href={`/playground/project/${deployData?.project_id}`}
-                className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition"
+              <a
+                href={`/studio/project/${deployData?.project_id}`}
+                className="px-6 py-3 btn-primary text-white rounded-xl font-medium transition shadow-lg shadow-primary/25"
               >
-                Go to Playground
+                Go to Studio
               </a>
-              <button 
+              <button
                 onClick={() => { setStep('prompt'); setBlueprint(null); setDeployData(null); }}
-                className="px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition"
+                className="px-6 py-3 bg-muted text-foreground rounded-xl font-medium hover:bg-muted/80 border border-border transition"
               >
                 Build Another Network
               </button>
@@ -128,3 +133,4 @@ export default function AgentBuilder() {
     </div>
   );
 }
+

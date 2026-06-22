@@ -1,7 +1,7 @@
 import {
   LayoutDashboard,
   Bot,
-  Wand2,
+  FlaskConical,
   Database,
   MessageSquare,
   BookOpen,
@@ -40,9 +40,9 @@ const groups = [
         path: "/",
       },
       {
-        label: "Playground",
-        icon: Bot,
-        path: "/playground",
+        label: "Studio",
+        icon: FlaskConical,
+        path: "/studio",
       },
       {
         label: "Chatbots",

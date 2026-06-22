@@ -64,8 +64,10 @@ export default function ChatbotEditorPage() {
   }, [chatbot]);
 
   const generateApiKey = () => {
-    const newKey = "rm_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    setApiKey(newKey);
+    const array = new Uint8Array(16);
+    window.crypto.getRandomValues(array);
+    const hex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    setApiKey("rm_" + hex);
   };
 
   const handleSave = async () => {

@@ -74,3 +74,24 @@ class NotificationCreate(BaseModel):
     title: str
     message: str
     type: NotificationType
+
+# Auth Schemas
+class UserRegister(BaseModel):
+    email: str
+    password: str
+
+class VerifyOTP(BaseModel):
+    email: str
+    otp: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class ForgotPassword(BaseModel):
+    email: str
+
+class ResetPassword(BaseModel):
+    email: str
+    token: str
+    new_password: str

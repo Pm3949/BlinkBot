@@ -9,10 +9,10 @@ export default function QuickActions({ onCreateAgent }) {
   const actions = [
     {
       icon: Bot,
-      label: "Go to Playground",
+      label: "Go to Studio",
       description: "Manage & configure agents",
       color: "from-blue-500/10 to-indigo-500/10 text-blue-500 border-blue-500/20",
-      action: () => navigate("/playground"),
+      action: () => navigate("/studio"),
     },
     {
       icon: UploadCloud,

@@ -279,7 +279,7 @@ export default function ProjectDetailsPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link to="/playground" className="p-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl transition">
+          <Link to="/studio" className="p-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl transition">
             <ArrowLeft size={20} />
           </Link>
           <div>

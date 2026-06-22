@@ -1,6 +1,10 @@
 import os
 import tempfile
 import logging
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -27,9 +31,6 @@ except Exception as e:
     logger.warning(f"Groq client initialization failed: {e}")
     groq_client = None
 
-from dotenv import load_dotenv
-load_dotenv()
-
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 # Split by comma if multiple URLs are provided, and strip whitespace
@@ -39,6 +40,25 @@ allow_origins = [url.strip() for url in frontend_url.split(",")] if frontend_url
 if "*" not in allow_origins:
     allow_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"])
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request, Response
+
+class PublicCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/api/widget") or request.url.path.startswith("/api/v1"):
+            if request.method == "OPTIONS":
+                return Response(status_code=200, headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "*",
+                    "Access-Control-Allow-Headers": "*",
+                })
+            response = await call_next(request)
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            return response
+        return await call_next(request)
+
+app.add_middleware(PublicCORSMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
@@ -46,6 +66,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 
 # Include Routers
 app.include_router(documents.router)
@@ -61,6 +85,11 @@ app.include_router(feedback.router)
 app.include_router(notifications.router)
 app.include_router(meta_agent.router)
 app.include_router(demo.router)
+app.include_router(auth.router)
+
+# Configure Rate Limiter
+app.state.limiter = auth.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Mount uploads directory
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")

@@ -4,10 +4,9 @@ import { supabase } from "../supabaseClient";
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
 async function getAuthenticatedUser() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  if (!user?.id) throw new Error("You must be signed in.");
-  return user;
+  const userStr = localStorage.getItem("user");
+  if (!userStr) throw new Error("You must be signed in.");
+  return JSON.parse(userStr);
 }
 
 export async function getAnalytics() {
