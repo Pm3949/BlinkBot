@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from core.dependencies import UPLOAD_DIR
 
 # Import routers
-from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo
+from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -67,7 +67,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import documents, analytics, admin, billing, chat, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth
+from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
@@ -77,6 +77,7 @@ app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(billing.router)
 app.include_router(chat.router)
+app.include_router(chat_history.router)
 app.include_router(workspaces.router)
 app.include_router(agents.router)
 app.include_router(chatbots.router)

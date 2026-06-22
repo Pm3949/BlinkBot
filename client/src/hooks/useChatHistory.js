@@ -1,5 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "../supabaseClient";
+import {
+  getChatSessions,
+  createChatSession,
+  updateChatSession,
+  deleteChatSession,
+  getChatMessages,
+  addChatMessage
+} from "../services/chatService";
 import { useAuth } from "../context/AuthContext";
 import { useUIStore } from "../store/useUIStore";
 
@@ -11,29 +18,13 @@ export function useChatSessions() {
     queryKey: ["chat_sessions", user?.id, activeWorkspaceId],
     queryFn: async () => {
       if (!user || !activeWorkspaceId) return [];
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .select(`
-          id,
-          agent_id,
-          title,
-          pinned,
-          created_at,
-          updated_at,
-          agents(name)
-        `)
-        .eq("user_id", user.id)
-        .eq("workspace_id", activeWorkspaceId)
-        .order("pinned", { ascending: false })
-        .order("updated_at", { ascending: false });
-
-      if (error) throw error;
+      const data = await getChatSessions(activeWorkspaceId, user.id);
       
       // Map it to match the old store format closely
       return data.map(session => ({
         id: session.id,
         agentId: session.agent_id,
-        agentName: session.agents?.name || "General",
+        agentName: session.agent_name || "General",
         title: session.title,
         pinned: session.pinned,
         createdAt: session.created_at,
@@ -49,14 +40,7 @@ export function useChatMessages(sessionId) {
     queryKey: ["chat_messages", sessionId],
     queryFn: async () => {
       if (!sessionId) return [];
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .select("id, role, content, created_at, latency")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      return data;
+      return await getChatMessages(sessionId);
     },
     enabled: !!sessionId,
   });
@@ -69,18 +53,13 @@ export function useChatMutations() {
   const createSession = useMutation({
     mutationFn: async ({ agentId, title = "New chat" }) => {
       const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
-      const { data, error } = await supabase
-        .from("chat_sessions")
-        .insert([{
-          user_id: user.id,
-          workspace_id: activeWorkspaceId,
-          agent_id: agentId || null,
-          title
-        }])
-        .select()
-        .single();
+      const data = await createChatSession({
+        user_id: user.id,
+        workspace_id: activeWorkspaceId,
+        agent_id: agentId || null,
+        title
+      });
         
-      if (error) throw error;
       return {
         id: data.id,
         agentId: data.agent_id,
@@ -97,11 +76,7 @@ export function useChatMutations() {
 
   const renameSession = useMutation({
     mutationFn: async ({ id, title }) => {
-      const { error } = await supabase
-        .from("chat_sessions")
-        .update({ title, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) throw error;
+      await updateChatSession(id, { title });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
@@ -110,11 +85,7 @@ export function useChatMutations() {
 
   const togglePinSession = useMutation({
     mutationFn: async ({ id, pinned }) => {
-      const { error } = await supabase
-        .from("chat_sessions")
-        .update({ pinned, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) throw error;
+      await updateChatSession(id, { pinned });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
@@ -123,11 +94,7 @@ export function useChatMutations() {
 
   const deleteSession = useMutation({
     mutationFn: async (id) => {
-      const { error } = await supabase
-        .from("chat_sessions")
-        .delete()
-        .eq("id", id);
-      if (error) throw error;
+      await deleteChatSession(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
@@ -136,24 +103,12 @@ export function useChatMutations() {
 
   const addMessage = useMutation({
     mutationFn: async ({ sessionId, role, content, latency }) => {
-      const { data, error } = await supabase
-        .from("chat_messages")
-        .insert([{
-          session_id: sessionId,
-          role,
-          content,
-          latency: latency || null
-        }])
-        .select()
-        .single();
-        
-      if (error) throw error;
-      
-      // Update session updated_at
-      await supabase
-        .from("chat_sessions")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", sessionId);
+      const data = await addChatMessage({
+        session_id: sessionId,
+        role,
+        content,
+        latency: latency || null
+      });
         
       return data;
     },

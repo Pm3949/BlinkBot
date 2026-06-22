@@ -24,6 +24,8 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
   const [vote, setVote] = useState(null);
   const { submitMutation } = useFeedback();
 
+  const isMasterAgent = agent?.name?.toLowerCase().includes("master") && !content?.includes("[Routed to:");
+
   const handleUpvote = async () => {
     if (vote) return;
     setVote("upvote");
@@ -127,16 +129,15 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
     <div className={`animate-message flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
         <div
-          className="
+          className={`
           h-10
           w-10
           rounded-2xl
-          bg-primary
-          text-primary-foreground
           flex
           items-center
           justify-center
-        "
+          ${isMasterAgent ? "bg-purple-600 text-white shadow-md shadow-purple-500/20" : "bg-primary text-primary-foreground"}
+        `}
         >
           <Bot size={18} />
         </div>
@@ -153,7 +154,9 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
         ${
           isUser
             ? "bg-primary text-primary-foreground"
-            : "bg-card border border-border text-foreground"
+            : isMasterAgent
+              ? "bg-purple-50/50 border border-purple-200 text-foreground dark:bg-purple-950/20 dark:border-purple-800"
+              : "bg-card border border-border text-foreground"
         }
       `}
       >
