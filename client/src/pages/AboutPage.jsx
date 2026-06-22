@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
+import { usePageSeo } from '../hooks/usePageSeo';
 import { ChevronLeft, Heart, Zap, Shield, Globe, Users, Bot } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 
 export default function AboutPage() {
+  usePageSeo('About Us', 'Learn about BlinkBot — our mission to help every business build custom AI bots powered by their own data, without needing any code.');
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <nav className="flex items-center justify-between px-6 md:px-8 py-6 max-w-4xl mx-auto border-b border-border/50">

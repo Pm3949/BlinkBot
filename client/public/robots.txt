@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /studio
+Disallow: /chatbots
+Disallow: /knowledge
+Disallow: /analytics
+Disallow: /settings
+Disallow: /team
+Disallow: /billing
+Disallow: /chat
+Disallow: /auth/
+
+Sitemap: https://blinkbot.ai/sitemap.xml

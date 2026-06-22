@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { usePageSeo } from '../hooks/usePageSeo';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   ChevronLeft, BookOpen, Bot, Database, Globe, Users, BarChart3, 
@@ -24,6 +25,7 @@ const sections = [
 ];
 
 export default function UserGuidePage() {
+  usePageSeo('User Guide', 'Complete guide to building, configuring, and deploying custom AI chatbots with BlinkBot. From document upload to embedding a live widget.');
   const [activeSection, setActiveSection] = useState("introduction");
 
   useEffect(() => {

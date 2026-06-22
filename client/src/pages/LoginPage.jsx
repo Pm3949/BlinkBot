@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePageSeo } from '../hooks/usePageSeo';
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Loader2, Bot, Sun, Moon, Eye, EyeOff } from "lucide-react";
@@ -42,6 +43,7 @@ const Button = ({ children, variant = "default", className = "", ...props }) => 
 // ------------------------------------------
 
 export default function LoginPage() {
+  usePageSeo('Log In or Sign Up', 'Sign in or create a free BlinkBot account to start building custom AI chatbots powered by your documents.');
   const navigate = useNavigate();
   const { login } = useAuth();
   const [mode, setMode] = useState("signin"); // 'signin', 'signup', 'otp', 'forgot-password', 'reset-password'

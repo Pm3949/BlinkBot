@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
+import { usePageSeo } from '../hooks/usePageSeo';
 import { ChevronLeft, Newspaper, Clock } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 
 export default function BlogPage() {
+  usePageSeo('Blog', 'BlinkBot blog — product updates, AI insights, tutorials, and tips for building custom AI chatbots with your own data.');
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <nav className="flex items-center justify-between px-6 md:px-8 py-6 max-w-4xl mx-auto border-b border-border/50">

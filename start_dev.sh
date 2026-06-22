@@ -3,6 +3,7 @@
 # Unified script to start the local Supabase database and the Python backend
 
 # 1. Start Supabase Database
+sudo chmod 666 /var/run/docker.sock
 echo "======================================"
 echo "Starting Local Supabase Database..."
 echo "======================================"

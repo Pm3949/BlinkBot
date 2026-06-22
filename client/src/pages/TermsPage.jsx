@@ -1,10 +1,12 @@
 import React from 'react';
+import { usePageSeo } from '../hooks/usePageSeo';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, FileText } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import { useUIStore } from '../store/useUIStore';
 
 export default function TermsPage() {
+  usePageSeo('Terms & Conditions', 'Read the BlinkBot Terms and Conditions — governing use of our AI chatbot platform, data rights, acceptable use policy, and billing.');
   const darkMode = useUIStore((state) => state.darkMode);
 
   return (

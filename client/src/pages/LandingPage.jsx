@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePageSeo } from '../hooks/usePageSeo';
 import { Link } from 'react-router-dom';
 import { 
   Bot, Zap, Database, Globe, ArrowRight, ShieldCheck, Cpu, Sun, Moon, 
@@ -13,6 +14,7 @@ import { toast } from 'sonner';
 const API_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function LandingPage() {
+  usePageSeo(); // Uses global default title & description
   const darkMode = useUIStore((state) => state.darkMode);
   const toggleDarkMode = useUIStore((state) => state.toggleDarkMode);
 
