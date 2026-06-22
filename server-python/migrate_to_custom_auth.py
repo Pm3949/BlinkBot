@@ -28,6 +28,7 @@ def migrate():
                 reset_token_expires_at TIMESTAMP WITH TIME ZONE,
                 totp_secret TEXT,
                 two_factor_enabled BOOLEAN DEFAULT FALSE,
+                is_super_admin BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
             );
         """)

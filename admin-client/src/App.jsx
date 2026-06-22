@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from './supabaseClient';
-import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X, Calendar as CalendarIcon } from 'lucide-react';
+import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X, Calendar as CalendarIcon, LogOut } from 'lucide-react';
 import AdminCalendar from './components/AdminCalendar';
 import { toast } from 'sonner';
 
@@ -43,12 +42,16 @@ async function fetchScheduledDemoRequests(user) {
 
 export default function App() {
   const queryClient = useQueryClient();
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('adminUser');
+    return saved ? JSON.parse(saved) : null;
+  });
 
-  // Fetch current user
-  React.useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setCurrentUser(user));
-  }, []);
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('adminUser');
+    localStorage.removeItem('adminToken');
+  };
 
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['adminStats'],
@@ -176,14 +179,28 @@ export default function App() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoggingIn(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Logged in successfully!");
-      // The auth listener will automatically update the currentUser
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.detail || "Login failed");
+      }
+      
+      if (data.requires_otp || data.requires_2fa) {
+        toast.error("Please verify your account via the main app before accessing the admin portal.");
+      } else {
+        toast.success("Logged in successfully!");
+        setCurrentUser(data.user);
+        localStorage.setItem('adminUser', JSON.stringify(data.user));
+        localStorage.setItem('adminToken', data.access_token);
+      }
+    } catch (err) {
+      toast.error(err.message);
     }
     setIsLoggingIn(false);
   };
@@ -249,7 +266,14 @@ export default function App() {
             <ShieldCheck className="text-primary w-8 h-8" />
             Super Admin Portal
           </h1>
-          <p className="text-muted-foreground mt-2">Manage the entire platform across all users and workspaces.</p>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">{currentUser.email}</span>
+            <button onClick={handleLogout} className="flex items-center gap-1.5 px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-lg text-sm font-medium transition">
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
+        </div>
+        <p className="text-muted-foreground mt-2">Manage the entire platform across all users and workspaces.</p>
         </div>
 
         {/* Global Stats Grid */}

@@ -10,7 +10,7 @@ router = APIRouter(tags=["admin"])
 
 def check_super_admin(user_id: str, cursor):
     cursor.execute(
-        "SELECT is_super_admin FROM user_subscriptions WHERE user_id = %s", (user_id,)
+        "SELECT is_super_admin FROM users WHERE id = %s", (user_id,)
     )
     row = cursor.fetchone()
     if not row or not row[0]:
@@ -33,7 +33,7 @@ async def get_admin_stats(user_id: str):
         cursor = conn.cursor()
         check_super_admin(user_id, cursor)
 
-        cursor.execute("SELECT COUNT(*) FROM auth.users")
+        cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM workspaces")
@@ -76,8 +76,8 @@ async def get_admin_users(user_id: str):
 
         cursor.execute(
             """
-            SELECT u.id, u.email, u.created_at, s.plan_tier, s.limits, s.is_super_admin
-            FROM auth.users u
+            SELECT u.id, u.email, u.created_at, s.plan_tier, s.limits, u.is_super_admin
+            FROM users u
             LEFT JOIN user_subscriptions s ON u.id = s.user_id
             ORDER BY u.created_at DESC
         """
@@ -159,15 +159,11 @@ async def update_user_super_admin(target_user_id: str, req: UpdateSuperAdminRequ
         conn = get_db_connection()
         cursor = conn.cursor()
         check_super_admin(req.admin_user_id, cursor)
-
         cursor.execute(
             """
-            INSERT INTO user_subscriptions (user_id, is_super_admin)
-            VALUES (%s, %s)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET is_super_admin = EXCLUDED.is_super_admin, updated_at = now()
-        """,
-            (target_user_id, req.is_super_admin),
+            UPDATE users SET is_super_admin = %s WHERE id = %s
+            """,
+            (req.is_super_admin, target_user_id)
         )
         conn.commit()
         return {"message": "Super Admin status updated successfully"}
@@ -200,7 +196,7 @@ async def get_admin_workspaces(user_id: str):
                 u.email as owner_email,
                 (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) as member_count
             FROM workspaces w
-            LEFT JOIN auth.users u ON w.owner_id = u.id
+            LEFT JOIN users u ON w.owner_id = u.id
             ORDER BY w.created_at DESC
         """
         )
