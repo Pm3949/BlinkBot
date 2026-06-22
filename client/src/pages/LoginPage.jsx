@@ -241,7 +241,7 @@ export default function LoginPage() {
           {!isOtp && !isForgot && !isReset && (
             <>
               <a 
-                href={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/auth/google/login`}
+                href={`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/auth/google/login`}
                 className="w-full mb-6 h-11 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
               >
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
