@@ -67,6 +67,8 @@ export default function StudioPage() {
   const [agentToEdit, setAgentToEdit] = useState(null);
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
+  const [deleteAgentConfirmText, setDeleteAgentConfirmText] = useState("");
+  const [deleteProjectConfirmText, setDeleteProjectConfirmText] = useState("");
 
   const deleteAgentMutation = useDeleteAgent(activeWorkspaceId);
   const updateAgentMutation = useUpdateAgent(activeWorkspaceId);
@@ -97,6 +99,7 @@ export default function StudioPage() {
       await deleteAgentMutation.mutateAsync(agentToDelete.id);
       toast.success("Agent deleted");
       setAgentToDelete(null);
+      setDeleteAgentConfirmText("");
     } catch {
       toast.error("Failed to delete agent");
     }
@@ -108,6 +111,7 @@ export default function StudioPage() {
       await deleteProjectMutation.mutateAsync(projectToDelete.id);
       toast.success("Network deleted");
       setProjectToDelete(null);
+      setDeleteProjectConfirmText("");
     } catch {
       toast.error("Failed to delete network");
     }
@@ -470,7 +474,12 @@ export default function StudioPage() {
       {/* ── Modals ── */}
       {agentToEdit && <AgentSettingsModal agent={agentToEdit} onClose={() => setAgentToEdit(null)} />}
 
-      <Dialog open={!!agentToDelete} onOpenChange={() => setAgentToDelete(null)}>
+      <Dialog open={!!agentToDelete} onOpenChange={(open) => {
+        if (!open) {
+          setAgentToDelete(null);
+          setDeleteAgentConfirmText("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Agent</DialogTitle>
@@ -478,16 +487,36 @@ export default function StudioPage() {
               Are you sure you want to delete <strong>"{agentToDelete?.name}"</strong>? This will permanently remove the agent, its vectorized documents, and all chat history. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          <div className="mt-4">
+            <p className="text-sm font-medium mb-2">Please type <strong>{agentToDelete?.name}</strong> to confirm.</p>
+            <input
+              type="text"
+              value={deleteAgentConfirmText}
+              onChange={(e) => setDeleteAgentConfirmText(e.target.value)}
+              placeholder={agentToDelete?.name}
+              className="w-full border border-border rounded-lg p-2.5 bg-background focus:ring-2 focus:ring-red-500/50 focus:outline-none"
+            />
+          </div>
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setAgentToDelete(null)}>Cancel</Button>
-            <Button variant="destructive" className="bg-red-600 hover:bg-red-700 text-white" onClick={confirmDelete} disabled={deleteAgentMutation.isPending}>
+            <Button variant="outline" onClick={() => { setAgentToDelete(null); setDeleteAgentConfirmText(""); }}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              className="bg-red-600 hover:bg-red-700 text-white" 
+              onClick={confirmDelete} 
+              disabled={deleteAgentMutation.isPending || deleteAgentConfirmText !== agentToDelete?.name}
+            >
               {deleteAgentMutation.isPending ? "Deleting..." : "Delete Permanently"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!projectToDelete} onOpenChange={() => setProjectToDelete(null)}>
+      <Dialog open={!!projectToDelete} onOpenChange={(open) => {
+        if (!open) {
+          setProjectToDelete(null);
+          setDeleteProjectConfirmText("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Agent Network</DialogTitle>
@@ -495,9 +524,24 @@ export default function StudioPage() {
               Are you sure you want to delete <strong>"{projectToDelete?.name}"</strong>? This will cascade-delete all sub-agents, tools, knowledge bases, and chats. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          <div className="mt-4">
+            <p className="text-sm font-medium mb-2">Please type <strong>{projectToDelete?.name}</strong> to confirm.</p>
+            <input
+              type="text"
+              value={deleteProjectConfirmText}
+              onChange={(e) => setDeleteProjectConfirmText(e.target.value)}
+              placeholder={projectToDelete?.name}
+              className="w-full border border-border rounded-lg p-2.5 bg-background focus:ring-2 focus:ring-red-500/50 focus:outline-none"
+            />
+          </div>
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setProjectToDelete(null)}>Cancel</Button>
-            <Button variant="destructive" className="bg-red-600 hover:bg-red-700 text-white" onClick={confirmDeleteProject} disabled={deleteProjectMutation.isPending}>
+            <Button variant="outline" onClick={() => { setProjectToDelete(null); setDeleteProjectConfirmText(""); }}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              className="bg-red-600 hover:bg-red-700 text-white" 
+              onClick={confirmDeleteProject} 
+              disabled={deleteProjectMutation.isPending || deleteProjectConfirmText !== projectToDelete?.name}
+            >
               {deleteProjectMutation.isPending ? "Deleting..." : "Delete Network"}
             </Button>
           </DialogFooter>
