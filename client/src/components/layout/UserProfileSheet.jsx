@@ -85,7 +85,7 @@ export default function UserProfileSheet({ open, onClose }) {
             <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Preferences</h4>
             <div className="p-4 rounded-xl border border-border/50 bg-muted/5 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
               <p>Additional profile settings like password reset, 2FA, and integrations will appear here.</p>
-              <Button variant="link" className="h-auto p-0 text-primary">Manage in Settings <ExternalLink size={12} className="ml-1" /></Button>
+              <Button variant="link" href="/settings" className="h-auto p-0 text-primary">Manage in Settings <ExternalLink size={12} className="ml-1" /></Button>
             </div>
           </div>
         </div>

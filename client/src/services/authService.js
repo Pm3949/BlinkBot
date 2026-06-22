@@ -36,7 +36,7 @@ export async function verifyOTP({ email, otp }) {
 export async function signOut() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("user");
-  window.location.href = "/auth";
+  window.location.href = "/";
 }
 
 export async function requestPasswordReset(email) {
