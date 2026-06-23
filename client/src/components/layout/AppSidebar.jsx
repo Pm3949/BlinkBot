@@ -13,9 +13,10 @@ import {
   CreditCard,
   ChevronDown,
   Globe,
-  ShieldCheck
+  ShieldCheck,
+  Plus
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useUserWorkspaces, useWorkspacePermissions } from "../../hooks/useSettings";
 import { NavLink } from "react-router-dom";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import CreateWorkspaceModal from "./CreateWorkspaceModal";
 
 const groups = [
   {
@@ -99,6 +101,8 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
   const collapsed = forceExpanded ? false : storedCollapsed;
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const setActiveWorkspaceId = useUIStore((state) => state.setActiveWorkspaceId);
+  
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
   const { data: workspaces = [], isLoading } = useUserWorkspaces();
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
@@ -208,8 +212,17 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
       <div className="border-t border-border p-3">
         {!collapsed && (
           <div className="mb-3 rounded-2xl border border-border bg-background/50 p-3 backdrop-blur-md relative">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5 px-1">
-              Active Workspace
+            <div className="flex items-center justify-between mb-1.5 px-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                Active Workspace
+              </div>
+              <button 
+                onClick={() => setIsCreateModalOpen(true)}
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title="Create Workspace"
+              >
+                <Plus size={14} />
+              </button>
             </div>
             
             {isLoading ? (
@@ -234,6 +247,10 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
           </div>
         )}
       </div>
+      <CreateWorkspaceModal 
+        open={isCreateModalOpen} 
+        onOpenChange={setIsCreateModalOpen} 
+      />
     </aside>
   );
 }

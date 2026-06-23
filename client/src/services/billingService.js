@@ -46,6 +46,7 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
     user_id: user.id,
     plan_tier: planTier,
     billing_cycle: billingCycle,
+    workspaces_limit: limits.workspaces || 1,
     agents_limit: limits.agents || 1,
     agent_messages_limit: limits.agentMessages || 500,
     storage_mb_limit: limits.storage || 100,

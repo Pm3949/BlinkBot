@@ -71,3 +71,18 @@ export async function getUserWorkspaces() {
 
   return response.json();
 }
+
+export async function createWorkspace(payload) {
+  const response = await fetch(`${API_URL}/api/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to create workspace");
+  }
+
+  return response.json();
+}

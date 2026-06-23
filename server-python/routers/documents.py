@@ -1,3 +1,9 @@
+"""
+Documents Router.
+Responsibility: Handles the uploading of files (PDF, TXT, CSV, Images) and URLs.
+It extracts raw text, checks user storage limits, saves the files securely using encryption, 
+and then schedules the heavy embedding/chunking process as a background task.
+"""
 import os
 import shutil
 import logging
@@ -12,17 +18,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["documents"])
 
+# ==========================================
+# FILE UPLOAD & PROCESSING
+# ==========================================
+
 @router.post("/process-file")
 async def process_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     agent_id: str = Form(...),
 ):
-    """Upload a supported file, extract text, create a document row, and schedule ingestion."""
+    """
+    Upload a supported file, extract text, create a document row, and schedule ingestion.
+    """
     allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg"}
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
+    # Basic file extension validation
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in allowed_exts:
         raise HTTPException(
@@ -30,16 +43,20 @@ async def process_file(
             detail=f"Only {', '.join(sorted(allowed_exts))} files are allowed.",
         )
 
+    # os.path.basename prevents directory traversal attacks (e.g., uploading "../../etc/passwd")
     safe_filename = os.path.basename(file.filename)
     file_path = UPLOAD_DIR / safe_filename
 
     # We will read the file and save the encrypted version, but we need raw text first
     file_bytes = file.file.read()
     
+    # Save a temporary unencrypted version so the RAG engine can extract text using standard libraries
     temp_path = str(file_path) + ".tmp"
     with open(temp_path, "wb") as buffer:
         buffer.write(file_bytes)
         
+    # Security: Encrypt the actual file before saving it permanently to disk.
+    # This ensures that if the server is compromised, the attacker only gets encrypted junk.
     with open(file_path, "wb") as buffer:
         buffer.write(encrypt_data(file_bytes))
 
@@ -49,6 +66,7 @@ async def process_file(
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Fetch Agent Configuration
         cursor.execute(
             "SELECT user_id, embedding_model, chunk_strategy FROM agents WHERE id = %s",
             (agent_id,),
@@ -58,13 +76,17 @@ async def process_file(
             raise HTTPException(status_code=404, detail="Agent not found")
 
         user_id = agent_row[0]
+        # Fallbacks just in case the agent doesn't have these explicitly set
         embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
         strategy = agent_row[2] if agent_row[2] else "sentence"
 
-        # Check Storage Limit
+        # ==========================================
+        # STORAGE LIMIT ENFORCEMENT
+        # ==========================================
         limits = get_user_limits(user_id, cursor)
         file_size = os.path.getsize(file_path)
 
+        # Calculate the total size of all documents owned by this user
         cursor.execute(
             """
             SELECT COALESCE(SUM(d.file_size_bytes), 0)
@@ -76,15 +98,20 @@ async def process_file(
         )
         current_storage = cursor.fetchone()[0] or 0
 
+        # Check if adding this new file will exceed their plan's limits
         if current_storage + file_size > (limits["storage_mb"] * 1024 * 1024):
+            # Cleanup the files if rejected
             os.remove(file_path)
+            os.remove(temp_path)
             raise HTTPException(
                 status_code=403,
                 detail="Storage limit exceeded. Please upgrade your plan.",
             )
 
+        # Extract text using the temporary unencrypted file
         raw_text = rag_engine.extract_text_from_file(temp_path, safe_filename)
 
+        # Create the initial pending document row
         cursor.execute(
             "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'processing', %s) RETURNING id;",
             (agent_id, safe_filename, file_size),
@@ -92,6 +119,10 @@ async def process_file(
         document_id = cursor.fetchone()[0]
         conn.commit()
 
+        # ==========================================
+        # BACKGROUND TASK SCHEDULING
+        # ==========================================
+        # Pass the heavy lifting to a background thread so the HTTP request completes instantly
         background_tasks.add_task(
             background_ingestion,
             document_id,
@@ -118,13 +149,21 @@ async def process_file(
             cursor.close()
         if conn:
             conn.close()
+        # Always clean up the temporary unencrypted file, regardless of success or failure
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
 
+# ==========================================
+# URL SCRAPING & PROCESSING
+# ==========================================
+
 @router.post("/process-url")
 async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
-    """Fetch a webpage, create a document row, and schedule ingestion."""
+    """
+    Fetch a webpage, extract text using BeautifulSoup, create a document row, 
+    and schedule ingestion. Very similar flow to process-file.
+    """
     conn = None
     cursor = None
     try:
@@ -143,10 +182,12 @@ async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
         embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
         strategy = agent_row[2] if agent_row[2] else "sentence"
 
+        # Web scraping logic inside the RAG engine
         raw_text = rag_engine.extract_text_from_url(req.url)
+        # Approximate file size based on character count
         file_size = len(raw_text.encode("utf-8"))
 
-        # Check Storage Limit
+        # Storage Limits Check
         limits = get_user_limits(user_id, cursor)
         cursor.execute(
             """
@@ -172,6 +213,7 @@ async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
         document_id = cursor.fetchone()[0]
         conn.commit()
 
+        # Schedule the embedding job
         background_tasks.add_task(
             background_ingestion,
             document_id,
@@ -197,9 +239,16 @@ async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
         if conn:
             conn.close()
 
+# ==========================================
+# CRUD OPERATIONS
+# ==========================================
 
 @router.get("/agents/{agent_id}/documents")
 async def get_documents(agent_id: str):
+    """
+    Fetches the list of all documents belonging to a specific agent.
+    Includes the chunk count so the frontend can display how thoroughly the document was processed.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -233,9 +282,13 @@ async def get_documents(agent_id: str):
 
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str):
+    """
+    Permanently deletes a document, its vector embeddings (memory), and the physical file from disk.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # Fetch filename to delete the physical file
         cursor.execute("SELECT filename FROM documents WHERE id = %s", (doc_id,))
         doc = cursor.fetchone()
         if doc and doc[0]:
@@ -245,6 +298,7 @@ async def delete_document(doc_id: str):
             if os.path.exists(file_path):
                 os.remove(file_path)
 
+        # Cascading Deletes (though foreign keys usually handle this, it's explicitly done here)
         cursor.execute(
             "DELETE FROM document_embeddings WHERE document_id = %s", (doc_id,)
         )

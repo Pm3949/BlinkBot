@@ -316,27 +316,51 @@ async def reset_password(request: Request, payload: ResetPassword):
 
 @router.post("/2fa/setup")
 async def setup_2fa(request: Request, payload: dict):
+    """
+    Generates a secure Base32 TOTP secret and returns the provision URI for 
+    apps like Google Authenticator or Authy.
+    """
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(status_code=400, detail="User ID required")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
-        cur.execute("SELECT email, two_factor_enabled FROM public.users WHERE id = %s", (user_id,))
-        user = cur.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        if user['two_factor_enabled']:
+        cur.execute("SELECT two_factor_enabled FROM user_settings WHERE user_id = %s", (user_id,))
+        settings = cur.fetchone()
+        if settings and settings['two_factor_enabled']:
             raise HTTPException(status_code=400, detail="2FA already enabled")
             
+        # Get email from auth.users or fallback to public.users
+        cur.execute("SELECT email FROM auth.users WHERE id = %s", (user_id,))
+        auth_user = cur.fetchone()
+        email = auth_user['email'] if auth_user else None
+        
+        if not email:
+            cur.execute("SELECT email FROM public.users WHERE id = %s", (user_id,))
+            legacy_user = cur.fetchone()
+            if not legacy_user:
+                raise HTTPException(status_code=404, detail="User not found")
+            email = legacy_user['email']
+            
         secret = pyotp.random_base32()
+        
+        if not settings:
+            cur.execute("INSERT INTO user_settings (user_id, totp_secret) VALUES (%s, %s)", (user_id, secret))
+        else:
+            cur.execute("UPDATE user_settings SET totp_secret = %s WHERE user_id = %s", (secret, user_id))
+            
+        # Keep legacy table in sync just in case
         cur.execute("UPDATE public.users SET totp_secret = %s WHERE id = %s", (secret, user_id))
         conn.commit()
         
-        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user['email'], issuer_name="RAGMate")
+        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name="BlinkBot")
         return {"provisioning_uri": uri, "secret": secret}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
     except Exception as e:
-        conn.rollback()
+        if conn: conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
@@ -349,22 +373,35 @@ async def verify_2fa_setup(request: Request, payload: dict):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
-        cur.execute("SELECT totp_secret FROM public.users WHERE id = %s", (user_id,))
-        user = cur.fetchone()
-        if not user or not user['totp_secret']:
-            raise HTTPException(status_code=400, detail="2FA setup not initiated")
+        cur.execute("SELECT totp_secret FROM user_settings WHERE user_id = %s", (user_id,))
+        settings = cur.fetchone()
+        
+        secret = settings['totp_secret'] if settings and settings['totp_secret'] else None
+        if not secret:
+            cur.execute("SELECT totp_secret FROM public.users WHERE id = %s", (user_id,))
+            legacy_user = cur.fetchone()
+            if not legacy_user or not legacy_user['totp_secret']:
+                raise HTTPException(status_code=400, detail="2FA setup not initiated")
+            secret = legacy_user['totp_secret']
             
-        totp = pyotp.TOTP(user['totp_secret'])
+        totp = pyotp.TOTP(secret)
         if not totp.verify(totp_code):
             raise HTTPException(status_code=400, detail="Invalid OTP code")
             
-        cur.execute("UPDATE public.users SET two_factor_enabled = TRUE WHERE id = %s", (user_id,))
         # The user_settings table has its own boolean
-        cur.execute("UPDATE user_settings SET two_factor_enabled = TRUE WHERE user_id = %s", (user_id,))
+        if not settings:
+            cur.execute("INSERT INTO user_settings (user_id, two_factor_enabled, totp_secret) VALUES (%s, TRUE, %s)", (user_id, secret))
+        else:
+            cur.execute("UPDATE user_settings SET two_factor_enabled = TRUE, totp_secret = %s WHERE user_id = %s", (secret, user_id))
+            
+        cur.execute("UPDATE public.users SET two_factor_enabled = TRUE, totp_secret = %s WHERE id = %s", (secret, user_id))
         conn.commit()
         return {"message": "2FA successfully enabled"}
+    except HTTPException:
+        if conn: conn.rollback()
+        raise
     except Exception as e:
-        conn.rollback()
+        if conn: conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
@@ -376,25 +413,41 @@ async def login_2fa(request: Request, payload: Login2FA):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     try:
-        cur.execute("SELECT email, totp_secret, is_verified FROM public.users WHERE id = %s", (payload.user_id,))
-        user = cur.fetchone()
+        cur.execute("SELECT totp_secret FROM user_settings WHERE user_id = %s", (payload.user_id,))
+        settings = cur.fetchone()
         
-        if not user or not user['totp_secret']:
-            raise HTTPException(status_code=400, detail="Invalid request")
+        cur.execute("SELECT email, totp_secret FROM public.users WHERE id = %s", (payload.user_id,))
+        legacy_user = cur.fetchone()
+        
+        secret = settings['totp_secret'] if settings and settings['totp_secret'] else None
+        if not secret and legacy_user:
+            secret = legacy_user['totp_secret']
             
-        totp = pyotp.TOTP(user['totp_secret'])
+        if not secret:
+            raise HTTPException(status_code=400, detail="Invalid request or 2FA not setup")
+            
+        totp = pyotp.TOTP(secret)
         if not totp.verify(payload.totp_code):
             raise HTTPException(status_code=401, detail="Invalid Authenticator code")
             
-        access_token = create_access_token(user_id=payload.user_id, email=user['email'])
+        cur.execute("SELECT email FROM auth.users WHERE id = %s", (payload.user_id,))
+        auth_user = cur.fetchone()
+        email = auth_user['email'] if auth_user else (legacy_user['email'] if legacy_user else None)
+        
+        if not email:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        access_token = create_access_token(user_id=payload.user_id, email=email)
         return {
             "access_token": access_token, 
             "token_type": "bearer", 
-            "user": {"id": payload.user_id, "email": user['email']}
+            "user": {"id": payload.user_id, "email": email}
         }
     except HTTPException:
+        if conn: conn.rollback()
         raise
     except Exception as e:
+        if conn: conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()

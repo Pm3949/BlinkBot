@@ -53,6 +53,7 @@ export default function BillingPage() {
   const checkoutMutation = useCreateRazorpayOrder();
 
   // Custom Plan State
+  const [workspaces, setWorkspaces] = useState(1);
   const [agents, setAgents] = useState(1);
   const [agentMessages, setAgentMessages] = useState(5000);
   const [storage, setStorage] = useState(500);
@@ -61,26 +62,27 @@ export default function BillingPage() {
 
   // Dynamic Pricing Formula (USD equivalent for display purposes)
   const basePrice = 10;
+  const workspacesPrice = (workspaces - 1) * 6; // First workspace is included in basePrice
   const agentsPrice = agents * 5;
   const agentMsgPrice = (agentMessages / 1000) * 2;
   const storagePrice = (storage / 100) * 0.5;
   const chatbotsPrice = chatbots * 10;
   const chatbotMsgPrice = (chatbotMessages / 1000) * 2.5;
 
-  const monthlyTotal = basePrice + agentsPrice + agentMsgPrice + storagePrice + chatbotsPrice + chatbotMsgPrice;
+  const monthlyTotal = basePrice + workspacesPrice + agentsPrice + agentMsgPrice + storagePrice + chatbotsPrice + chatbotMsgPrice;
   const finalTotal = annualBilling ? monthlyTotal * 0.8 : monthlyTotal;
 
   const handleCheckout = async (planTier = "Custom") => {
     try {
       // Fixed limits mapping for fixed plans
       let finalLimits = {
-        agents, agentMessages, storage, chatbots, chatbotMessages
+        workspaces, agents, agentMessages, storage, chatbots, chatbotMessages
       };
       
       if (planTier === "Pro") {
-        finalLimits = { agents: 5, agentMessages: 10000, storage: 500, chatbots: 2, chatbotMessages: 5000 };
+        finalLimits = { workspaces: 3, agents: 5, agentMessages: 10000, storage: 500, chatbots: 2, chatbotMessages: 5000 };
       } else if (planTier === "Enterprise") {
-        finalLimits = { agents: 20, agentMessages: 100000, storage: 5000, chatbots: 10, chatbotMessages: 50000 };
+        finalLimits = { workspaces: 999999, agents: 20, agentMessages: 100000, storage: 5000, chatbots: 10, chatbotMessages: 50000 };
       }
 
       await checkoutMutation.mutateAsync({
@@ -101,6 +103,7 @@ export default function BillingPage() {
       description: "Perfect for exploring BlinkBot.",
       icon: Zap,
       features: [
+        "1 Workspace",
         "1 AI Agent",
         "1,000 Internal Messages",
         "100 MB Storage",
@@ -114,6 +117,7 @@ export default function BillingPage() {
       icon: Sparkles,
       isPopular: true,
       features: [
+        "3 Workspaces",
         "5 AI Agents",
         "10,000 Internal Messages",
         "500 MB Storage",
@@ -127,6 +131,7 @@ export default function BillingPage() {
       description: "For teams requiring scale.",
       icon: Building2,
       features: [
+        "Unlimited Workspaces",
         "20 AI Agents",
         "100,000 Internal Messages",
         "5,000 MB Storage",
@@ -219,6 +224,22 @@ export default function BillingPage() {
             </h3>
 
             <div className="space-y-8">
+              {/* Workspaces Slider */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <label className="text-sm font-semibold flex items-center gap-2"><Building2 size={16} /> Workspaces</label>
+                    <p className="text-xs text-muted-foreground mt-1">Separate environments for different teams or projects.</p>
+                  </div>
+                  <span className="font-mono bg-muted px-3 py-1 rounded-md text-sm">{workspaces}</span>
+                </div>
+                <input 
+                  type="range" min="1" max="20" step="1" 
+                  value={workspaces} onChange={(e) => setWorkspaces(parseInt(e.target.value))}
+                  className="w-full accent-primary"
+                />
+              </div>
+
               {/* Internal Agents Slider */}
               <div className="space-y-3">
                 <div className="flex justify-between items-end">
@@ -313,6 +334,10 @@ export default function BillingPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Platform Base</span>
                 <span className="font-medium">${basePrice.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Extra Workspaces</span>
+                <span className="font-medium">${workspacesPrice.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Internal Agents</span>

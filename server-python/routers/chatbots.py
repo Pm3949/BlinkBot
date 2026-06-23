@@ -1,3 +1,9 @@
+"""
+Chatbots Router.
+Responsibility: Manages the configuration for external, embeddable Web Widgets.
+A 'Chatbot' in this system is essentially a public-facing wrapper around a core Agent.
+It handles CORS settings, widget styling/theme customization, and API key generation for programmatic access.
+"""
 import logging
 from typing import Optional
 from pydantic import BaseModel
@@ -8,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chatbots"])
 
+# ==========================================
+# PYDANTIC SCHEMAS
+# ==========================================
+
 class ChatbotCreate(BaseModel):
     agent_id: str
     name: str
@@ -17,14 +27,23 @@ class ChatbotUpdate(BaseModel):
     name: Optional[str] = None
     settings: Optional[dict] = None
 
+# ==========================================
+# CRUD ENDPOINTS
+# ==========================================
+
 @router.get("/api/chatbots")
 async def get_chatbots(workspace_id: str):
+    """
+    Fetches all public widgets deployed in a workspace.
+    Includes the 'allowed_domains' to show users where their widget is permitted to run.
+    """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # We join with agents to ensure we only get chatbots belonging to agents in THIS workspace
         cursor.execute(
             """
             SELECT c.id, c.agent_id, c.name, c.settings, c.message_count, c.api_key, c.allowed_domains, c.created_at,
@@ -44,7 +63,7 @@ async def get_chatbots(workspace_id: str):
                 "id": row[0],
                 "agent_id": row[1],
                 "name": row[2],
-                "settings": row[3],
+                "settings": row[3], # JSONB column containing widget UI config (colors, theme)
                 "message_count": row[4],
                 "api_key": row[5],
                 "allowed_domains": row[6],
@@ -65,6 +84,10 @@ async def get_chatbots(workspace_id: str):
 
 @router.get("/api/chatbots/{chatbot_id}")
 async def get_chatbot_by_id(chatbot_id: str):
+    """
+    Fetches the configuration for a single widget.
+    Often called by the frontend iframe to load its custom colors and Welcome message.
+    """
     conn = None
     cursor = None
     try:
@@ -111,6 +134,9 @@ async def get_chatbot_by_id(chatbot_id: str):
 
 @router.post("/api/chatbots")
 async def create_chatbot(payload: ChatbotCreate):
+    """
+    Creates a new public endpoint/widget for an existing Agent.
+    """
     conn = None
     cursor = None
     try:
@@ -120,6 +146,7 @@ async def create_chatbot(payload: ChatbotCreate):
         import json
         settings_json = json.dumps(payload.settings) if payload.settings else "{}"
         
+        # Note: The database automatically generates the API Key via a default uuid function
         cursor.execute(
             """
             INSERT INTO chatbots (agent_id, name, settings)
@@ -151,6 +178,11 @@ async def create_chatbot(payload: ChatbotCreate):
 
 @router.put("/api/chatbots/{chatbot_id}")
 async def update_chatbot(chatbot_id: str, payload: dict):
+    """
+    Updates widget settings dynamically.
+    Can handle updating flat fields (name, allowed_domains, api_key resets) 
+    or nested JSON data (UI settings) cleanly.
+    """
     conn = None
     cursor = None
     try:
@@ -163,6 +195,8 @@ async def update_chatbot(chatbot_id: str, payload: dict):
         import json
         set_clauses = []
         values = []
+        
+        # Dynamically build the UPDATE query based on what the frontend sent
         for key, value in payload.items():
             if key in ["name", "api_key", "allowed_domains"]:
                 set_clauses.append(f"{key} = %s")

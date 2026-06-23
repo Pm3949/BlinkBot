@@ -1,3 +1,9 @@
+"""
+Chat Router (The Core Conversational Engine).
+Responsibility: Receives user messages, performs Hybrid Search (RAG) to find context, 
+handles dynamic routing to sub-agents (Multi-Agent framework), builds the final prompt, 
+and streams the LLM response back.
+"""
 import json
 import logging
 import os
@@ -25,7 +31,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 def fetch_temporary_memory_patch(cursor, agent_id: str) -> str:
-    """Fetches open feedback tickets to temporarily patch the AI's knowledge."""
+    """
+    Self-Correction Mechanism: Fetches any "open" feedback tickets where users 
+    complained about previous bad answers. These are injected into the system prompt 
+    so the AI knows not to repeat its mistakes.
+    """
     try:
         cursor.execute(
             """
@@ -51,14 +61,22 @@ def fetch_temporary_memory_patch(cursor, agent_id: str) -> str:
         logger.error(f"Error fetching memory patch: {e}")
         return ""
 
+# ==========================================
+# INTERNAL CHAT ENDPOINT (Web Dashboard)
+# ==========================================
+
 @router.post("/chat")
 async def chat_with_agent(req: ChatRequest):
-    """Stream an LLM response grounded in the uploaded documents."""
+    """
+    Stream an LLM response grounded in the uploaded documents.
+    Used by the main web dashboard interface.
+    """
     if not req.agent_id:
         raise HTTPException(status_code=400, detail="agent_id is required")
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="message is required")
 
+    # Security: Scrub Personally Identifiable Information (SSN, Cards) before sending to LLMs
     req.message = scrub_pii(req.message)
 
     conn = None
@@ -67,6 +85,7 @@ async def chat_with_agent(req: ChatRequest):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # 1. Load Agent Configuration
         cursor.execute(
             "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active FROM agents WHERE id = %s",
             (req.agent_id,),
@@ -92,6 +111,7 @@ async def chat_with_agent(req: ChatRequest):
         embed_model = embed_model or "text-embedding-3-small"
         custom_api_key = decrypt_key(custom_api_key)
         
+        # Graceful degradation if the agent is disabled by the owner
         if not is_active:
             async def offline_stream():
                 yield "Sorry, our custom services department is currently offline. Please try again later."
@@ -101,7 +121,11 @@ async def chat_with_agent(req: ChatRequest):
         routed_agent_name = None
         gateway_name = agent_name
 
-        # DYNAMIC ROUTING MIDDLEWARE
+        # ==========================================
+        # DYNAMIC ROUTING (Multi-Agent Switcher)
+        # ==========================================
+        # If this agent belongs to a Project and is a "Master Agent" (has no parent),
+        # we check if there are specialized sub-agents we should route this query to.
         if project_id and not parent_agent_id:
             cursor.execute("SELECT id, name, description FROM agents WHERE project_id = %s", (project_id,))
             sub_agents = cursor.fetchall()
@@ -109,6 +133,7 @@ async def chat_with_agent(req: ChatRequest):
             if len(sub_agents) > 1:
                 agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
                 
+                # Setup a cheap, fast routing LLM to decide which agent should answer
                 if provider == "openai":
                     key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
                     router_llm = ChatOpenAI(model_name=model, api_key=key_to_use, temperature=0.0)
@@ -137,7 +162,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         active_agent_id = chosen_agent[0]
                         routed_agent_name = chosen_agent[1]
                         
-                        # Override context with chosen sub-agent
+                        # OVERRIDE CONTEXT: The chosen sub-agent's settings overwrite the master agent's settings
                         cursor.execute(
                             "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
                             (active_agent_id,),
@@ -145,6 +170,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         (
                             agent_name,
                             system_prompt,
+                            output_format,
                             provider,
                             model,
                             custom_api_key,
@@ -162,7 +188,9 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                 except Exception as e:
                     logger.error(f"Dynamic routing failed: {e}")
 
-        # Check Message Limits
+        # ==========================================
+        # BILLING CHECK
+        # ==========================================
         limits = get_user_limits(user_id, cursor)
         cursor.execute(
             """
@@ -182,6 +210,9 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                 detail="Monthly message limit exceeded. Please upgrade your plan.",
             )
 
+        # ==========================================
+        # LLM INITIALIZATION
+        # ==========================================
         if provider == "openai":
             key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
             if not key_to_use:
@@ -195,18 +226,27 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                 raise HTTPException(status_code=400, detail="Groq API Key missing.")
             llm = ChatGroq(model_name=model, api_key=key_to_use)
 
+        # ==========================================
+        # RAG HYBRID SEARCH (Retrieval)
+        # ==========================================
+        # 1. Convert user message to a mathematical vector
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
+        # 2. Run Hybrid Search (BM25 Keyword + Vector Similarity)
         cursor.execute(
             "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
             (req.message, str(query_vector), active_agent_id),
         )
         best_matches = cursor.fetchall()
 
+        # 3. Concatenate the retrieved chunks
         doc_context = "No specific documents found."
         if best_matches:
             doc_context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
+        # ==========================================
+        # WEB SEARCH INTEGRATION
+        # ==========================================
         web_context = "Web search disabled."
         if web_search_enabled:
             try:
@@ -216,6 +256,9 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                 logger.error(f"Web search failed: {e}")
                 web_context = "Web search failed or was blocked by the search engine."
 
+        # ==========================================
+        # PROMPT CONSTRUCTION
+        # ==========================================
         history_items = req.history or []
         history_text = ""
         for msg in history_items[-6:]:
@@ -223,6 +266,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             history_text += f"{role_name}: {msg.get('content', '')}\n"
         if not history_text:
             history_text = "No previous conversation."
+            
         memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
         if web_search_enabled:
@@ -266,6 +310,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         CURRENT USER INPUT: {req.message}
         """
 
+        # Optional Localization Override
         lang_map = {
             "en": "English", "es": "Spanish", "fr": "French",
             "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
@@ -275,10 +320,15 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             lang_name = lang_map.get(req.language.lower(), req.language)
             prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
+        # ==========================================
+        # STREAMING GENERATOR
+        # ==========================================
         async def stream_generator():
             try:
+                # If routing occurred, visibly tell the user who is talking
                 if routed_agent_name and routed_agent_name != gateway_name:
                     yield f"🤖 *[Routed to: {routed_agent_name}]*\n\n"
+                    
                 for chunk in llm.stream(prompt):
                     if chunk.content:
                         yield chunk.content
@@ -304,10 +354,17 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             conn.close()
 
 
+# ==========================================
+# PUBLIC CHAT WIDGET ENDPOINT
+# ==========================================
+
 @router.post("/api/widget/chat")
 @limiter.limit("25/minute")
 async def widget_chat(req: WidgetChatRequest, request: Request):
-    """Stateless chat endpoint for external widgets."""
+    """
+    Stateless chat endpoint for external websites embedding the chatbot.
+    Identical logic to `/chat` but validates allowed domains and logs metrics.
+    """
     if not req.chatbot_id:
         raise HTTPException(status_code=400, detail="chatbot_id is required")
     if not req.message or not req.message.strip():
@@ -321,7 +378,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Get the agent_id linked to this chatbot
+        # 1. Fetch Chatbot Config
         cursor.execute(
             "SELECT c.agent_id, c.settings, c.message_count, a.user_id, c.allowed_domains FROM chatbots c JOIN agents a ON c.agent_id = a.id WHERE c.id = %s",
             (req.chatbot_id,),
@@ -333,7 +390,9 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         agent_id, settings, message_count, user_id, allowed_domains = chatbot_data
         settings = settings or {}
 
-        # Optional Origin Validation
+        # 2. CORS / Domain Validation
+        # Crucial for preventing bad actors from taking the embed script and putting it on their own site,
+        # which would drain the original user's quota.
         if allowed_domains and request.headers.get("origin"):
             origin = (
                 request.headers.get("origin")
@@ -361,7 +420,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
             if not allowed:
                 raise HTTPException(status_code=403, detail="Domain not allowed")
 
-        # Check Chatbot Message Limit
+        # 3. Check Chatbot Message Limit
         limits = get_user_limits(user_id, cursor)
         cursor.execute(
             """
@@ -379,7 +438,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
                 detail="Monthly widget message limit exceeded. Please upgrade your plan.",
             )
 
-        # Increment widget message count and log it
+        # 4. Increment Analytics Counters
         cursor.execute(
             "UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s",
             (req.chatbot_id,),
@@ -390,7 +449,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         )
         conn.commit()
 
-        # 2. Get the agent config
+        # 5. Get the agent config
         cursor.execute(
             "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, is_active FROM agents WHERE id = %s",
             (agent_id,),
@@ -408,7 +467,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
                 yield "Sorry, our custom services department is currently offline. Please try again later."
             return StreamingResponse(offline_stream(), media_type="text/plain")
 
-        # 3. Setup LLM
+        # 6. Setup LLM
         if provider == "openai":
             key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
             if not key_to_use:
@@ -422,7 +481,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
                 raise HTTPException(status_code=400, detail="Groq API Key missing.")
             llm = ChatGroq(model_name=model, api_key=key_to_use)
 
-        # 4. Fetch RAG Context
+        # 7. Fetch RAG Context
         query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
 
         cursor.execute(
@@ -435,7 +494,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         if best_matches:
             context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
-        # 5. Format Chat History (Stateless)
+        # 8. Format Chat History (Stateless)
         history_items = req.history or []
         history_text = ""
         for msg in history_items[-6:]:
@@ -446,7 +505,7 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
 
         memory_patch = fetch_temporary_memory_patch(cursor, agent_id)
 
-        # 6. Build Prompt
+        # 9. Build Prompt
         formatted_system_prompt = system_prompt
         if output_format:
             formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
@@ -497,12 +556,13 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         raise
     except Exception as e:
         logger.error(f"Widget Chat endpoint failed", exc_info=True)
-        # CRITICAL FIX: Only roll back if the connection is actually still open
+        # CRITICAL FIX: Only roll back if the connection is actually still open.
+        # Sometimes streaming responses crash because the user abruptly closes the browser.
         if conn and not conn.closed:
             try:
                 conn.rollback()
             except psycopg2.InterfaceError:
-                pass  # Connection was already closed by the host anyway
+                pass 
 
         return StreamingResponse(
             iter([f"Error: {str(e)}"]),
@@ -513,6 +573,9 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         if conn:
             conn.close()
 
+# ==========================================
+# API ACCESS (Programmatic)
+# ==========================================
 
 class APIChatRequest(BaseModel):
     message: str
@@ -522,7 +585,13 @@ class APIChatRequest(BaseModel):
 @router.post("/api/v1/chat")
 @limiter.limit("25/minute")
 async def api_v1_chat(req: APIChatRequest, request: Request, response: Response, x_api_key: str = Header(...)):
-    """Programmatic access endpoint using API Key."""
+    """
+    Programmatic access endpoint using custom API Keys.
+    Allows developers to integrate RAG agents into their own backend systems 
+    (e.g., Slack bots, Discord integrations, custom mobile apps).
+    
+    Data Flow: Authenticate via Header -> Initialize Session -> Run RAG -> Log History -> Stream Response.
+    """
     import uuid
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Missing x-api-key header")
@@ -546,7 +615,7 @@ async def api_v1_chat(req: APIChatRequest, request: Request, response: Response,
 
         req.message = scrub_pii(req.message)
 
-        # Handle Session
+        # Session Management: If none provided, create a new one automatically
         session_id = req.session_id
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -555,6 +624,7 @@ async def api_v1_chat(req: APIChatRequest, request: Request, response: Response,
                 (session_id, req.message[:50], master_agent_id)
             )
         
+        # Return the session ID in the header so the developer can track state
         response.headers["X-Session-ID"] = session_id
         
         # Save User Message
@@ -565,13 +635,13 @@ async def api_v1_chat(req: APIChatRequest, request: Request, response: Response,
         )
         conn.commit()
 
-        # Fetch History
+        # Fetch History from Database (Unlike the widget which relies on the frontend)
         cursor.execute(
             "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC LIMIT 10",
             (session_id,)
         )
         history_rows = cursor.fetchall()
-        # Exclude the message we just inserted for memory logic
+        # Exclude the message we just inserted so the LLM doesn't see it twice
         history_items = [{"role": row[0], "content": row[1]} for row in history_rows[:-1]]
         
         # Fetch Master Agent Data
@@ -644,7 +714,6 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         active_agent_id = chosen_agent[0]
                         routed_agent_name = chosen_agent[1]
                         
-                        # Override context with chosen sub-agent
                         cursor.execute(
                             "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
                             (active_agent_id,),
@@ -724,7 +793,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             lang_name = lang_map.get(req.language.lower(), req.language)
             prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-        # Increment widget message count and log it
+        # Increment Analytics
         cursor.execute("UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s", (chatbot_id,))
         cursor.execute("INSERT INTO widget_message_logs (chatbot_id) VALUES (%s)", (chatbot_id,))
         conn.commit()
@@ -756,7 +825,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         full_response += chunk.content
                         yield chunk.content
                         
-                # Save final response to DB
+                # Async logging: Save final generated response to DB so the developer has logs
                 try:
                     save_conn = get_db_connection()
                     save_cursor = save_conn.cursor()
@@ -788,16 +857,23 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         if cursor: cursor.close()
         if conn: conn.close()
 
+# ==========================================
+# CASCADING DELETION HELPERS
+# ==========================================
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
+    """
+    Completely wipes an agent. Because of the Multi-Agent architecture, 
+    we must recursively delete any sub-agents attached to this agent.
+    """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # 1. Fetch all descendant agents (including the target agent itself)
+        # 1. Recursive CTE query to fetch all sub-agents (and their sub-agents)
         cursor.execute(
             """
             WITH RECURSIVE agent_tree AS (
@@ -817,6 +893,7 @@ async def delete_agent(agent_id: str):
             
         descendant_ids = tuple(row[0] for row in rows)
         
+        # 2. Hard delete all related data to prevent orphaned rows
         cursor.execute(
             """
             DELETE FROM document_embeddings
@@ -846,9 +923,9 @@ async def delete_agent(agent_id: str):
         if conn:
             conn.close()
 
-
 @router.delete("/chatbots/{chatbot_id}")
 async def delete_chatbot(chatbot_id: str):
+    """Deletes a widget endpoint and all its related analytics logs."""
     conn = None
     cursor = None
     try:

@@ -1,3 +1,10 @@
+"""
+Settings Router.
+Responsibility: Manages user-specific preferences and API Key configurations.
+Critically, this router encrypts sensitive API keys (OpenAI, Gemini, Groq) at rest
+in the database using Fernet symmetric encryption, ensuring that if the DB is dumped,
+the keys cannot be stolen.
+"""
 import logging
 from typing import Optional
 from pydantic import BaseModel
@@ -17,6 +24,11 @@ class UserSettingsUpdate(BaseModel):
 
 @router.get("/api/settings/{user_id}")
 async def get_user_settings(user_id: str):
+    """
+    Fetches the user's settings. 
+    API keys are decrypted on-the-fly using the system's Fernet master key before 
+    being sent to the frontend.
+    """
     conn = None
     cursor = None
     try:
@@ -33,6 +45,7 @@ async def get_user_settings(user_id: str):
         )
         row = cursor.fetchone()
         
+        # Return sensible defaults if they haven't configured anything yet
         if not row:
             return {
                 "openai_api_key": "",
@@ -56,12 +69,18 @@ async def get_user_settings(user_id: str):
 
 @router.post("/api/settings/{user_id}")
 async def update_user_settings(user_id: str, payload: UserSettingsUpdate):
+    """
+    Updates the user's API keys and 2FA preferences.
+    All provided keys are encrypted BEFORE being inserted into the database.
+    Uses ON CONFLICT DO UPDATE (Upsert) to cleanly handle both first-time saves and subsequent edits.
+    """
     conn = None
     cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
+        # ENCRYPT AT REST: Convert plaintext keys to Fernet tokens
         openai_key = encrypt_key(payload.openai_api_key) if payload.openai_api_key is not None else None
         groq_key = encrypt_key(payload.groq_api_key) if payload.groq_api_key is not None else None
         gemini_key = encrypt_key(payload.gemini_api_key) if payload.gemini_api_key is not None else None
@@ -83,6 +102,7 @@ async def update_user_settings(user_id: str, payload: UserSettingsUpdate):
         row = cursor.fetchone()
         conn.commit()
         
+        # Decrypt them before returning the success response so the UI state remains correct
         return {
             "openai_api_key": decrypt_key(row[0]) or "",
             "groq_api_key": decrypt_key(row[1]) or "",

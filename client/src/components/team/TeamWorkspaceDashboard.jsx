@@ -208,7 +208,7 @@ export default function TeamWorkspaceDashboard() {
                     <div className="flex items-center space-x-4">
                       <div className="relative">
                         <Avatar>
-                          <AvatarImage src={`https://i.pravatar.cc/150?u=${member.email}`} />
+                          <AvatarImage src={`https://api.dicebear.com/7.x/notionists/svg?seed=${member.email}`} />
                           <AvatarFallback className="bg-primary/10 text-primary font-medium">
                             {getInitials(member.name || member.email)}
                           </AvatarFallback>

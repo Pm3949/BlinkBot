@@ -1,3 +1,9 @@
+"""
+Demo Router.
+Responsibility: Handles incoming requests for a product demonstration (sales pipeline).
+Records the lead in the database and triggers email notifications to both the 
+sales team (internal) and the prospective client (external) via standard SMTP.
+"""
 import logging
 import smtplib
 import os
@@ -11,21 +17,33 @@ from database import get_db_connection
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["demo"])
 
+# ==========================================
+# PYDANTIC SCHEMAS
+# ==========================================
+
 class DemoRequest(BaseModel):
     name: str
     email: str
     company: str = ""
     message: str = ""
 
+# ==========================================
+# PUBLIC FACING ENDPOINT (Lead Generation)
+# ==========================================
+
 @router.post("/api/demo-request")
 async def submit_demo_request(req: DemoRequest):
-    """Store demo request in DB and send email notification."""
+    """
+    Called by the public landing page when someone fills out the 'Book a Demo' form.
+    Stores the lead in the DB and emails the internal sales team.
+    """
     conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Create table if not exists
+        # Schema definitions are sometimes put directly here for portability,
+        # but it's generally better to keep these in database_schema.sql.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS demo_requests (
                 id SERIAL PRIMARY KEY,
@@ -38,11 +56,11 @@ async def submit_demo_request(req: DemoRequest):
             )
         """)
 
-        # Ensure our new columns exist for the calendar functionality
+        # Ensure scheduling columns exist (Migrations shouldn't technically be in the endpoint,
+        # but this allows the system to self-heal if the DB is wiped).
         cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_date TEXT")
         cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_time TEXT")
         cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS meeting_link TEXT")
-
 
         # Insert the request
         cur.execute(
@@ -56,7 +74,8 @@ async def submit_demo_request(req: DemoRequest):
         row = cur.fetchone()
         conn.commit()
 
-        # Send email notification
+        # Send email notification to the platform owners (Asynchronous failure is swallowed 
+        # so the user still sees a success message even if SMTP is down).
         try:
             _send_demo_email(req, row[0], row[1])
         except Exception as email_err:
@@ -73,9 +92,12 @@ async def submit_demo_request(req: DemoRequest):
         if conn:
             conn.close()
 
+# ==========================================
+# EMAIL HELPERS
+# ==========================================
 
 def _send_demo_email(req: DemoRequest, request_id: int, created_at):
-    """Send email notification about new demo request."""
+    """Internal Notification: Tells the sales team that a new lead has arrived."""
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -91,6 +113,7 @@ def _send_demo_email(req: DemoRequest, request_id: int, created_at):
     msg["From"] = f"BlinkBot <{smtp_user}>"
     msg["To"] = notify_email
 
+    # HTML Email Template
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 16px;">
         <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 24px 32px; border-radius: 12px; margin-bottom: 24px;">
@@ -134,12 +157,15 @@ def _send_demo_email(req: DemoRequest, request_id: int, created_at):
 
     logger.info(f"Demo request email sent to {notify_email}")
 
-# --- Admin Endpoints for Demo Requests ---
+# ==========================================
+# ADMIN DASHBOARD ENDPOINTS (Sales Team View)
+# ==========================================
 
 from routers.admin import check_super_admin, check_action_password
 
 @router.get("/admin/demo-requests")
 async def get_admin_demo_requests(user_id: str):
+    """Fetches the pipeline of all demo requests for the Super Admin dashboard."""
     conn = None
     cursor = None
     try:
@@ -185,6 +211,10 @@ class UpdateStatusRequest(BaseModel):
 
 @router.patch("/admin/demo-requests/{request_id}/status")
 async def update_demo_request_status(request_id: int, req: UpdateStatusRequest):
+    """
+    Moves a lead through the pipeline (e.g., 'pending' -> 'processing' -> 'completed').
+    If marked as 'completed', automatically sends a follow-up feedback email to the prospect.
+    """
     conn = None
     cursor = None
     try:
@@ -193,7 +223,6 @@ async def update_demo_request_status(request_id: int, req: UpdateStatusRequest):
         cursor = conn.cursor()
         check_super_admin(req.admin_user_id, cursor)
 
-        # Update status
         cursor.execute(
             "UPDATE demo_requests SET status = %s WHERE id = %s RETURNING name, email",
             (req.status, request_id)
@@ -205,7 +234,7 @@ async def update_demo_request_status(request_id: int, req: UpdateStatusRequest):
         name, email = row[0], row[1]
         conn.commit()
 
-        # If completed, send feedback email
+        # If the meeting happened, auto-send a post-demo feedback email
         if req.status == 'completed':
             try:
                 _send_feedback_email(name, email)
@@ -233,6 +262,10 @@ class ScheduleMeetingRequest(BaseModel):
 
 @router.post("/admin/demo-requests/{request_id}/schedule")
 async def schedule_demo_meeting(request_id: int, req: ScheduleMeetingRequest):
+    """
+    Allows a Super Admin to manually assign a date, time, and Google Meet link.
+    Automatically emails the prospective client with the calendar invite details.
+    """
     conn = None
     cursor = None
     try:
@@ -241,18 +274,14 @@ async def schedule_demo_meeting(request_id: int, req: ScheduleMeetingRequest):
         cursor = conn.cursor()
         check_super_admin(req.admin_user_id, cursor)
 
-        # Get request info
         cursor.execute("SELECT name, email FROM demo_requests WHERE id = %s", (request_id,))
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Demo request not found")
         
         name, email = row[0], row[1]
-        
-        # Use manually provided meet link
         meet_link = req.meeting_link
 
-        # Update status to processing and save scheduling details
         cursor.execute(
             """
             UPDATE demo_requests 
@@ -282,6 +311,7 @@ async def schedule_demo_meeting(request_id: int, req: ScheduleMeetingRequest):
 
 @router.get("/admin/demo-requests/scheduled")
 async def get_scheduled_demo_requests(user_id: str):
+    """Returns only the leads that have active scheduled meetings for the dashboard."""
     conn = None
     cursor = None
     try:
@@ -289,7 +319,6 @@ async def get_scheduled_demo_requests(user_id: str):
         cursor = conn.cursor()
         check_super_admin(user_id, cursor)
 
-        # Fetch only requests that have a scheduled date
         cursor.execute(
             """
             SELECT id, name, email, company, status, scheduled_date, scheduled_time, meeting_link
@@ -320,8 +349,12 @@ async def get_scheduled_demo_requests(user_id: str):
         if conn:
             conn.close()
 
+# ==========================================
+# EXTERNAL NOTIFICATION TEMPLATES
+# ==========================================
+
 def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link: str):
-    """Send meeting invitation email to user."""
+    """Outbound Notification: Sends the meeting details directly to the prospect."""
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -361,7 +394,7 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
         server.sendmail(smtp_user, email, msg.as_string())
 
 def _send_feedback_email(name: str, email: str):
-    """Send feedback email to user."""
+    """Outbound Notification: Sends a 'How did we do?' email after the demo concludes."""
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -397,4 +430,3 @@ def _send_feedback_email(name: str, email: str):
         server.starttls()
         server.login(smtp_user, smtp_pass)
         server.sendmail(smtp_user, email, msg.as_string())
-

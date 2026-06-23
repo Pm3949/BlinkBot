@@ -1,3 +1,9 @@
+"""
+Chat History Router.
+Responsibility: Manages the 'Memory' of internal dashboard chats.
+Provides CRUD operations for chat sessions (the sidebar threads) and logs individual 
+chat messages within those sessions so context isn't lost on refresh.
+"""
 import logging
 import uuid
 from typing import Optional
@@ -9,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat_history"])
 
-# Models
+# ==========================================
+# PYDANTIC SCHEMAS
+# ==========================================
+
 class ChatSessionCreate(BaseModel):
     user_id: str
     workspace_id: str
@@ -26,8 +35,17 @@ class ChatMessageCreate(BaseModel):
     content: str
     latency: Optional[float] = None
 
+
+# ==========================================
+# SESSIONS (The Chat Threads)
+# ==========================================
+
 @router.get("/api/chat_sessions/{workspace_id}")
 async def get_chat_sessions(workspace_id: str, user_id: str):
+    """
+    Fetches the list of chat threads to display in the left sidebar.
+    Orders them so pinned sessions stay at the top, followed by the most recently active.
+    """
     conn = None
     cursor = None
     try:
@@ -68,6 +86,7 @@ async def get_chat_sessions(workspace_id: str, user_id: str):
 
 @router.post("/api/chat_sessions")
 async def create_chat_session(payload: ChatSessionCreate):
+    """Creates a new empty thread when the user clicks 'New Chat'."""
     conn = None
     cursor = None
     try:
@@ -104,6 +123,7 @@ async def create_chat_session(payload: ChatSessionCreate):
 
 @router.put("/api/chat_sessions/{session_id}")
 async def update_chat_session(session_id: str, payload: ChatSessionUpdate):
+    """Allows renaming the thread or pinning it."""
     conn = None
     cursor = None
     try:
@@ -113,6 +133,7 @@ async def update_chat_session(session_id: str, payload: ChatSessionUpdate):
         updates = []
         values = []
         
+        # Dynamic query building based on what fields were sent
         if payload.title is not None:
             updates.append("title = %s")
             values.append(payload.title)
@@ -142,6 +163,7 @@ async def update_chat_session(session_id: str, payload: ChatSessionUpdate):
 
 @router.delete("/api/chat_sessions/{session_id}")
 async def delete_chat_session(session_id: str):
+    """Deletes a specific thread and all its underlying messages via CASCADE."""
     conn = None
     cursor = None
     try:
@@ -162,7 +184,10 @@ async def delete_chat_session(session_id: str):
 
 @router.delete("/api/agents/{agent_id}/chat_sessions")
 async def clear_agent_chat_history(agent_id: str):
-    """Clears all chat history for a specific agent (for GDPR/CCPA scrub)."""
+    """
+    Mass-deletion utility. Clears all chat history for a specific agent.
+    Useful for GDPR/CCPA compliance when a user demands their data scrubbed.
+    """
     conn = None
     cursor = None
     try:
@@ -181,8 +206,14 @@ async def clear_agent_chat_history(agent_id: str):
         if cursor: cursor.close()
         if conn: conn.close()
 
+
+# ==========================================
+# MESSAGES (The Chat Bubbles)
+# ==========================================
+
 @router.get("/api/chat_messages/{session_id}")
 async def get_chat_messages(session_id: str):
+    """Fetches all raw message bubbles for a given thread to render the UI."""
     conn = None
     cursor = None
     try:
@@ -220,6 +251,11 @@ async def get_chat_messages(session_id: str):
 
 @router.post("/api/chat_messages")
 async def create_chat_message(payload: ChatMessageCreate):
+    """
+    Logs a single chat message (either 'user' or 'assistant') into the database.
+    Also bumps the 'updated_at' timestamp on the parent session so it jumps to 
+    the top of the sidebar.
+    """
     conn = None
     cursor = None
     try:
@@ -236,7 +272,7 @@ async def create_chat_message(payload: ChatMessageCreate):
         )
         row = cursor.fetchone()
         
-        # Update session updated_at
+        # Update session updated_at so it floats to the top of the history list
         cursor.execute(
             "UPDATE chat_sessions SET updated_at = timezone('utc'::text, now()) WHERE id = %s",
             (payload.session_id,)
