@@ -1,42 +1,17 @@
 export default function Logo() {
   return (
-    <div
-      className="
-      flex
-      items-center
-      gap-3
-    "
-    >
-      <div
-        className="
-        h-10
-        w-10
-        rounded-2xl
-        bg-gradient-to-br
-        from-[var(--primary)]
-        to-[var(--primary-hover)]
-        text-white
-        flex
-        items-center
-        justify-center
-        font-bold
-      "
-      >
-        B
-      </div>
-
+    <div className="flex items-center gap-3">
+      <img 
+        src="/logo1.png" 
+        alt="BlinkBot Logo" 
+        className="h-13 w-auto object-contain rounded-xl" 
+      />
       <div>
         <div className="font-bold">
           BlinkBot
         </div>
-
-        <div
-          className="
-          text-xs
-          text-slate-500
-        "
-        >
-          AI Operating System
+        <div className="text-xs text-slate-500">
+          No-Code Chatbots
         </div>
       </div>
     </div>

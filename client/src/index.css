@@ -72,7 +72,7 @@
 
   .dark .glass-card:hover {
     box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.15);
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    border: 1px solid #6366f14d;
   }
   
   .btn-primary {
@@ -84,7 +84,7 @@
   .btn-primary:hover:not(:disabled) {
     background-color: var(--primary-hover);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    box-shadow: 0 4px 12px #4f46e540;
   }
   
   .btn-primary:active:not(:disabled) {
