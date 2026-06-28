@@ -77,7 +77,7 @@ export default function ChatSidebar({
                 <button
                   key={agent.id}
                   type="button"
-                  onClick={() => onAgentSelect(agent)}
+                  onClick={() => onAgentSelect({ ...agent, project_id: project.id })}
                   className={`w-full flex items-center gap-2 p-2 rounded-xl text-sm transition ${
                     activeAgentId === agent.id
                       ? "bg-primary/10 text-primary"

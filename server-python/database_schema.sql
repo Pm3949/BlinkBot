@@ -235,3 +235,15 @@ CREATE TABLE IF NOT EXISTS notes (
 ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own notes" ON notes FOR ALL TO authenticated USING (user_id = auth.uid());
 CREATE INDEX IF NOT EXISTS idx_notes_workspace ON notes(workspace_id);
+
+-- 10. OAuth Connections Table
+CREATE TABLE IF NOT EXISTS oauth_connections (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE(user_id, provider)
+);

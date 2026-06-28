@@ -89,6 +89,34 @@ export async function processUrl({
   return response.json();
 }
 
+export async function processConnector({
+  agentId,
+  connectorId,
+}) {
+  const response = await fetch(
+    `${API_BASE_URL}/process-connector`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agent_id: agentId,
+        connector_id: connectorId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(
+      message || "Failed to process connector.",
+    );
+  }
+
+  return response.json();
+}
+
 export async function deleteDocument(id) {
   const response = await fetch(
     `${API_BASE_URL}/documents/${id}`,

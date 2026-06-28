@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send, Mic, Square } from "lucide-react";
 
 export default function ChatComposer({
@@ -23,6 +23,14 @@ export default function ChatComposer({
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [value]);
 
   const startRecording = async () => {
     try {
@@ -123,26 +131,27 @@ export default function ChatComposer({
       "
       >
         <textarea
+          ref={textareaRef}
           rows={1}
           value={value}
-          onChange={(event) =>
-            setValue(event.target.value)
-          }
+          onChange={(event) => setValue(event.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled || isLoading}
           placeholder="Ask BlinkBot anything..."
+          style={{ minHeight: "40px" }}
           className="
           flex-1
           resize-none
           border-none
           !outline-none
-          bg-transparent
+          !bg-transparent
           text-foreground
           placeholder:text-muted-foreground
           px-3
           py-2
+          overflow-y-auto
           disabled:opacity-60
-          transition
+          transition-colors
           focus:outline-none
           focus:!outline-none
           focus:ring-0

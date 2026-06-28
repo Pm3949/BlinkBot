@@ -120,10 +120,11 @@ export default function ProjectDetailsPage() {
         style: {
           backgroundColor: 'var(--card)',
           color: 'var(--text)',
-          borderColor: 'var(--border)',
+          borderColor: '#a855f7',
+          borderWidth: '2px',
           borderRadius: '0.75rem',
           padding: '0.75rem',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+          boxShadow: '0 0 25px rgba(168, 85, 247, 0.5)',
           width: 192,
         },
         data: { 
@@ -203,6 +204,7 @@ export default function ProjectDetailsPage() {
                 </button>
                 <Link
                   to="/knowledge"
+                  state={{ preselectedAgentId: agent.id, preselectedNetworkId: projectId }}
                   className="flex items-center justify-center gap-1.5 p-2 rounded-lg flex-1 transition hover:bg-primary hover:text-primary-foreground bg-muted text-muted-foreground font-medium text-xs"
                   title="Knowledge Base"
                   onClick={(e) => e.stopPropagation()}

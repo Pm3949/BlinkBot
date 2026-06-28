@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
+import { useLocation, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   UploadCloud,
   Search,
@@ -12,11 +14,16 @@ import {
   Trash2,
   ChevronDown,
   Eye,
+  Database,
+  Cloud,
+  MessageSquare,
+  Code,
+  Link2
 } from "lucide-react";
 import { usePrimaryWorkspace, useWorkspacePermissions } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents, useAgentProjects, useProjectSubAgents } from "../hooks/useAgents";
-import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument } from "../hooks/useDocuments";
+import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
 import {
@@ -134,6 +141,7 @@ function StatusBadge({ status }) {
 export default function KnowledgeBasePage() {
   const fileInputRef = useRef(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { canManageDatabase } = useWorkspacePermissions();
   const { data: workspace } = usePrimaryWorkspace();
@@ -148,9 +156,26 @@ export default function KnowledgeBasePage() {
     isLoading: isLoadingProjects,
   } = useAgentProjects(activeWorkspaceId);
 
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedCategory, setSelectedCategory] = useState("standalone");
   const [activeStandaloneId, setActiveStandaloneId] = useState("");
   const [activeSubAgentId, setActiveSubAgentId] = useState("");
+  const [sourceTab, setSourceTab] = useState("files"); // "files", "website", "connectors"
+  const [connectingTo, setConnectingTo] = useState(null);
+
+  useEffect(() => {
+    if (location.state) {
+      const { preselectedAgentId, preselectedNetworkId } = location.state;
+      if (preselectedNetworkId) {
+        setSelectedCategory(preselectedNetworkId);
+        setActiveSubAgentId(preselectedAgentId);
+      } else if (preselectedAgentId) {
+        setSelectedCategory("standalone");
+        setActiveStandaloneId(preselectedAgentId);
+      }
+    }
+  }, [location.state]);
 
   const {
     data: subAgents = [],
@@ -179,6 +204,52 @@ export default function KnowledgeBasePage() {
     useProcessUrl(selectedAgentId);
   const deleteMutation =
     useDeleteDocument(selectedAgentId);
+  const processConnectorMutation =
+    useProcessConnector(selectedAgentId);
+
+  // Handle OAuth Callbacks
+  useEffect(() => {
+    const connection = searchParams.get("connection");
+    const provider = searchParams.get("provider");
+    
+    if (connection === "success" && provider && selectedAgentId && user?.id && canManageDatabase) {
+      // Clear URL params so we don't trigger this again on reload
+      setSearchParams(new URLSearchParams());
+      setSourceTab("connectors");
+      
+      const syncConnector = async () => {
+        setConnectingTo(provider);
+        toast.loading(`Syncing files from ${provider}...`, { id: "sync-toast" });
+        
+        try {
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
+          
+          if (provider === "google") {
+            const resp = await fetch(`${API_BASE_URL}/google/sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ agent_id: selectedAgentId, user_id: user.id })
+            });
+            
+            const data = await resp.json();
+            if (resp.ok) {
+              toast.success(data.message, { id: "sync-toast" });
+              // Force reload documents
+              queryClient.invalidateQueries(["documents", selectedAgentId]);
+            } else {
+              toast.error(data.detail || "Failed to sync", { id: "sync-toast" });
+            }
+          }
+        } catch (e) {
+          toast.error("Failed to sync data", { id: "sync-toast" });
+        } finally {
+          setConnectingTo(null);
+        }
+      };
+      
+      syncConnector();
+    }
+  }, [searchParams, selectedAgentId, user, canManageDatabase]);
 
   const filteredDocuments = useMemo(() => {
     const normalizedSearch =
@@ -196,7 +267,8 @@ export default function KnowledgeBasePage() {
   const isMutating =
     uploadMutation.isPending ||
     processUrlMutation.isPending ||
-    deleteMutation.isPending;
+    deleteMutation.isPending ||
+    processConnectorMutation.isPending;
 
   const handleFileChange = async (event) => {
     if (!canManageDatabase) {
@@ -281,6 +353,39 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  const handleConnect = async (connectorId, connectorName) => {
+    if (!canManageDatabase) {
+      toast.error("You do not have permission to sync connectors in this workspace.");
+      return;
+    }
+
+    if (!selectedAgentId) {
+      toast.error("Select an agent before connecting.");
+      return;
+    }
+
+    if (connectorId === "gdrive") {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
+      // Redirect to the real Google OAuth flow
+      // We pass the user ID as state. We assume user.id is available from useAuth
+      window.location.href = `${API_BASE_URL}/google/authorize?user_id=${user.id}`;
+      return;
+    }
+
+    setConnectingTo(connectorId);
+    try {
+      const response = await processConnectorMutation.mutateAsync({
+        agentId: selectedAgentId,
+        connectorId: connectorId,
+      });
+      toast.success(response.message || `Successfully connected to ${connectorName}.`);
+    } catch (error) {
+      toast.error(error.message || `Failed to connect to ${connectorName}.`);
+    } finally {
+      setConnectingTo(null);
+    }
+  };
+
   return (
     <div>
       <div className="mb-10">
@@ -295,10 +400,10 @@ export default function KnowledgeBasePage() {
       </div>
 
       <div className="grid lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-4">
-          <div className="glass-card p-6">
-            <h3 className="font-semibold text-lg mb-6 text-foreground">
-              Upload Sources
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="glass-card p-6 flex-1">
+            <h3 className="font-semibold text-lg mb-4 text-foreground">
+              Knowledge Sources
             </h3>
 
             <div className="mb-4 space-y-4">
@@ -374,9 +479,32 @@ export default function KnowledgeBasePage() {
               </div>
             </div>
 
+            {/* Tabs for Data Input */}
+            <div className="flex bg-muted p-1 rounded-xl mb-6">
+              <button
+                onClick={() => setSourceTab("files")}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${sourceTab === "files" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Files
+              </button>
+              <button
+                onClick={() => setSourceTab("website")}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${sourceTab === "website" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Website
+              </button>
+              <button
+                onClick={() => setSourceTab("connectors")}
+                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${sourceTab === "connectors" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Connectors
+              </button>
+            </div>
+
             {canManageDatabase ? (
-              <>
-                <div
+              <div className="mt-4">
+                {sourceTab === "files" && (
+                  <div
                   className="
                   border-2
                   border-dashed
@@ -434,8 +562,10 @@ export default function KnowledgeBasePage() {
                       : "Browse Files"}
                   </button>
                 </div>
+                )}
 
-                <div className="mt-6">
+                {sourceTab === "website" && (
+                <div className="mt-2">
                   <label className="font-medium block mb-3">
                     Website URL
                   </label>
@@ -490,7 +620,55 @@ export default function KnowledgeBasePage() {
                       : "Scrape Website"}
                   </button>
                 </div>
-              </>
+                )}
+
+                {sourceTab === "connectors" && (
+                  <div className="space-y-4 max-h-[360px] overflow-y-auto pr-2 custom-scrollbar">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Connect your existing tools to continuously sync data to your AI.
+                    </p>
+
+                    {[
+                      { id: "gdrive", name: "Google Drive", icon: Cloud, color: "text-blue-500", bg: "bg-blue-500/10", desc: "Sync docs, sheets, slides" },
+                      { id: "notion", name: "Notion", icon: FileText, color: "text-slate-700 dark:text-slate-300", bg: "bg-slate-500/10", desc: "Sync workspace pages" },
+                      { id: "slack", name: "Slack", icon: MessageSquare, color: "text-purple-500", bg: "bg-purple-500/10", desc: "Sync channels & threads" },
+                      { id: "github", name: "GitHub", icon: Code, color: "text-zinc-800 dark:text-zinc-200", bg: "bg-zinc-500/10", desc: "Sync issues & PRs" },
+                    ].map((connector) => {
+                      const isConnecting = connectingTo === connector.id;
+                      
+                      return (
+                      <div key={connector.id} className="flex items-center justify-between p-4 rounded-2xl border border-border bg-background hover:bg-muted/50 transition">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${connector.bg}`}>
+                            <connector.icon size={20} className={connector.color} />
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm">{connector.name}</div>
+                            <div className="text-xs text-muted-foreground">{connector.desc}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleConnect(connector.id, connector.name)}
+                          disabled={!selectedAgentId || isConnecting || isMutating}
+                          className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold rounded-lg transition disabled:opacity-60 flex items-center gap-2"
+                        >
+                          {isConnecting ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 size={12} />
+                              Connect
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )})}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="text-sm text-muted-foreground p-5 bg-muted/20 rounded-2xl border border-border text-center">
                 You do not have permission to upload documents or scrape websites in this workspace.

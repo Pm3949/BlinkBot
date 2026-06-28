@@ -34,6 +34,11 @@ class URLRequest(BaseModel):
     agent_id: str
     url: str
 
+class ConnectorRequest(BaseModel):
+    """Schema for simulating a data connection sync (e.g. Google Drive, Slack) for an agent."""
+    agent_id: str
+    connector_id: str
+
 # ==========================================
 # BILLING & SUBSCRIPTION SCHEMAS
 # ==========================================

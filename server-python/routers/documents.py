@@ -12,7 +12,8 @@ from database import get_db_connection
 from core.dependencies import rag_engine, UPLOAD_DIR
 from core.security import encrypt_data
 from utils import background_ingestion, get_user_limits
-from schemas import URLRequest
+from schemas import URLRequest, ConnectorRequest
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,59 @@ async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
         raise
     except Exception as exc:
         logger.exception("Failed to process URL")
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if conn:
+            conn.close()
+
+# ==========================================
+# CONNECTOR SYNC (MOCK)
+# ==========================================
+
+@router.post("/process-connector")
+async def process_connector(req: ConnectorRequest):
+    """
+    Simulates a connection and data sync from third-party platforms (Google Drive, Notion, Slack).
+    Inserts a mock document row to appear instantly in the UI for demo purposes.
+    """
+    await asyncio.sleep(1.5) # Simulate API handshake and initial sync delay
+
+    connector_names = {
+        "gdrive": "Google Drive Sync",
+        "notion": "Notion Workspace Sync",
+        "slack": "Slack Channels Sync",
+        "github": "GitHub Repository Sync"
+    }
+    display_name = connector_names.get(req.connector_id, f"{req.connector_id.capitalize()} Sync")
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Just insert a mock completed document
+        cursor.execute(
+            "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'completed', %s) RETURNING id;",
+            (req.agent_id, display_name, 2048576) # 2MB dummy size
+        )
+        document_id = cursor.fetchone()[0]
+        
+        # Insert a dummy chunk count to make it look processed
+        # We can't insert directly into document_embeddings without generating a vector array,
+        # But `documents` chunk_count is usually joined on embeddings. 
+        # For the demo, we can just let it have 0 chunks or insert dummy embeddings.
+        # It's faster to just insert 1 dummy embedding with an empty vector or array.
+        # Actually, pgvector requires specific format. 
+        # Let's just leave chunk_count as 0 or 1, or insert a tiny vector if we have the schema.
+        # If we skip embeddings, it just shows 0 chunks, which is fine for a sync object.
+        
+        conn.commit()
+        return {"message": f"Successfully connected to {display_name}."}
+    except Exception as exc:
+        logger.exception("Failed to process connector")
         if conn:
             conn.rollback()
         raise HTTPException(status_code=500, detail=str(exc))

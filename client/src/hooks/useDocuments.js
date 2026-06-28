@@ -9,6 +9,7 @@ import {
   getDocuments,
   processUrl,
   uploadDocument,
+  processConnector,
 } from "../services/documentService";
 
 export function useDocuments(agentId) {
@@ -38,6 +39,20 @@ export function useProcessUrl(agentId) {
 
   return useMutation({
     mutationFn: processUrl,
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}
+
+export function useProcessConnector(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: processConnector,
 
     onSuccess: () => {
       queryClient.invalidateQueries({

@@ -1,15 +1,14 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings2 } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import ChatComposer from "../components/chat/ChatComposer";
 import MessageBubble from "../components/chat/MessageBubble";
-import ContextPanel from "../components/chat/ContextPanel";
 import { usePrimaryWorkspace } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
-import { useDocuments } from "../hooks/useDocuments";
 import VerificationBanner from "../components/chat/VerificationBanner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
@@ -29,7 +28,6 @@ export default function ChatPage() {
   
   // UI Toggles
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isContextOpen, setIsContextOpen] = useState(true);
   
   const messagesEndRef = useRef(null);
 
@@ -71,9 +69,6 @@ export default function ChatPage() {
       setChatLanguage(activeAgent.language);
     }
   }, [activeAgent]);
-
-  const { data: documents = [], isLoading: isLoadingDocuments } =
-    useDocuments(selectedAgentId);
 
   const selectedAgentSessions = useMemo(
     () =>
@@ -166,13 +161,18 @@ export default function ChatPage() {
         </div>
 
         <div className="absolute top-4 right-4 z-10">
-           <button 
-             onClick={() => setIsContextOpen(!isContextOpen)} 
-             className="p-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground transition-all"
-             title="Toggle Context Panel"
+           <Link 
+             to="/knowledge"
+             state={{ 
+               preselectedAgentId: selectedAgentId,
+               preselectedNetworkId: activeSubAgentDetails?.project_id || null
+             }}
+             className="flex items-center gap-2 px-3 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+             title="View Knowledge Base"
            >
-             {isContextOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-           </button>
+             <Database size={16} />
+             <span className="text-sm font-medium">Knowledge</span>
+           </Link>
         </div>
 
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-2xl">
@@ -229,10 +229,13 @@ export default function ChatPage() {
             ))}
 
             {loading && (
-              <div className="flex gap-2 px-4 py-2">
-                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" />
-                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
-                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+              <div className="flex items-center gap-3 px-6 py-4 bg-card/50 border border-border w-fit rounded-2xl shadow-sm">
+                <div className="flex gap-1.5">
+                  <div className="h-2 w-2 rounded-full bg-primary/70 animate-bounce" />
+                  <div className="h-2 w-2 rounded-full bg-primary/70 animate-bounce [animation-delay:150ms]" />
+                  <div className="h-2 w-2 rounded-full bg-primary/70 animate-bounce [animation-delay:300ms]" />
+                </div>
+                <span className="text-sm font-medium text-muted-foreground animate-pulse">Thinking...</span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -248,10 +251,6 @@ export default function ChatPage() {
           setChatLanguage={setChatLanguage}
         />
       </div>
-
-      {isContextOpen && (
-        <ContextPanel documents={documents} isLoading={isLoadingDocuments} />
-      )}
 
       {agentToEdit && (
         <AgentSettingsModal

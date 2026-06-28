@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from core.dependencies import UPLOAD_DIR
 
 # Import routers (These are like sub-applications handling specific feature sets)
-from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo
+from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, connectors
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -118,6 +118,7 @@ app.include_router(notifications.router)
 app.include_router(meta_agent.router)
 app.include_router(demo.router)
 app.include_router(auth.router)
+app.include_router(connectors.router)
 
 # ==========================================
 # RATE LIMITING & STATIC FILES
