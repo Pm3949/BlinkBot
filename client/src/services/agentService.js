@@ -128,3 +128,25 @@ export async function deleteAgentProject(projectId) {
     throw new Error(data.detail || "Failed to delete agent project");
   }
 }
+
+export async function createAgentProject(payload) {
+  const user = await getAuthenticatedUser();
+  if (!payload.workspace_id) {
+    throw new Error("Workspace ID is required.");
+  }
+
+  const response = await fetch(`${API_URL}/api/agent-projects`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to create agent project");
+  }
+
+  return response.json();
+}

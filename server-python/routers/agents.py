@@ -234,6 +234,71 @@ async def update_agent(agent_id: str, payload: dict):
         if cursor: cursor.close()
         if conn: conn.close()
 
+class AgentProjectCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    workspace_id: str
+    user_id: str
+
+@router.post("/api/agent-projects")
+async def create_agent_project(project: AgentProjectCreate):
+    import json
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Create the Project
+        cursor.execute(
+            """
+            INSERT INTO agent_projects (name, description, status, workspace_id, blueprint_json)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (project.name, project.description, "active", project.workspace_id, json.dumps({}))
+        )
+        project_id = cursor.fetchone()[0]
+        
+        # 2. Create the default Master Agent (Router) for this project
+        cursor.execute(
+            """
+            INSERT INTO agents (name, description, llm_provider, llm_model, 
+                              embedding_model, chunk_strategy, system_prompt, output_format, 
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (
+                f"{project.name} Master", 
+                "The central router agent for this network.", 
+                "groq", 
+                "llama-3.1-8b-instant",
+                "all-MiniLM-L6-v2", 
+                "sentence", 
+                "You are the master coordinator for this network. Analyze user requests and delegate to your sub-agents as necessary.", 
+                "",
+                encrypt_key(""), 
+                "en", 
+                project.user_id, 
+                project.workspace_id, 
+                False, 
+                project_id, 
+                None, 
+                json.dumps([])
+            )
+        )
+        
+        conn.commit()
+        return {"status": "success", "id": project_id}
+    except Exception as e:
+        if conn: conn.rollback()
+        logger.error(f"Error creating agent project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 @router.get("/api/agent-projects")
 async def get_agent_projects(workspace_id: str):
     conn = None

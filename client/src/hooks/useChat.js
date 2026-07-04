@@ -18,9 +18,21 @@ export function useChat() {
     return cid;
   }, []);
   
-  const wsUrl = import.meta.env.VITE_WS_BASE_URL 
-      ? `${import.meta.env.VITE_WS_BASE_URL}/ws/chat/${clientId}` 
-      : `ws://${window.location.host.split(':')[0]}:8000/ws/chat/${clientId}`;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let baseWsUrl = import.meta.env.VITE_WS_BASE_URL 
+      ? import.meta.env.VITE_WS_BASE_URL 
+      : `${protocol}//${window.location.host.split(':')[0]}:8000`;
+      
+  // Ensure we use wss:// if the page is loaded over https://
+  if (window.location.protocol === 'https:' && baseWsUrl.startsWith('ws://')) {
+      baseWsUrl = baseWsUrl.replace('ws://', 'wss://');
+  } else if (baseWsUrl.startsWith('http://')) {
+      baseWsUrl = baseWsUrl.replace('http://', 'ws://');
+  } else if (baseWsUrl.startsWith('https://')) {
+      baseWsUrl = baseWsUrl.replace('https://', 'wss://');
+  }
+
+  const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
 
   const { isConnected, agentTextChunks, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
 

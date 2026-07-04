@@ -20,7 +20,7 @@ import {
   Power,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useAgents, useDeleteAgent, useAgentProjects, useDeleteAgentProject, useUpdateAgent } from "../hooks/useAgents";
+import { useAgents, useDeleteAgent, useAgentProjects, useDeleteAgentProject, useUpdateAgent, useCreateAgentProject } from "../hooks/useAgents";
 import { useWorkspacePermissions } from "../hooks/useSettings";
 import EmptyState from "../components/shared/EmptyState";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
@@ -58,6 +58,7 @@ const cardVariants = {
 };
 
 export default function StudioPage() {
+  const { user } = useAuth();
   const setCreateAgentWizardOpen = useUIStore((state) => state.setCreateAgentWizardOpen);
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
 
@@ -70,10 +71,34 @@ export default function StudioPage() {
   const [deleteAgentConfirmText, setDeleteAgentConfirmText] = useState("");
   const [deleteProjectConfirmText, setDeleteProjectConfirmText] = useState("");
 
+  const [isNetworkDialogOpen, setIsNetworkDialogOpen] = useState(false);
+  const [networkMode, setNetworkMode] = useState(null);
+  const [networkForm, setNetworkForm] = useState({ name: "", description: "" });
+
   const deleteAgentMutation = useDeleteAgent(activeWorkspaceId);
   const updateAgentMutation = useUpdateAgent(activeWorkspaceId);
   const deleteProjectMutation = useDeleteAgentProject(activeWorkspaceId);
+  const createProjectMutation = useCreateAgentProject(activeWorkspaceId);
   const { canManageAgents } = useWorkspacePermissions();
+
+  const handleCreateManualNetwork = async (e) => {
+    e.preventDefault();
+    if (!networkForm.name.trim()) return toast.error("Network name is required");
+    try {
+      const res = await createProjectMutation.mutateAsync({
+        name: networkForm.name,
+        description: networkForm.description,
+        workspace_id: activeWorkspaceId,
+        user_id: user?.id
+      });
+      toast.success("Network created successfully");
+      setIsNetworkDialogOpen(false);
+      setNetworkForm({ name: "", description: "" });
+      window.location.href = `/studio/project/${res.id}`;
+    } catch {
+      toast.error("Failed to create network");
+    }
+  };
 
   const handleToggleActive = async (agent) => {
     try {
@@ -185,11 +210,11 @@ export default function StudioPage() {
                 New Agent
               </button>
               <button
-                onClick={() => setIsBuilderOpen(true)}
+                onClick={() => { setIsNetworkDialogOpen(true); setNetworkMode(null); }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl btn-primary text-white font-medium text-sm transition-all shadow-lg shadow-primary/25"
               >
-                <Wand2 size={16} />
-                Generate Network
+                <Plus size={16} />
+                Create Network
               </button>
             </div>
           )}
@@ -270,10 +295,10 @@ export default function StudioPage() {
                 <Plus size={16} /> New Agent
               </button>
               <button
-                onClick={() => setIsBuilderOpen(true)}
+                onClick={() => { setIsNetworkDialogOpen(true); setNetworkMode(null); }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl btn-primary text-white font-medium text-sm shadow-lg shadow-primary/20"
               >
-                <Wand2 size={16} /> Generate Network
+                <Plus size={16} /> Create Network
               </button>
             </div>
           )}
@@ -545,6 +570,85 @@ export default function StudioPage() {
               {deleteProjectMutation.isPending ? "Deleting..." : "Delete Network"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isNetworkDialogOpen} onOpenChange={(open) => {
+        setIsNetworkDialogOpen(open);
+        if (!open) setNetworkMode(null);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Agent Network</DialogTitle>
+            <DialogDescription>
+              Choose how you want to build your new agent network.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!networkMode ? (
+            <div className="grid grid-cols-2 gap-4 py-4">
+              <button 
+                onClick={() => {
+                  setIsNetworkDialogOpen(false);
+                  setIsBuilderOpen(true);
+                }}
+                className="flex flex-col items-center justify-center p-6 border-2 border-primary/20 rounded-2xl hover:border-primary hover:bg-primary/5 transition-all text-center gap-3"
+              >
+                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <Wand2 size={24} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground mb-1">AI Generated</h4>
+                  <p className="text-xs text-muted-foreground">Describe what you want and AI builds it.</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setNetworkMode("manual")}
+                className="flex flex-col items-center justify-center p-6 border-2 border-border rounded-2xl hover:border-foreground/20 hover:bg-muted/50 transition-all text-center gap-3"
+              >
+                <div className="w-12 h-12 rounded-full bg-muted text-foreground flex items-center justify-center">
+                  <Plus size={24} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground mb-1">Blank Network</h4>
+                  <p className="text-xs text-muted-foreground">Start from scratch and add agents manually.</p>
+                </div>
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleCreateManualNetwork} className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Network Name</label>
+                <input 
+                  autoFocus
+                  required
+                  value={networkForm.name}
+                  onChange={e => setNetworkForm({...networkForm, name: e.target.value})}
+                  className="w-full border border-border bg-background rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="e.g. Sales Team"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Description <span className="text-muted-foreground font-normal">(Optional)</span></label>
+                <textarea 
+                  value={networkForm.description}
+                  onChange={e => setNetworkForm({...networkForm, description: e.target.value})}
+                  className="w-full border border-border bg-background rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-primary/50 resize-y"
+                  rows={3}
+                  placeholder="What is the purpose of this network?"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setNetworkMode(null)}>
+                  Back
+                </Button>
+                <Button type="submit" disabled={createProjectMutation.isPending} className="btn-primary">
+                  {createProjectMutation.isPending ? "Creating..." : "Create Network"}
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

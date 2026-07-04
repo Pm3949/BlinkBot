@@ -294,6 +294,14 @@ export default function ProjectDetailsPage() {
         </div>
         
         <div className="flex items-center gap-3">
+          {subAgents.length === 0 && (
+            <button 
+              onClick={() => handleAddAgent(null)}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm"
+            >
+              <Plus size={16} /> Create Master Agent
+            </button>
+          )}
           <button 
             onClick={() => setIsToolsModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition shadow-sm"
@@ -324,8 +332,18 @@ export default function ProjectDetailsPage() {
             />
           </ReactFlow>
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-            No sub-agents found in this network.
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-2">
+              <Bot className="text-indigo-500" size={32} />
+            </div>
+            <p>Your network is currently empty.</p>
+            <button
+              onClick={() => handleAddAgent(null)}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl btn-primary text-white font-medium text-sm transition-all shadow-lg shadow-primary/25"
+            >
+              <Plus size={18} />
+              Create Master Agent
+            </button>
           </div>
         )}
       </div>

@@ -39,6 +39,20 @@ export function useCreateAgent(workspaceId) {
   });
 }
 
+export function useCreateAgentProject(workspaceId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload) => import("../services/agentService").then(m => m.createAgentProject(payload)),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["agent-projects", workspaceId],
+      });
+    },
+  });
+}
+
 export function useUpdateAgent(workspaceId) {
   const queryClient = useQueryClient();
 
