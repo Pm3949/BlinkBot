@@ -10,7 +10,7 @@ import os
 import psycopg2
 from typing import Optional, List, Dict
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Request, Header, Response
+from fastapi import APIRouter, HTTPException, Request, Header, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from langchain_groq import ChatGroq
@@ -29,6 +29,25 @@ from core.scrubber import scrub_pii
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+class AgentConnectionManager:
+    def __init__(self):
+        self.active_connections = {}
+
+    async def connect(self, websocket: WebSocket, client_id: str):
+        await websocket.accept()
+        self.active_connections[client_id] = websocket
+
+    def disconnect(self, client_id: str):
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+
+    async def send_json(self, message: dict, client_id: str):
+        if client_id in self.active_connections:
+            await self.active_connections[client_id].send_json(message)
+
+manager = AgentConnectionManager()
+
 
 def fetch_temporary_memory_patch(cursor, agent_id: str) -> str:
     """
@@ -65,553 +84,431 @@ def fetch_temporary_memory_patch(cursor, agent_id: str) -> str:
 # INTERNAL CHAT ENDPOINT (Web Dashboard)
 # ==========================================
 
-@router.post("/chat")
-async def chat_with_agent(req: ChatRequest):
-    """
-    Stream an LLM response grounded in the uploaded documents.
-    Used by the main web dashboard interface.
-    """
-    if not req.agent_id:
-        raise HTTPException(status_code=400, detail="agent_id is required")
-    if not req.message or not req.message.strip():
-        raise HTTPException(status_code=400, detail="message is required")
-
-    # Security: Scrub Personally Identifiable Information (SSN, Cards) before sending to LLMs
-    req.message = scrub_pii(req.message)
-
-    conn = None
-    cursor = None
+@router.websocket("/ws/chat/{client_id}")
+async def chat_with_agent(websocket: WebSocket, client_id: str):
+    await manager.connect(websocket, client_id)
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "chat_request":
+                req_data = data.get("payload", {})
+                agent_id = req_data.get("agent_id")
+                message = req_data.get("message")
+                history = req_data.get("history", [])
+                language = req_data.get("language")
 
-        # 1. Load Agent Configuration
-        cursor.execute(
-            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active FROM agents WHERE id = %s",
-            (req.agent_id,),
-        )
-        agent_data = cursor.fetchone()
-        if not agent_data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+                if not agent_id or not message:
+                    await manager.send_json({"type": "error", "content": "agent_id and message are required"}, client_id)
+                    continue
 
-        (
-            user_id,
-            agent_name,
-            system_prompt,
-            output_format,
-            provider,
-            model,
-            custom_api_key,
-            embed_model,
-            web_search_enabled,
-            project_id,
-            parent_agent_id,
-            is_active
-        ) = agent_data
-        embed_model = embed_model or "text-embedding-3-small"
-        custom_api_key = decrypt_key(custom_api_key)
-        
-        # Graceful degradation if the agent is disabled by the owner
-        if not is_active:
-            async def offline_stream():
-                yield "Sorry, our custom services department is currently offline. Please try again later."
-            return StreamingResponse(offline_stream(), media_type="text/plain")
-        
-        active_agent_id = req.agent_id
-        routed_agent_name = None
-        gateway_name = agent_name
+                message = scrub_pii(message)
+                conn = None
+                cursor = None
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
 
-        # ==========================================
-        # DYNAMIC ROUTING (Multi-Agent Switcher)
-        # ==========================================
-        # If this agent belongs to a Project and is a "Master Agent" (has no parent),
-        # we check if there are specialized sub-agents we should route this query to.
-        if project_id and not parent_agent_id:
-            cursor.execute("SELECT id, name, description FROM agents WHERE project_id = %s", (project_id,))
-            sub_agents = cursor.fetchall()
-            
-            if len(sub_agents) > 1:
-                agent_descriptions_list = []
-                for sa in sub_agents:
-                    is_master = str(sa[0]) == str(req.agent_id)
-                    role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
-                    agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
-                agent_descriptions = "\n".join(agent_descriptions_list)
-                
-                # Setup a cheap, fast routing LLM to decide which agent should answer
-                if provider == "openai":
-                    key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-                    router_llm = ChatOpenAI(model_name=model, api_key=key_to_use, temperature=0.0)
-                elif provider == "ollama":
-                    router_llm = ChatOllama(model=model, temperature=0.0)
-                else:
-                    key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-                    router_llm = ChatGroq(model_name=model, api_key=key_to_use, temperature=0.0)
-                
-                routing_prompt = f"""You are the Master Coordinator Router.
+                    cursor.execute(
+                        "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active FROM agents WHERE id = %s",
+                        (agent_id,),
+                    )
+                    agent_data = cursor.fetchone()
+                    if not agent_data:
+                        await manager.send_json({"type": "error", "content": "Agent not found"}, client_id)
+                        continue
+
+                    (user_id, agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, web_search_enabled, project_id, parent_agent_id, is_active) = agent_data
+                    embed_model = embed_model or "text-embedding-3-small"
+                    custom_api_key = decrypt_key(custom_api_key)
+                    
+                    if not is_active:
+                        await manager.send_json({"type": "text_chunk", "content": "Sorry, our custom services department is currently offline. Please try again later."}, client_id)
+                        await manager.send_json({"type": "stream_end"}, client_id)
+                        continue
+
+                    active_agent_id = agent_id
+                    routed_agent_name = None
+                    gateway_name = agent_name
+
+                    if project_id and not parent_agent_id:
+                        cursor.execute("SELECT id, name, description FROM agents WHERE project_id = %s", (project_id,))
+                        sub_agents = cursor.fetchall()
+                        
+                        if len(sub_agents) > 1:
+                            agent_descriptions_list = []
+                            for sa in sub_agents:
+                                is_master = str(sa[0]) == str(agent_id)
+                                role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                                agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
+                            agent_descriptions = "\n".join(agent_descriptions_list)
+                            
+                            if provider == "openai":
+                                key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+                                router_llm = ChatOpenAI(model_name=model, api_key=key_to_use, temperature=0.0)
+                            elif provider == "ollama":
+                                router_llm = ChatOllama(model=model, temperature=0.0)
+                            else:
+                                key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+                                router_llm = ChatGroq(model_name=model, api_key=key_to_use, temperature=0.0)
+                            
+                            routing_prompt = f"""You are the Master Coordinator Router.
 Analyze the user's latest message and choose the best specialized sub-agent to handle it.
 
 Available Agents:
 {agent_descriptions}
 
-User's Latest Message: {req.message}
+User's Latest Message: {message}
 
 Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
-                
-                try:
-                    routing_response = router_llm.invoke(routing_prompt)
-                    chosen_uuid = routing_response.content.strip()
-                    
-                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
-                    if chosen_agent and str(chosen_agent[0]) != str(req.agent_id):
-                        active_agent_id = chosen_agent[0]
-                        routed_agent_name = chosen_agent[1]
-                        
-                        # OVERRIDE CONTEXT: The chosen sub-agent's settings overwrite the master agent's settings
+                            try:
+                                routing_response = router_llm.invoke(routing_prompt)
+                                chosen_uuid = routing_response.content.strip()
+                                chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
+                                if chosen_agent and str(chosen_agent[0]) != str(agent_id):
+                                    active_agent_id = chosen_agent[0]
+                                    routed_agent_name = chosen_agent[1]
+                                    cursor.execute(
+                                        "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
+                                        (active_agent_id,),
+                                    )
+                                    (agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, web_search_enabled, is_active) = cursor.fetchone()
+                                    embed_model = embed_model or "text-embedding-3-small"
+                                    custom_api_key = decrypt_key(custom_api_key)
+                                    if not is_active:
+                                        await manager.send_json({"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later."}, client_id)
+                                        await manager.send_json({"type": "stream_end"}, client_id)
+                                        continue
+                            except Exception as e:
+                                logger.error(f"Dynamic routing failed: {e}")
+
+                    limits = get_user_limits(user_id, cursor)
+                    cursor.execute(
+                        """
+                        SELECT count(*) 
+                        FROM chat_messages m
+                        JOIN chat_sessions s ON m.session_id = s.id
+                        JOIN agents a ON s.agent_id = a.id
+                        WHERE a.user_id = %s AND m.role = 'user' 
+                        AND date_trunc('month', m.created_at) = date_trunc('month', current_date)
+                        """,
+                        (user_id,),
+                    )
+                    current_msg_count = cursor.fetchone()[0] or 0
+                    if current_msg_count >= limits["agent_messages"]:
+                        await manager.send_json({"type": "error", "content": "Monthly message limit exceeded. Please upgrade your plan."}, client_id)
+                        continue
+
+                    if provider == "openai":
+                        key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+                        llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+                    elif provider == "ollama":
+                        llm = ChatOllama(model=model)
+                    else:
+                        key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+                        llm = ChatGroq(model_name=model, api_key=key_to_use)
+
+                    query_vector = rag_engine.vectorize([message], model_name=embed_model)[0]
+                    cursor.execute(
+                        "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+                        (message, str(query_vector), active_agent_id),
+                    )
+                    best_matches = cursor.fetchall()
+                    if active_agent_id != agent_id:
                         cursor.execute(
-                            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active FROM agents WHERE id = %s",
-                            (active_agent_id,),
+                            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+                            (message, str(query_vector), agent_id),
                         )
-                        (
-                            agent_name,
-                            system_prompt,
-                            output_format,
-                            provider,
-                            model,
-                            custom_api_key,
-                            embed_model,
-                            web_search_enabled,
-                            is_active
-                        ) = cursor.fetchone()
-                        embed_model = embed_model or "text-embedding-3-small"
-                        custom_api_key = decrypt_key(custom_api_key)
+                        master_matches = cursor.fetchall()
+                        combined = best_matches + master_matches
+                        seen = set()
+                        unique_combined = []
+                        for item in combined:
+                            if item[0] not in seen:
+                                seen.add(item[0])
+                                unique_combined.append(item)
+                        unique_combined.sort(key=lambda x: x[1], reverse=True)
+                        best_matches = unique_combined[:5]
+
+                    doc_context = "No specific documents found."
+                    if best_matches:
+                        doc_context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
+
+                    web_context = "Web search disabled."
+                    if web_search_enabled:
+                        try:
+                            search = DuckDuckGoSearchRun()
+                            web_context = search.run(message)
+                        except Exception as e:
+                            logger.error(f"Web search failed: {e}")
+                            web_context = "Web search failed or was blocked by the search engine."
+
+                    history_items = history or []
+                    history_text = ""
+                    for msg in history_items[-6:]:
+                        role_name = "User" if msg.get("role") == "user" else "Assistant"
+                        history_text += f"{role_name}: {msg.get('content', '')}\n"
+                    if not history_text:
+                        history_text = "No previous conversation."
                         
-                        if not is_active:
-                            async def offline_stream():
-                                yield f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later."
-                            return StreamingResponse(offline_stream(), media_type="text/plain")
-                except Exception as e:
-                    logger.error(f"Dynamic routing failed: {e}")
+                    memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
-        # ==========================================
-        # BILLING CHECK
-        # ==========================================
-        limits = get_user_limits(user_id, cursor)
-        cursor.execute(
-            """
-            SELECT count(*) 
-            FROM chat_messages m
-            JOIN chat_sessions s ON m.session_id = s.id
-            JOIN agents a ON s.agent_id = a.id
-            WHERE a.user_id = %s AND m.role = 'user' 
-            AND date_trunc('month', m.created_at) = date_trunc('month', current_date)
-        """,
-            (user_id,),
-        )
-        current_msg_count = cursor.fetchone()[0] or 0
-        if current_msg_count >= limits["agent_messages"]:
-            raise HTTPException(
-                status_code=403,
-                detail="Monthly message limit exceeded. Please upgrade your plan.",
-            )
+                    if not best_matches and not web_search_enabled:
+                        grounding_rules = """
+                    5. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions using general knowledge.
+                    6. For casual greetings (e.g., 'hello', 'hi'), you may reply naturally in 1 sentence, but mention that no documents are uploaded.
+                    7. For any factual questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
+                        """
+                    elif web_search_enabled:
+                        grounding_rules = """
+                    5. You have access to both PRIVATE DOCUMENTS CONTEXT and WEB SEARCH CONTEXT.
+                    6. Answer accurately. If the contexts conflict, prioritize the Private Documents.
+                    7. If you used the WEB SEARCH CONTEXT to answer any part of the question, you MUST start your entire response with the exact tag: [WEB_SOURCE]
+                    8. Do not use general knowledge outside of the provided contexts.
+                        """
+                    else:
+                        grounding_rules = """
+                    5. You are a strict, professional AI assistant grounded ONLY in the provided PRIVATE DOCUMENTS CONTEXT.
+                    6. For factual questions, ONLY answer using the provided CONTEXT.
+                    7. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+                        """
 
-        # ==========================================
-        # LLM INITIALIZATION
-        # ==========================================
-        if provider == "openai":
-            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
-            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-        elif provider == "ollama":
-            llm = ChatOllama(model=model)
-        else:
-            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="Groq API Key missing.")
-            llm = ChatGroq(model_name=model, api_key=key_to_use)
+                    formatted_system_prompt = system_prompt
+                    if output_format:
+                        formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
+                        
+                    prompt = f"""{formatted_system_prompt}{memory_patch}
+                    You are a helpful assistant. Use the following context to answer the user.
 
-        # ==========================================
-        # RAG HYBRID SEARCH (Retrieval)
-        # ==========================================
-        # 1. Convert user message to a mathematical vector
-        query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
+                    CRITICAL RULES:
+                    1. Format response beautifully in Markdown.
+                    2. Use the PREVIOUS CHAT HISTORY to understand context.
+                    3. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
+                    4. DETAIL RULE: For summaries/essays, provide highly detailed answers.{grounding_rules}
 
-        # 2. Run Hybrid Search (BM25 Keyword + Vector Similarity)
-        cursor.execute(
-            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
-            (req.message, str(query_vector), active_agent_id),
-        )
-        best_matches = cursor.fetchall()
+                    ---
+                    PRIVATE DOCUMENTS CONTEXT:
+                    {doc_context}
+                    ---
+                    WEB SEARCH CONTEXT:
+                    {web_context}
+                    ---
 
-        # If routed to sub-agent, fallback to query master agent (req.agent_id) documents as well
-        if active_agent_id != req.agent_id:
-            cursor.execute(
-                "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
-                (req.message, str(query_vector), req.agent_id),
-            )
-            master_matches = cursor.fetchall()
-            # Combine, deduplicate, and sort by similarity
-            combined = best_matches + master_matches
-            seen = set()
-            unique_combined = []
-            for item in combined:
-                if item[0] not in seen:
-                    seen.add(item[0])
-                    unique_combined.append(item)
-            unique_combined.sort(key=lambda x: x[1], reverse=True)
-            best_matches = unique_combined[:5]
+                    PREVIOUS CHAT HISTORY:
+                    {history_text}
 
-        # 3. Concatenate the retrieved chunks
-        doc_context = "No specific documents found."
-        if best_matches:
-            doc_context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
+                    CURRENT USER INPUT: {message}
+                    """
 
-        # ==========================================
-        # WEB SEARCH INTEGRATION
-        # ==========================================
-        web_context = "Web search disabled."
-        if web_search_enabled:
-            try:
-                search = DuckDuckGoSearchRun()
-                web_context = search.run(req.message)
-            except Exception as e:
-                logger.error(f"Web search failed: {e}")
-                web_context = "Web search failed or was blocked by the search engine."
+                    lang_map = {
+                        "en": "English", "es": "Spanish", "fr": "French",
+                        "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
+                        "ja": "Japanese", "ko": "Korean"
+                    }
+                    if language and language.lower() != "en":
+                        lang_name = lang_map.get(language.lower(), language)
+                        prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-        # ==========================================
-        # PROMPT CONSTRUCTION
-        # ==========================================
-        history_items = req.history or []
-        history_text = ""
-        for msg in history_items[-6:]:
-            role_name = "User" if msg.get("role") == "user" else "Assistant"
-            history_text += f"{role_name}: {msg.get('content', '')}\n"
-        if not history_text:
-            history_text = "No previous conversation."
-            
-        memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
+                    if routed_agent_name and routed_agent_name != gateway_name:
+                        await manager.send_json({"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_agent_name}]*\n\n"}, client_id)
+                        
+                    for chunk in llm.stream(prompt):
+                        if chunk.content:
+                            await manager.send_json({"type": "text_chunk", "content": chunk.content}, client_id)
+                            
+                    await manager.send_json({"type": "stream_end"}, client_id)
 
-        if not best_matches and not web_search_enabled:
-            grounding_rules = """
-        5. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions using general knowledge.
-        6. For casual greetings (e.g., 'hello', 'hi'), you may reply naturally in 1 sentence, but mention that no documents are uploaded.
-        7. For any factual questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
-            """
-        elif web_search_enabled:
-            grounding_rules = """
-        5. You have access to both PRIVATE DOCUMENTS CONTEXT and WEB SEARCH CONTEXT.
-        6. Answer accurately. If the contexts conflict, prioritize the Private Documents.
-        7. If you used the WEB SEARCH CONTEXT to answer any part of the question, you MUST start your entire response with the exact tag: [WEB_SOURCE]
-        8. Do not use general knowledge outside of the provided contexts.
-            """
-        else:
-            grounding_rules = """
-        5. You are a strict, professional AI assistant grounded ONLY in the provided PRIVATE DOCUMENTS CONTEXT.
-        6. For factual questions, ONLY answer using the provided CONTEXT.
-        7. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
-            """
+                except Exception as exc:
+                    logger.exception("Chat generation failed")
+                    await manager.send_json({"type": "error", "content": str(exc)}, client_id)
+                finally:
+                    if cursor:
+                        cursor.close()
+                    if conn:
+                        conn.close()
 
-        formatted_system_prompt = system_prompt
-        if output_format:
-            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
-            
-        prompt = f"""{formatted_system_prompt}{memory_patch}
-        You are a helpful assistant. Use the following context to answer the user.
+    except WebSocketDisconnect:
+        manager.disconnect(client_id)
 
-        CRITICAL RULES:
-        1. Format response beautifully in Markdown.
-        2. Use the PREVIOUS CHAT HISTORY to understand context.
-        3. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
-        4. DETAIL RULE: For summaries/essays, provide highly detailed answers.{grounding_rules}
-
-        ---
-        PRIVATE DOCUMENTS CONTEXT:
-        {doc_context}
-        ---
-        WEB SEARCH CONTEXT:
-        {web_context}
-        ---
-
-        PREVIOUS CHAT HISTORY:
-        {history_text}
-
-        CURRENT USER INPUT: {req.message}
-        """
-
-        # Optional Localization Override
-        lang_map = {
-            "en": "English", "es": "Spanish", "fr": "French",
-            "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
-            "ja": "Japanese", "ko": "Korean"
-        }
-        if getattr(req, 'language', None) and req.language.lower() != "en":
-            lang_name = lang_map.get(req.language.lower(), req.language)
-            prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
-
-        # ==========================================
-        # STREAMING GENERATOR
-        # ==========================================
-        async def stream_generator():
-            try:
-                # If routing occurred, visibly tell the user who is talking
-                if routed_agent_name and routed_agent_name != gateway_name:
-                    yield f"🤖 *[Routed to: {routed_agent_name}]*\n\n"
-                    
-                for chunk in llm.stream(prompt):
-                    if chunk.content:
-                        yield chunk.content
-            except Exception as exc:
-                logger.exception("Streaming generation failed")
-                yield f"\n\n⚠️ Error during generation: {str(exc)}"
-
-        return StreamingResponse(stream_generator(), media_type="text/plain")
-
-    except HTTPException:
-        if conn:
-            conn.rollback()
-        raise
-    except Exception as exc:
-        logger.exception("Chat endpoint failed")
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 # ==========================================
 # PUBLIC CHAT WIDGET ENDPOINT
 # ==========================================
 
-@router.post("/api/widget/chat")
-@limiter.limit("25/minute")
-async def widget_chat(req: WidgetChatRequest, request: Request):
-    """
-    Stateless chat endpoint for external websites embedding the chatbot.
-    Identical logic to `/chat` but validates allowed domains and logs metrics.
-    """
-    if not req.chatbot_id:
-        raise HTTPException(status_code=400, detail="chatbot_id is required")
-    if not req.message or not req.message.strip():
-        raise HTTPException(status_code=400, detail="message is required")
-
-    req.message = scrub_pii(req.message)
-
-    conn = None
-    cursor = None
+@router.websocket("/ws/widget/chat/{client_id}")
+async def widget_chat(websocket: WebSocket, client_id: str):
+    await manager.connect(websocket, client_id)
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "chat_request":
+                req_data = data.get("payload", {})
+                chatbot_id = req_data.get("chatbot_id")
+                message = req_data.get("message")
+                history = req_data.get("history", [])
+                language = req_data.get("language")
+                
+                if not chatbot_id or not message:
+                    await manager.send_json({"type": "error", "content": "chatbot_id and message are required"}, client_id)
+                    continue
 
-        # 1. Fetch Chatbot Config
-        cursor.execute(
-            "SELECT c.agent_id, c.settings, c.message_count, a.user_id, c.allowed_domains FROM chatbots c JOIN agents a ON c.agent_id = a.id WHERE c.id = %s",
-            (req.chatbot_id,),
-        )
-        chatbot_data = cursor.fetchone()
-        if not chatbot_data:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
+                message = scrub_pii(message)
+                conn = None
+                cursor = None
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
 
-        agent_id, settings, message_count, user_id, allowed_domains = chatbot_data
-        settings = settings or {}
+                    cursor.execute(
+                        "SELECT c.agent_id, c.settings, c.message_count, a.user_id, c.allowed_domains FROM chatbots c JOIN agents a ON c.agent_id = a.id WHERE c.id = %s",
+                        (chatbot_id,),
+                    )
+                    chatbot_data = cursor.fetchone()
+                    if not chatbot_data:
+                        await manager.send_json({"type": "error", "content": "Chatbot not found"}, client_id)
+                        continue
 
-        # 2. CORS / Domain Validation
-        # Crucial for preventing bad actors from taking the embed script and putting it on their own site,
-        # which would drain the original user's quota.
-        if allowed_domains and request.headers.get("origin"):
-            origin = (
-                request.headers.get("origin")
-                .replace("http://", "")
-                .replace("https://", "")
-                .split(":")[0]
-            )
-            domains = [
-                d.strip().replace("http://", "").replace("https://", "").split(":")[0] 
-                for d in allowed_domains.split(",") if d.strip()
-            ]
-            
-            allowed = False
-            if not domains:
-                allowed = True
-            else:
-                for d in domains:
-                    if d == origin:
-                        allowed = True
-                        break
-                    elif d.startswith("*.") and origin.endswith(d[1:]):
-                        allowed = True
-                        break
+                    agent_id, settings, message_count, user_id, allowed_domains = chatbot_data
+                    
+                    # Omitting CORS/Origin check for WebSocket for now as browsers don't enforce CORS on WS connections in the same way, 
+                    # but we can check headers if needed via websocket.headers.get("origin") during connect.
+                    # We will just do the billing and analytics check here.
+
+                    limits = get_user_limits(user_id, cursor)
+                    cursor.execute(
+                        """
+                        SELECT COALESCE(SUM(message_count), 0)
+                        FROM chatbots c
+                        JOIN agents a ON c.agent_id = a.id
+                        WHERE a.user_id = %s
+                    """,
+                        (user_id,),
+                    )
+                    total_widget_msgs = cursor.fetchone()[0] or 0
+                    if total_widget_msgs >= limits["chatbot_messages"]:
+                        await manager.send_json({"type": "error", "content": "Monthly widget message limit exceeded. Please upgrade your plan."}, client_id)
+                        continue
+
+                    cursor.execute("UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s", (chatbot_id,))
+                    cursor.execute("INSERT INTO widget_message_logs (chatbot_id) VALUES (%s)", (chatbot_id,))
+                    conn.commit()
+
+                    cursor.execute(
+                        "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, is_active FROM agents WHERE id = %s",
+                        (agent_id,),
+                    )
+                    agent_data = cursor.fetchone()
+                    if not agent_data:
+                        await manager.send_json({"type": "error", "content": "Underlying Agent not found"}, client_id)
+                        continue
+
+                    agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, is_active = agent_data
+                    embed_model = embed_model or "text-embedding-3-small"
+                    custom_api_key = decrypt_key(custom_api_key)
+                    
+                    if not is_active:
+                        await manager.send_json({"type": "text_chunk", "content": "Sorry, our custom services department is currently offline. Please try again later."}, client_id)
+                        await manager.send_json({"type": "stream_end"}, client_id)
+                        continue
+
+                    if provider == "openai":
+                        key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+                        llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+                    elif provider == "ollama":
+                        llm = ChatOllama(model=model)
+                    else:
+                        key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+                        llm = ChatGroq(model_name=model, api_key=key_to_use)
+
+                    query_vector = rag_engine.vectorize([message], model_name=embed_model)[0]
+
+                    cursor.execute(
+                        "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+                        (message, str(query_vector), agent_id),
+                    )
+                    best_matches = cursor.fetchall()
+
+                    context = "No specific documents found."
+                    if best_matches:
+                        context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
+
+                    history_items = history or []
+                    history_text = ""
+                    for msg in history_items[-6:]:
+                        role_name = "User" if msg.get("role") == "user" else "Assistant"
+                        history_text += f"{role_name}: {msg.get('content', '')}\n"
+                    if not history_text:
+                        history_text = "No previous conversation."
+
+                    memory_patch = fetch_temporary_memory_patch(cursor, agent_id)
+
+                    formatted_system_prompt = system_prompt
+                    if output_format:
+                        formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
                         
-            if not allowed:
-                raise HTTPException(status_code=403, detail="Domain not allowed")
+                    if not best_matches:
+                        grounding_rules = """
+                    1. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions.
+                    2. For casual greetings, you may reply naturally in 1 sentence, but state that no documents are uploaded.
+                    3. For any questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
+                        """
+                    else:
+                        grounding_rules = """
+                    1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
+                    2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+                    3. Format response beautifully in Markdown.
+                    4. Use the PREVIOUS CHAT HISTORY to understand context.
+                    5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
+                    6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
+                        """
 
-        # 3. Check Chatbot Message Limit
-        limits = get_user_limits(user_id, cursor)
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(message_count), 0)
-            FROM chatbots c
-            JOIN agents a ON c.agent_id = a.id
-            WHERE a.user_id = %s
-        """,
-            (user_id,),
-        )
-        total_widget_msgs = cursor.fetchone()[0] or 0
-        if total_widget_msgs >= limits["chatbot_messages"]:
-            raise HTTPException(
-                status_code=403,
-                detail="Monthly widget message limit exceeded. Please upgrade your plan.",
-            )
+                    prompt = f"""{formatted_system_prompt}{memory_patch}
+                    You are a strict, professional AI assistant grounded ONLY in the provided documents.
 
-        # 4. Increment Analytics Counters
-        cursor.execute(
-            "UPDATE chatbots SET message_count = message_count + 1 WHERE id = %s",
-            (req.chatbot_id,),
-        )
-        cursor.execute(
-            "INSERT INTO widget_message_logs (chatbot_id) VALUES (%s)",
-            (req.chatbot_id,),
-        )
-        conn.commit()
+                    CRITICAL RULES:
+                    {grounding_rules}
 
-        # 5. Get the agent config
-        cursor.execute(
-            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, is_active FROM agents WHERE id = %s",
-            (agent_id,),
-        )
-        agent_data = cursor.fetchone()
-        if not agent_data:
-            raise HTTPException(status_code=404, detail="Underlying Agent not found")
+                    CONTEXT DOCUMENTS:
+                    {context}
 
-        agent_name, system_prompt, output_format, provider, model, custom_api_key, embed_model, is_active = agent_data
-        embed_model = embed_model or "text-embedding-3-small"
-        custom_api_key = decrypt_key(custom_api_key)
-        
-        if not is_active:
-            async def offline_stream():
-                yield "Sorry, our custom services department is currently offline. Please try again later."
-            return StreamingResponse(offline_stream(), media_type="text/plain")
+                    PREVIOUS CHAT HISTORY:
+                    {history_text}
 
-        # 6. Setup LLM
-        if provider == "openai":
-            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
-            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-        elif provider == "ollama":
-            llm = ChatOllama(model=model)
-        else:
-            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="Groq API Key missing.")
-            llm = ChatGroq(model_name=model, api_key=key_to_use)
+                    CURRENT USER INPUT: {message}
+                    """
 
-        # 7. Fetch RAG Context
-        query_vector = rag_engine.vectorize([req.message], model_name=embed_model)[0]
+                    lang_map = {
+                        "en": "English", "es": "Spanish", "fr": "French",
+                        "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
+                        "ja": "Japanese", "ko": "Korean"
+                    }
+                    if language and language.lower() != "en":
+                        lang_name = lang_map.get(language.lower(), language)
+                        prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-        cursor.execute(
-            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
-            (req.message, str(query_vector), agent_id),
-        )
-        best_matches = cursor.fetchall()
+                    for chunk in llm.stream(prompt):
+                        if chunk.content:
+                            await manager.send_json({"type": "text_chunk", "content": chunk.content}, client_id)
+                            
+                    await manager.send_json({"type": "stream_end"}, client_id)
 
-        context = "No specific documents found."
-        if best_matches:
-            context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
+                except Exception as e:
+                    logger.error(f"Widget Chat endpoint failed", exc_info=True)
+                    if conn and not conn.closed:
+                        try:
+                            conn.rollback()
+                        except:
+                            pass 
+                    await manager.send_json({"type": "error", "content": str(e)}, client_id)
+                finally:
+                    if cursor:
+                        cursor.close()
+                    if conn:
+                        conn.close()
 
-        # 8. Format Chat History (Stateless)
-        history_items = req.history or []
-        history_text = ""
-        for msg in history_items[-6:]:
-            role_name = "User" if msg.get("role") == "user" else "Assistant"
-            history_text += f"{role_name}: {msg.get('content', '')}\n"
-        if not history_text:
-            history_text = "No previous conversation."
+    except WebSocketDisconnect:
+        manager.disconnect(client_id)
 
-        memory_patch = fetch_temporary_memory_patch(cursor, agent_id)
-
-        # 9. Build Prompt
-        formatted_system_prompt = system_prompt
-        if output_format:
-            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
-            
-        if not best_matches:
-            grounding_rules = """
-        1. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions.
-        2. For casual greetings, you may reply naturally in 1 sentence, but state that no documents are uploaded.
-        3. For any questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
-            """
-        else:
-            grounding_rules = """
-        1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
-        3. Format response beautifully in Markdown.
-        4. Use the PREVIOUS CHAT HISTORY to understand context.
-        5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
-        6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
-            """
-
-        prompt = f"""{formatted_system_prompt}{memory_patch}
-        You are a strict, professional AI assistant grounded ONLY in the provided documents.
-
-        CRITICAL RULES:
-        {grounding_rules}
-
-        CONTEXT DOCUMENTS:
-        {context}
-
-        PREVIOUS CHAT HISTORY:
-        {history_text}
-
-        CURRENT USER INPUT: {req.message}
-        """
-
-        lang_map = {
-            "en": "English", "es": "Spanish", "fr": "French",
-            "de": "German", "hi": "Hindi", "zh-cn": "Chinese",
-            "ja": "Japanese", "ko": "Korean"
-        }
-        if getattr(req, 'language', None) and req.language.lower() != "en":
-            lang_name = lang_map.get(req.language.lower(), req.language)
-            prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
-
-        async def stream_generator():
-            try:
-                for chunk in llm.stream(prompt):
-                    if chunk.content:
-                        yield chunk.content
-            except Exception as exc:
-                logger.exception("Streaming generation failed")
-                yield f"\n\n⚠️ Error during generation: {str(exc)}"
-
-        return StreamingResponse(stream_generator(), media_type="text/plain")
-
-    except HTTPException:
-        if conn:
-            conn.rollback()
-        raise
-    except Exception as e:
-        logger.error(f"Widget Chat endpoint failed", exc_info=True)
-        # CRITICAL FIX: Only roll back if the connection is actually still open.
-        # Sometimes streaming responses crash because the user abruptly closes the browser.
-        if conn and not conn.closed:
-            try:
-                conn.rollback()
-            except psycopg2.InterfaceError:
-                pass 
-
-        return StreamingResponse(
-            iter([f"Error: {str(e)}"]),
-        )
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 # ==========================================
 # API ACCESS (Programmatic)

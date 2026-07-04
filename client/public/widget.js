@@ -119,8 +119,10 @@
         height: 580px;
         max-height: calc(100vh - 140px);
         max-width: calc(100vw - 60px);
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
+        background: rgba(255, 255, 255, 0.3);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '24px' : '16px'};
         box-shadow: 0 12px 36px rgba(0,0,0,0.15);
         display: none;
@@ -190,7 +192,7 @@
         display: flex;
         flex-direction: column;
         gap: 12px;
-        background: #f8fafc;
+        background: transparent;
       }
       .rm-msg {
         max-width: 80%;
@@ -213,8 +215,8 @@
       }
       .rm-input-area {
         padding: 12px 16px;
-        background: white;
-        border-top: 1px solid #e2e8f0;
+        background: rgba(255, 255, 255, 0.5);
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
         display: flex;
         gap: 8px;
         align-items: center;
@@ -347,7 +349,7 @@
       <div class="rm-messages" id="blinkbot-messages">
         <div class="rm-msg bot">${botSettings.welcomeMessage}</div>
       </div>
-      <div style="background: white;">
+      <div style="background: transparent;">
         <div class="rm-input-area">
           <input type="text" class="rm-input" id="blinkbot-input" placeholder="Ask a question...">
           <button class="rm-mic" id="blinkbot-mic-btn" title="Start recording">
@@ -523,6 +525,33 @@
     container.appendChild(flexDiv);
   }
 
+
+  let ws = null;
+  let clientId = Math.random().toString(36).substring(7);
+
+  function getWsUrl() {
+    let base = apiUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+    return `${base}/ws/widget/chat/${clientId}`;
+  }
+
+  function ensureWsConnection() {
+    return new Promise((resolve, reject) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+      ws = new WebSocket(getWsUrl());
+      ws.onopen = () => {
+        console.log("BlinkBot Widget WS Connected");
+        resolve();
+      };
+      ws.onerror = (err) => {
+        reject(err);
+      };
+      // Note: Reconnect logic could be added here
+    });
+  }
+
   async function handleSend() {
     const inputEl = document.getElementById('blinkbot-input');
     const text = inputEl.value.trim();
@@ -551,47 +580,47 @@
     messagesEl.appendChild(botMsg);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    // 3. Post chat call
     try {
-      const response = await fetch(`${apiUrl}/api/widget/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      await ensureWsConnection();
+
+      let streamedResponse = '';
+      
+      const onMessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'text_chunk') {
+            if (streamedResponse === '') {
+              botMsg.innerHTML = '';
+            }
+            streamedResponse += data.content;
+            botMsg.innerHTML = formatText(streamedResponse);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if (data.type === 'error') {
+            botMsg.innerHTML = `<span style="color: #ef4444;">Error: ${data.content}</span>`;
+            ws.removeEventListener('message', onMessage);
+          } else if (data.type === 'stream_end') {
+            chatHistory.push({ role: 'user', content: text });
+            chatHistory.push({ role: 'assistant', content: streamedResponse });
+            addTTSButton(botMsg, streamedResponse);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            ws.removeEventListener('message', onMessage);
+          }
+        } catch (e) {
+          console.error("Parse error", e);
+        }
+      };
+
+      ws.addEventListener('message', onMessage);
+
+      ws.send(JSON.stringify({
+        type: 'chat_request',
+        payload: {
           chatbot_id: chatbotId,
           message: text,
           history: chatHistory,
           language: currentLanguage
-        })
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: 'Service error' }));
-        throw new Error(err.detail || 'Service error');
-      }
-
-      // Read chunk stream
-      botMsg.innerHTML = '';
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let streamedResponse = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        streamedResponse += chunk;
-        botMsg.innerHTML = formatText(streamedResponse);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-
-      // Add to conversation memory
-      chatHistory.push({ role: 'user', content: text });
-      chatHistory.push({ role: 'assistant', content: streamedResponse });
-
-      // Add TTS button to bot message
-      addTTSButton(botMsg, streamedResponse);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+      }));
 
     } catch (err) {
       botMsg.innerHTML = `<span style="color: #ef4444;">Error: ${err.message}</span>`;

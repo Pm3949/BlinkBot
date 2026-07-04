@@ -176,12 +176,13 @@ async def google_files(user_id: str):
         cursor = conn.cursor()
         
         # Get token
-        cursor.execute("SELECT access_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (user_id,))
+        cursor.execute("SELECT access_token, refresh_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (user_id,))
         token_row = cursor.fetchone()
         if not token_row:
             raise HTTPException(status_code=400, detail="Not connected to Google Drive")
             
         access_token = token_row[0]
+        refresh_token = token_row[1]
         
         # Fetch files from Google Drive API
         headers = {"Authorization": f"Bearer {access_token}"}
@@ -191,6 +192,26 @@ async def google_files(user_id: str):
         
         async with httpx.AsyncClient() as client:
             resp = await client.get(drive_url, headers=headers)
+            if resp.status_code == 401 and refresh_token:
+                # Token expired, attempt refresh
+                token_url = "https://oauth2.googleapis.com/token"
+                data = {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token"
+                }
+                refresh_resp = await client.post(token_url, data=data)
+                token_data = refresh_resp.json()
+                
+                if "access_token" in token_data:
+                    access_token = token_data["access_token"]
+                    cursor.execute("UPDATE oauth_connections SET access_token = %s, updated_at = NOW() WHERE user_id = %s AND provider = 'google'", (access_token, user_id))
+                    conn.commit()
+                    
+                    headers = {"Authorization": f"Bearer {access_token}"}
+                    resp = await client.get(drive_url, headers=headers)
+
             if resp.status_code != 200:
                 raise HTTPException(status_code=400, detail="Failed to fetch from Google Drive. Token might be expired.")
                 
@@ -223,6 +244,8 @@ def background_gdrive_import(
     filename: str,
     mime_type: str,
     access_token: str,
+    refresh_token: str,
+    user_id: str,
     strategy: str,
     embed_model: str
 ):
@@ -239,50 +262,63 @@ def background_gdrive_import(
         # Determine if it's a Google Doc that needs exporting or a standard file
         is_google_doc = mime_type.startswith("application/vnd.google-apps")
         
+        async def fetch_with_retry(url: str):
+            nonlocal access_token
+            current_headers = {"Authorization": f"Bearer {access_token}"}
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(url, headers=current_headers)
+                if resp.status_code == 401 and refresh_token:
+                    # Token expired, attempt refresh
+                    token_url = "https://oauth2.googleapis.com/token"
+                    data = {
+                        "client_id": GOOGLE_CLIENT_ID,
+                        "client_secret": GOOGLE_CLIENT_SECRET,
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token"
+                    }
+                    refresh_resp = await client.post(token_url, data=data)
+                    token_data = refresh_resp.json()
+                    
+                    if "access_token" in token_data:
+                        access_token = token_data["access_token"]
+                        current_headers = {"Authorization": f"Bearer {access_token}"}
+                        # Update DB with new token
+                        try:
+                            tmp_conn = get_db_connection()
+                            tmp_cursor = tmp_conn.cursor()
+                            tmp_cursor.execute("UPDATE oauth_connections SET access_token = %s, updated_at = NOW() WHERE user_id = %s AND provider = 'google'", (access_token, user_id))
+                            tmp_conn.commit()
+                            tmp_cursor.close()
+                            tmp_conn.close()
+                        except Exception as e:
+                            logger.error(f"Failed to update token in DB: {e}")
+                        
+                        # Retry the request
+                        resp = await client.get(url, headers=current_headers)
+
+                if resp.status_code != 200:
+                    raise Exception(f"Failed to download from Drive: {resp.text}")
+                return resp.content
+
         if is_google_doc:
-            # Export as plain text
-            export_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=text/plain"
-            async def fetch_doc():
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    resp = await client.get(export_url, headers=headers)
-                    if resp.status_code != 200:
-                        raise Exception(f"Failed to export Google Doc: {resp.text}")
-                    return resp.content
-            
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            file_bytes = loop.run_until_complete(fetch_doc())
-            # Save permanently to UPLOAD_DIR as .txt so it can be previewed/accessed
-            # Force .txt suffix if not present
-            if not dest_filename.endswith(".txt"):
-                dest_filename += ".txt"
-                file_path = UPLOAD_DIR / dest_filename
-                
-            with open(file_path, "wb") as f:
-                f.write(file_bytes)
+            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=text/plain"
         else:
-            # Download directly
-            download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-            async def download_file():
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    resp = await client.get(download_url, headers=headers)
-                    if resp.status_code != 200:
-                        raise Exception(f"Failed to download file from Drive: {resp.text}")
-                    return resp.content
+            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-            file_bytes = loop.run_until_complete(download_file())
-            with open(file_path, "wb") as f:
-                f.write(file_bytes)
+        file_bytes = loop.run_until_complete(fetch_with_retry(target_url))
+        
+        if is_google_doc and not dest_filename.endswith(".txt"):
+            dest_filename += ".txt"
+            file_path = UPLOAD_DIR / dest_filename
+            
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
 
         # Now extract text from the downloaded file using the RAG engine
         raw_text = rag_engine.extract_text_from_file(str(file_path), filename)
@@ -362,12 +398,13 @@ async def google_import(req: GDriveImportRequest, background_tasks: BackgroundTa
         strategy = agent_row[1] if agent_row[1] else "sentence"
 
         # Get access token
-        cursor.execute("SELECT access_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (req.user_id,))
+        cursor.execute("SELECT access_token, refresh_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (req.user_id,))
         token_row = cursor.fetchone()
         if not token_row:
             raise HTTPException(status_code=400, detail="Not connected to Google Drive")
             
         access_token = token_row[0]
+        refresh_token = token_row[1]
 
         imported_files = []
         for file_info in req.files:
@@ -391,6 +428,8 @@ async def google_import(req: GDriveImportRequest, background_tasks: BackgroundTa
                 filename,
                 mime_type,
                 access_token,
+                refresh_token,
+                req.user_id,
                 strategy,
                 embed_model
             )

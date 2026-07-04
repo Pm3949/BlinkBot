@@ -1,13 +1,28 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { streamChat } from "../services/chatService";
 import { useChatSessions, useChatMessages, useChatMutations } from "./useChatHistory";
+import { useAgentSocket } from "./useAgentSocket";
 
 export function useChat() {
   const { data: sessions = [] } = useChatSessions();
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
+
+  // Connection config
+  const clientId = useMemo(() => {
+    let cid = localStorage.getItem("dashboard_client_id");
+    if (!cid) {
+        cid = Math.random().toString(36).substring(7);
+        localStorage.setItem("dashboard_client_id", cid);
+    }
+    return cid;
+  }, []);
+  
+  const wsUrl = import.meta.env.VITE_WS_BASE_URL 
+      ? `${import.meta.env.VITE_WS_BASE_URL}/ws/chat/${clientId}` 
+      : `ws://${window.location.host.split(':')[0]}:8000/ws/chat/${clientId}`;
+
+  const { isConnected, agentTextChunks, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -28,9 +43,23 @@ export function useChat() {
     return [...dbMessages, {
       id: "optimistic-assistant",
       role: "assistant",
-      content: streamingContent || "Thinking..."
+      content: agentTextChunks || "Thinking..."
     }];
-  }, [dbMessages, isTyping, streamingContent]);
+  }, [dbMessages, isTyping, agentTextChunks]);
+
+  // Listen for custom stream_end event from useAgentSocket
+  useEffect(() => {
+    const handleStreamEnd = async (e) => {
+       if (isTyping && activeSessionId) {
+          setIsTyping(false);
+          await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: agentTextChunks, latency: 0 });
+          clearTextChunks();
+       }
+    };
+    window.addEventListener('agent_stream_end', handleStreamEnd);
+    return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
+  }, [isTyping, activeSessionId, agentTextChunks, addMessage, clearTextChunks]);
+
 
   const startNewChat = async ({ agentId, agentName } = {}) => {
     try {
@@ -50,8 +79,6 @@ export function useChat() {
     if (!message) return;
 
     let currentSessionId = activeSessionId;
-    
-    // Check if the current session belongs to the selected agent
     const belongsToAgent = sessions.find(s => s.id === currentSessionId)?.agentId === agentId;
     
     if (!currentSessionId || !belongsToAgent) {
@@ -64,60 +91,27 @@ export function useChat() {
        }
     }
 
-    // Save User Message to DB
     await addMessage.mutateAsync({ sessionId: currentSessionId, role: "user", content: message });
 
-    // Stream
     setIsTyping(true);
-    setStreamingContent("");
-
-    let finalContent = "";
-    const startTime = Date.now();
-    let ttft = null;
-    try {
-      const history = dbMessages.map(({ role, content }) => ({ role, content }));
-      
-      await streamChat(
-        {
-          agent_id: agentId,
-          message,
-          history,
-          language,
-        },
-        (streamedText) => {
-          if (!ttft) {
-            ttft = Date.now() - startTime;
-          }
-          setStreamingContent(streamedText);
-          finalContent = streamedText;
-        },
-      );
-      
-      // Save Assistant Message to DB
-      if (finalContent) {
-        const latency = ttft || (Date.now() - startTime);
-        await addMessage.mutateAsync({ sessionId: currentSessionId, role: "assistant", content: finalContent, latency });
-      }
-    } catch (error) {
-      toast.error(error.message || "Unable to get a response.");
-      // Optional: Save an error message so the user knows it failed
-    } finally {
-      setIsTyping(false);
-      setStreamingContent("");
-    }
+    
+    const history = dbMessages.map(({ role, content }) => ({ role, content }));
+    sendChatRequest({
+        agent_id: agentId,
+        message,
+        history,
+        language
+    });
   };
 
   const selectSession = (id) => setActiveSessionId(id);
-  
   const renameSession = (id, title) => {
     if (title.trim()) renameDb.mutateAsync({ id, title: title.trim() });
   };
-  
   const togglePinSession = (id) => {
     const session = sessions.find(s => s.id === id);
     if (session) pinDb.mutateAsync({ id, pinned: !session.pinned });
   };
-  
   const deleteSession = async (id) => {
     await delDb.mutateAsync(id);
     if (activeSessionId === id) setActiveSessionId(null);
