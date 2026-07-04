@@ -131,7 +131,12 @@ async def chat_with_agent(req: ChatRequest):
             sub_agents = cursor.fetchall()
             
             if len(sub_agents) > 1:
-                agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
+                agent_descriptions_list = []
+                for sa in sub_agents:
+                    is_master = str(sa[0]) == str(req.agent_id)
+                    role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                    agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
+                agent_descriptions = "\n".join(agent_descriptions_list)
                 
                 # Setup a cheap, fast routing LLM to decide which agent should answer
                 if provider == "openai":
@@ -239,6 +244,24 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         )
         best_matches = cursor.fetchall()
 
+        # If routed to sub-agent, fallback to query master agent (req.agent_id) documents as well
+        if active_agent_id != req.agent_id:
+            cursor.execute(
+                "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+                (req.message, str(query_vector), req.agent_id),
+            )
+            master_matches = cursor.fetchall()
+            # Combine, deduplicate, and sort by similarity
+            combined = best_matches + master_matches
+            seen = set()
+            unique_combined = []
+            for item in combined:
+                if item[0] not in seen:
+                    seen.add(item[0])
+                    unique_combined.append(item)
+            unique_combined.sort(key=lambda x: x[1], reverse=True)
+            best_matches = unique_combined[:5]
+
         # 3. Concatenate the retrieved chunks
         doc_context = "No specific documents found."
         if best_matches:
@@ -269,7 +292,13 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             
         memory_patch = fetch_temporary_memory_patch(cursor, active_agent_id)
 
-        if web_search_enabled:
+        if not best_matches and not web_search_enabled:
+            grounding_rules = """
+        5. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions using general knowledge.
+        6. For casual greetings (e.g., 'hello', 'hi'), you may reply naturally in 1 sentence, but mention that no documents are uploaded.
+        7. For any factual questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
+            """
+        elif web_search_enabled:
             grounding_rules = """
         5. You have access to both PRIVATE DOCUMENTS CONTEXT and WEB SEARCH CONTEXT.
         6. Answer accurately. If the contexts conflict, prioritize the Private Documents.
@@ -510,16 +539,27 @@ async def widget_chat(req: WidgetChatRequest, request: Request):
         if output_format:
             formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
             
-        prompt = f"""{formatted_system_prompt}{memory_patch}
-        You are a strict, professional AI assistant grounded ONLY in the provided documents.
-
-        CRITICAL RULES:
+        if not best_matches:
+            grounding_rules = """
+        1. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions.
+        2. For casual greetings, you may reply naturally in 1 sentence, but state that no documents are uploaded.
+        3. For any questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
+            """
+        else:
+            grounding_rules = """
         1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
         2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
         3. Format response beautifully in Markdown.
         4. Use the PREVIOUS CHAT HISTORY to understand context.
         5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
         6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
+            """
+
+        prompt = f"""{formatted_system_prompt}{memory_patch}
+        You are a strict, professional AI assistant grounded ONLY in the provided documents.
+
+        CRITICAL RULES:
+        {grounding_rules}
 
         CONTEXT DOCUMENTS:
         {context}
@@ -684,7 +724,12 @@ async def api_v1_chat(req: APIChatRequest, request: Request, response: Response,
             sub_agents = cursor.fetchall()
             
             if len(sub_agents) > 1:
-                agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
+                agent_descriptions_list = []
+                for sa in sub_agents:
+                    is_master = str(sa[0]) == str(master_agent_id)
+                    role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                    agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
+                agent_descriptions = "\n".join(agent_descriptions_list)
                 
                 if provider == "openai":
                     key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
@@ -747,6 +792,24 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         )
         best_matches = cursor.fetchall()
 
+        # If routed to sub-agent, fallback to query master agent (master_agent_id) documents as well
+        if active_agent_id != master_agent_id:
+            cursor.execute(
+                "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, 5, 0.3)",
+                (req.message, str(query_vector), master_agent_id),
+            )
+            master_matches = cursor.fetchall()
+            # Combine, deduplicate, and sort by similarity
+            combined = best_matches + master_matches
+            seen = set()
+            unique_combined = []
+            for item in combined:
+                if item[0] not in seen:
+                    seen.add(item[0])
+                    unique_combined.append(item)
+            unique_combined.sort(key=lambda x: x[1], reverse=True)
+            best_matches = unique_combined[:5]
+
         context = "No specific documents found."
         if best_matches:
             context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
@@ -764,16 +827,27 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
         if output_format:
             formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
             
-        prompt = f"""{formatted_system_prompt}{memory_patch}
-        You are a strict, professional AI assistant grounded ONLY in the provided documents.
-
-        CRITICAL RULES:
+        if not best_matches:
+            grounding_rules = """
+        1. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions.
+        2. For casual greetings, you may reply naturally in 1 sentence, but state that no documents are uploaded.
+        3. For any questions, you MUST reply with exactly: "I cannot answer this question because no documents have been uploaded to my knowledge base. Please upload documents in the Knowledge Base first."
+            """
+        else:
+            grounding_rules = """
         1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
         2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
         3. Format response beautifully in Markdown.
         4. Use the PREVIOUS CHAT HISTORY to understand context.
         5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
         6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
+            """
+
+        prompt = f"""{formatted_system_prompt}{memory_patch}
+        You are a strict, professional AI assistant grounded ONLY in the provided documents.
+
+        CRITICAL RULES:
+        {grounding_rules}
 
         CONTEXT DOCUMENTS:
         {context}

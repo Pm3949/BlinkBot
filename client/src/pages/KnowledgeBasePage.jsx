@@ -164,6 +164,8 @@ export default function KnowledgeBasePage() {
   const [sourceTab, setSourceTab] = useState("files"); // "files", "website", "connectors"
   const [connectingTo, setConnectingTo] = useState(null);
 
+
+
   useEffect(() => {
     if (location.state) {
       const { preselectedAgentId, preselectedNetworkId } = location.state;
@@ -212,42 +214,25 @@ export default function KnowledgeBasePage() {
     const connection = searchParams.get("connection");
     const provider = searchParams.get("provider");
     
-    if (connection === "success" && provider && selectedAgentId && user?.id && canManageDatabase) {
-      // Clear URL params so we don't trigger this again on reload
+    if (connection === "success" && provider === "google" && selectedAgentId && user?.id && canManageDatabase) {
       setSearchParams(new URLSearchParams());
       setSourceTab("connectors");
       
-      const syncConnector = async () => {
-        setConnectingTo(provider);
-        toast.loading(`Syncing files from ${provider}...`, { id: "sync-toast" });
-        
+      const fetchTokenAndOpenPicker = async () => {
         try {
           const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
-          
-          if (provider === "google") {
-            const resp = await fetch(`${API_BASE_URL}/google/sync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ agent_id: selectedAgentId, user_id: user.id })
-            });
-            
+          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token?user_id=${user.id}`);
+          if (resp.ok) {
             const data = await resp.json();
-            if (resp.ok) {
-              toast.success(data.message, { id: "sync-toast" });
-              // Force reload documents
-              queryClient.invalidateQueries(["documents", selectedAgentId]);
-            } else {
-              toast.error(data.detail || "Failed to sync", { id: "sync-toast" });
-            }
+            openGooglePicker(data.access_token, data.api_key, data.client_id);
+          } else {
+            toast.error("Failed to authenticate with Google Drive.");
           }
         } catch (e) {
-          toast.error("Failed to sync data", { id: "sync-toast" });
-        } finally {
-          setConnectingTo(null);
+          toast.error("Failed to load Google Drive Picker.");
         }
       };
-      
-      syncConnector();
+      fetchTokenAndOpenPicker();
     }
   }, [searchParams, selectedAgentId, user, canManageDatabase]);
 
@@ -365,10 +350,25 @@ export default function KnowledgeBasePage() {
     }
 
     if (connectorId === "gdrive") {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
-      // Redirect to the real Google OAuth flow
-      // We pass the user ID as state. We assume user.id is available from useAuth
-      window.location.href = `${API_BASE_URL}/google/authorize?user_id=${user.id}`;
+      const initGdrivePicker = async () => {
+        setConnectingTo("gdrive");
+        try {
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
+          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token?user_id=${user.id}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            openGooglePicker(data.access_token, data.api_key, data.client_id);
+          } else {
+            // Not connected -> redirect to authorize
+            window.location.href = `${API_BASE_URL}/api/v1/connectors/google/authorize?user_id=${user.id}`;
+          }
+        } catch (e) {
+          toast.error("Error communicating with server.");
+        } finally {
+          setConnectingTo(null);
+        }
+      };
+      initGdrivePicker();
       return;
     }
 
@@ -385,6 +385,85 @@ export default function KnowledgeBasePage() {
       setConnectingTo(null);
     }
   };
+
+  const openGooglePicker = async (accessToken, apiKey, clientId) => {
+    console.log("Starting openGooglePicker...", { hasToken: !!accessToken, hasApiKey: !!apiKey, clientId });
+    if (!window.gapi) {
+      toast.error("Google API client script is not loaded in window.");
+      return;
+    }
+
+    try {
+      window.gapi.load("picker", {
+        callback: () => {
+          console.log("Google Picker library loaded successfully.");
+          try {
+            const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+              .setMimeTypes("application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.google-apps.document")
+              .setSelectFolderEnabled(false);
+
+            const picker = new window.google.picker.PickerBuilder()
+              .addView(view)
+              .setOAuthToken(accessToken)
+              .setDeveloperKey(apiKey)
+              .setCallback(async (data) => {
+                console.log("Picker callback action:", data.action);
+                if (data.action === window.google.picker.Action.PICKED) {
+                  const files = data.docs.map(doc => ({
+                    id: doc.id,
+                    name: doc.name,
+                    mimeType: doc.mimeType
+                  }));
+                  
+                  setConnectingTo("gdrive");
+                  toast.loading("Syncing selected files from Google Drive...", { id: "sync-toast" });
+                  try {
+                    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
+                    const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/import`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        agent_id: selectedAgentId,
+                        user_id: user.id,
+                        files: files
+                      })
+                    });
+
+                    const resData = await resp.json();
+                    if (resp.ok) {
+                      toast.success(resData.message, { id: "sync-toast" });
+                      queryClient.invalidateQueries(["documents", selectedAgentId]);
+                    } else {
+                      toast.error(resData.detail || "Failed to import selected files.", { id: "sync-toast" });
+                    }
+                  } catch (e) {
+                    toast.error("Error connecting to server.", { id: "sync-toast" });
+                  } finally {
+                    setConnectingTo(null);
+                  }
+                }
+              })
+              .build();
+            
+            console.log("Making Google Picker visible.");
+            picker.setVisible(true);
+          } catch (pickerError) {
+            console.error("Error during Picker construction:", pickerError);
+            toast.error("Failed to build Google Picker: " + pickerError.message);
+          }
+        },
+        onerror: (err) => {
+          console.error("GAPI load picker onerror:", err);
+          toast.error("GAPI failed to load Picker module.");
+        }
+      });
+    } catch (err) {
+      console.error("GAPI load wrapper exception:", err);
+      toast.error("GAPI load wrapper exception: " + err.message);
+    }
+  };
+
+
 
   return (
     <div>
