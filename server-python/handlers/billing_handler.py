@@ -2,34 +2,15 @@ import json
 import logging
 import razorpay
 from fastapi import HTTPException
-from database import get_db_connection
 from core.dependencies import razorpay_client, RAZORPAY_KEY_ID
+from database_layer import billing_repository
 
 logger = logging.getLogger(__name__)
 
 
 async def handle_get_subscription(user_id: str):
-    """
-    What it does: Fetches a user's current billing plan and usage limits from the database.
-    Args:
-        user_id (str): The ID of the user whose subscription is being queried.
-    Returns: A dictionary with the plan tier, billing cycle, status, and limits. Defaults to the free 'Starter' tier if no record exists.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT plan_tier, billing_cycle, status, limits
-            FROM user_subscriptions
-            WHERE user_id = %s
-            """,
-            (user_id,)
-        )
-        row = cursor.fetchone()
+        row = await billing_repository.get_user_subscription(user_id)
         
         if not row:
             return {
@@ -47,9 +28,6 @@ async def handle_get_subscription(user_id: str):
     except Exception as e:
         logger.error(f"Error fetching subscription: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch subscription")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_create_razorpay_order(
@@ -63,15 +41,6 @@ async def handle_create_razorpay_order(
     chatbots_limit: int,
     chatbot_messages_limit: int
 ):
-    """
-    What it does: Calculates the total cost of a plan (including dynamic slider-based pricing) and asks Razorpay to generate a secure Order ID for the frontend to open a payment window.
-    Args:
-        user_id (str): The ID of the user making the purchase.
-        plan_tier (str): The selected plan (Pro, Enterprise, Custom).
-        billing_cycle (str): Monthly or annually (annually gives a 20% discount).
-        ... (limits): The selected resource limits if it's a Custom plan.
-    Returns: A dictionary containing the Razorpay order_id, the amount in paise, the currency, and the public key ID.
-    """
     if not razorpay_client:
         raise HTTPException(status_code=500, detail="Razorpay keys not configured")
 
@@ -153,18 +122,6 @@ async def handle_verify_razorpay_payment(
     chatbots_limit: int,
     chatbot_messages_limit: int
 ):
-    """
-    What it does: Cryptographically verifies a completed payment with Razorpay to prevent hackers from spoofing a success status, and then updates the user's database row to grant them their new resources.
-    Args:
-        razorpay_order_id (str): The order ID generated in step 1.
-        razorpay_payment_id (str): The ID of the successful payment.
-        razorpay_signature (str): The secure hash to verify.
-        user_id (str): The ID of the user to upgrade.
-        plan_tier (str): The tier they bought.
-        billing_cycle (str): How often they are billed.
-        ... (limits): The resources they purchased.
-    Returns: A success status dictionary.
-    """
     if not razorpay_client:
         raise HTTPException(status_code=500, detail="Razorpay keys not configured")
 
@@ -177,12 +134,7 @@ async def handle_verify_razorpay_payment(
             }
         )
 
-        conn = None
-        cursor = None
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
             limits_json = json.dumps(
                 {
                     "workspaces": workspaces_limit,
@@ -194,31 +146,13 @@ async def handle_verify_razorpay_payment(
                 }
             )
 
-            cursor.execute(
-                """
-                INSERT INTO user_subscriptions (user_id, plan_tier, billing_cycle, status, limits, updated_at)
-                VALUES (%s, %s, %s, 'active', %s::jsonb, now())
-                ON CONFLICT (user_id) DO UPDATE 
-                SET plan_tier = EXCLUDED.plan_tier,
-                    billing_cycle = EXCLUDED.billing_cycle,
-                    status = 'active',
-                    limits = EXCLUDED.limits,
-                    updated_at = now();
-            """,
-                (user_id, plan_tier, billing_cycle, limits_json),
-            )
-            conn.commit()
+            await billing_repository.upsert_user_subscription(user_id, plan_tier, billing_cycle, limits_json)
             logger.info(f"Subscription updated for user {user_id}")
         except Exception as e:
             logger.exception("Failed to update subscription in DB")
             raise HTTPException(
                 status_code=500, detail="Database error during subscription update"
             )
-        finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
 
         return {"status": "success"}
     except razorpay.errors.SignatureVerificationError:

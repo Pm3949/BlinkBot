@@ -2,43 +2,25 @@ import logging
 import json
 import os
 from fastapi import HTTPException
-from database import get_db_connection
 from utils import send_invite_email
+from database_layer import workspace_repository
 
 logger = logging.getLogger(__name__)
 
 async def handle_invite_workspace_member(payload: dict):
-    """
-    What it does: Sends an email invitation to a user to join a workspace and creates a placeholder member record in the database.
-    Args:
-        payload (dict): A dictionary containing workspace_id, email, role, workspace_name, and invited_by_name.
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "SELECT id FROM workspace_members WHERE workspace_id = %s AND email = %s",
-            (payload.get("workspace_id"), payload.get("email")),
+        existing = await workspace_repository.check_workspace_member_exists(
+            payload.get("workspace_id"), payload.get("email")
         )
-        if cursor.fetchone():
+        if existing:
             raise HTTPException(
                 status_code=400,
                 detail="User is already invited or is a member of this workspace.",
             )
 
-        cursor.execute(
-            """
-            INSERT INTO workspace_members (workspace_id, email, name, role, permissions)
-            VALUES (%s, %s, %s, %s, '{"agents": false, "database": false, "notes": false}'::jsonb)
-            RETURNING id;
-            """,
-            (payload.get("workspace_id"), payload.get("email"), payload.get("email").split("@")[0], payload.get("role")),
+        await workspace_repository.create_workspace_member(
+            payload.get("workspace_id"), payload.get("email"), payload.get("role")
         )
-        conn.commit()
 
         APP_URL = os.getenv("FRONTEND_URL", "https://blinkbot.in")
         signup_url = f"{APP_URL}/login?email={payload.get('email')}&invite=true"
@@ -52,42 +34,14 @@ async def handle_invite_workspace_member(payload: dict):
 
         return {"message": "Invitation sent successfully!"}
     except HTTPException:
-        if conn:
-            conn.rollback()
         raise
     except Exception as e:
-        if conn:
-            conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 async def handle_create_workspace(payload: dict):
-    """
-    What it does: Creates a new workspace if the user has not exceeded their subscription tier limits.
-    Args:
-        payload (dict): Contains name, owner_id, email, and user_name.
-    Returns: The ID, name, and owner_id of the new workspace.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT plan_tier, limits
-            FROM user_subscriptions
-            WHERE user_id = %s
-            """,
-            (payload.get("owner_id"),)
-        )
-        sub_row = cursor.fetchone()
+        sub_row = await workspace_repository.get_user_subscription_limits(payload.get("owner_id"))
         
         limit = 1 
         if sub_row:
@@ -100,71 +54,27 @@ async def handle_create_workspace(payload: dict):
             elif plan_tier == "Enterprise":
                 limit = 999999
         
-        cursor.execute(
-            "SELECT COUNT(*) FROM workspaces WHERE owner_id = %s", 
-            (payload.get("owner_id"),)
-        )
-        owned_count = cursor.fetchone()[0]
+        owned_count = await workspace_repository.count_owned_workspaces(payload.get("owner_id"))
         
         if owned_count >= limit:
             raise HTTPException(status_code=403, detail="Workspace limit reached. Please upgrade your plan.")
             
-        cursor.execute(
-            """
-            INSERT INTO workspaces (name, owner_id)
-            VALUES (%s, %s)
-            RETURNING id;
-            """,
-            (payload.get("name"), payload.get("owner_id"))
+        workspace_id = await workspace_repository.create_workspace(
+            payload.get("name"), payload.get("owner_id"), payload.get("email"), payload.get("user_name")
         )
-        workspace_id = cursor.fetchone()[0]
-        
-        cursor.execute(
-            """
-            INSERT INTO workspace_members (workspace_id, user_id, email, name, role, permissions)
-            VALUES (%s, %s, %s, %s, 'Admin', '{"agents": true, "database": true, "notes": true}'::jsonb)
-            """,
-            (workspace_id, payload.get("owner_id"), payload.get("email"), payload.get("user_name"))
-        )
-        conn.commit()
         
         return {"id": workspace_id, "name": payload.get("name"), "owner_id": payload.get("owner_id")}
         
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error creating workspace: {e}")
         raise HTTPException(status_code=500, detail="Failed to create workspace")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_get_primary_workspace(user_id: str):
-    """
-    What it does: Fetches the primary (first owned) workspace for a user to load their default dashboard on login.
-    Args:
-        user_id (str): The user ID.
-    Returns: The workspace ID, name, and owner ID.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT id, name, owner_id
-            FROM workspaces
-            WHERE owner_id = %s
-            LIMIT 1
-            """,
-            (user_id,)
-        )
-        row = cursor.fetchone()
+        row = await workspace_repository.get_primary_workspace(user_id)
         
         if not row:
             return {"name": ""}
@@ -177,36 +87,11 @@ async def handle_get_primary_workspace(user_id: str):
     except Exception as e:
         logger.error(f"Error fetching primary workspace: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch workspace")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_update_workspace(workspace_id: str, name: str):
-    """
-    What it does: Updates the name of a workspace.
-    Args:
-        workspace_id (str): The workspace ID.
-        name (str): The new name.
-    Returns: The updated workspace data.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            UPDATE workspaces
-            SET name = %s, updated_at = now()
-            WHERE id = %s
-            RETURNING id, name, owner_id;
-            """,
-            (name, workspace_id)
-        )
-        row = cursor.fetchone()
-        conn.commit()
+        row = await workspace_repository.update_workspace_name(workspace_id, name)
         
         if not row:
             raise HTTPException(status_code=404, detail="Workspace not found")
@@ -217,40 +102,15 @@ async def handle_update_workspace(workspace_id: str, name: str):
             "owner_id": row[2]
         }
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error updating workspace: {e}")
         raise HTTPException(status_code=500, detail="Failed to update workspace")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_get_user_workspaces(user_id: str):
-    """
-    What it does: Gets a list of all workspaces (owned and invited) that a user has access to.
-    Args:
-        user_id (str): The user ID.
-    Returns: A list of workspace dictionaries.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT w.id, w.name, w.owner_id, wm.role, wm.permissions
-            FROM workspace_members wm
-            JOIN workspaces w ON wm.workspace_id = w.id
-            WHERE wm.user_id = %s
-            """,
-            (user_id,)
-        )
-        rows = cursor.fetchall()
+        rows = await workspace_repository.get_user_workspaces(user_id)
         
         workspaces = []
         for row in rows:
@@ -266,34 +126,11 @@ async def handle_get_user_workspaces(user_id: str):
     except Exception as e:
         logger.error(f"Error fetching user workspaces: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user workspaces")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_get_workspace_members(workspace_id: str):
-    """
-    What it does: Fetches a list of all teammates in a given workspace.
-    Args:
-        workspace_id (str): The workspace ID.
-    Returns: A list of member dictionaries.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT id, user_id, email, name, role, permissions, created_at
-            FROM workspace_members
-            WHERE workspace_id = %s
-            ORDER BY created_at ASC
-            """,
-            (workspace_id,)
-        )
-        rows = cursor.fetchall()
+        rows = await workspace_repository.get_workspace_members(workspace_id)
         
         members = []
         for row in rows:
@@ -311,110 +148,45 @@ async def handle_get_workspace_members(workspace_id: str):
     except Exception as e:
         logger.error(f"Error fetching workspace members: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch workspace members")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_update_member_role(member_id: str, role: str):
-    """
-    What it does: Updates the high-level title/role of a teammate (e.g., 'Admin', 'Viewer').
-    Args:
-        member_id (str): The member's database row ID.
-        role (str): The new role name.
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "UPDATE workspace_members SET role = %s WHERE id = %s RETURNING id;",
-            (role, member_id)
-        )
-        if not cursor.fetchone():
+        row = await workspace_repository.update_member_role(member_id, role)
+        if not row:
             raise HTTPException(status_code=404, detail="Member not found")
             
-        conn.commit()
         return {"message": "Role updated successfully"}
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error updating member role: {e}")
         raise HTTPException(status_code=500, detail="Failed to update role")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_update_member_permissions(member_id: str, permissions: dict):
-    """
-    What it does: Performs granular Role-Based Access Control by updating specific feature flags in the member's JSONB column.
-    Args:
-        member_id (str): The member's database row ID.
-        permissions (dict): A dictionary of permission flags (e.g. {"agents": True}).
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "UPDATE workspace_members SET permissions = %s::jsonb WHERE id = %s RETURNING id;",
-            (json.dumps(permissions), member_id)
-        )
-        if not cursor.fetchone():
+        row = await workspace_repository.update_member_permissions(member_id, permissions)
+        if not row:
             raise HTTPException(status_code=404, detail="Member not found")
             
-        conn.commit()
         return {"message": "Permissions updated successfully"}
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error updating permissions: {e}")
         raise HTTPException(status_code=500, detail="Failed to update permissions")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_remove_member(member_id: str):
-    """
-    What it does: Deletes a member from a workspace.
-    Args:
-        member_id (str): The member's database row ID.
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "DELETE FROM workspace_members WHERE id = %s RETURNING id;",
-            (member_id,)
-        )
-        if not cursor.fetchone():
+        row = await workspace_repository.remove_member(member_id)
+        if not row:
             raise HTTPException(status_code=404, detail="Member not found")
             
-        conn.commit()
         return {"message": "Member removed successfully"}
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error removing member: {e}")
         raise HTTPException(status_code=500, detail="Failed to remove member")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()

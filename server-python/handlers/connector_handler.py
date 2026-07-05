@@ -5,7 +5,9 @@ import httpx
 import tempfile
 import asyncio
 from fastapi import HTTPException
-from database import get_db_connection
+from database import get_db_cursor_async
+from fastapi.concurrency import run_in_threadpool
+from database_layer import connector_repository
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +19,6 @@ FRONTEND_URL = os.environ.get("VITE_FRONTEND_URL", "http://localhost:5173")
 
 
 async def handle_google_authorize(user_id: str):
-    """
-    What it does: Generates the authorization URL for Google Drive OAuth.
-    Args:
-        user_id (str): The ID of the user requesting authorization.
-    Returns: The Google OAuth URL.
-    """
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=500, detail="Google Client ID not configured in backend.")
         
@@ -47,13 +43,6 @@ async def handle_google_authorize(user_id: str):
 
 
 async def handle_google_callback(code: str, state: str):
-    """
-    What it does: Exchanges the OAuth code for an access token and saves it.
-    Args:
-        code (str): The authorization code.
-        state (str): The user ID state.
-    Returns: The redirect URL to the frontend.
-    """
     user_id = state
     
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
@@ -79,55 +68,18 @@ async def handle_google_callback(code: str, state: str):
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
 
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (user_id,))
-        existing = cursor.fetchone()
-        
-        if existing:
-            cursor.execute(
-                "UPDATE oauth_connections SET access_token = %s, refresh_token = COALESCE(%s, refresh_token), updated_at = NOW() WHERE id = %s",
-                (access_token, refresh_token, existing[0])
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO oauth_connections (user_id, provider, access_token, refresh_token) VALUES (%s, 'google', %s, %s)",
-                (user_id, access_token, refresh_token)
-            )
-        conn.commit()
+        await connector_repository.upsert_google_token(user_id, access_token, refresh_token)
     except Exception as e:
         logger.exception("Failed to save OAuth token")
-        if conn:
-            conn.rollback()
         raise HTTPException(status_code=500, detail="Database error while saving token")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
     return f"{FRONTEND_URL}/knowledge?connection=success&provider=google"
 
 
 async def handle_google_token(user_id: str):
-    """
-    What it does: Returns the stored Google OAuth access token for frontend usage.
-    Args:
-        user_id (str): The user ID.
-    Returns: The tokens required for Google Picker.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT access_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (user_id,))
-        row = cursor.fetchone()
+        row = await connector_repository.get_google_token(user_id)
         if not row:
             raise HTTPException(status_code=400, detail="Google Drive not connected.")
             
@@ -145,26 +97,11 @@ async def handle_google_token(user_id: str):
     except Exception as e:
         logger.exception("Failed to fetch Google Drive token")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_google_files(user_id: str):
-    """
-    What it does: Fetches the list of files in the user's Google Drive.
-    Args:
-        user_id (str): The user ID.
-    Returns: A list of file metadata.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT access_token, refresh_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (user_id,))
-        token_row = cursor.fetchone()
+        token_row = await connector_repository.get_google_token(user_id)
         if not token_row:
             raise HTTPException(status_code=400, detail="Not connected to Google Drive")
             
@@ -190,8 +127,7 @@ async def handle_google_files(user_id: str):
                 
                 if "access_token" in token_data:
                     access_token = token_data["access_token"]
-                    cursor.execute("UPDATE oauth_connections SET access_token = %s, updated_at = NOW() WHERE user_id = %s AND provider = 'google'", (access_token, user_id))
-                    conn.commit()
+                    await connector_repository.update_access_token_only(user_id, access_token)
                     
                     headers = {"Authorization": f"Bearer {access_token}"}
                     resp = await client.get(drive_url, headers=headers)
@@ -206,12 +142,9 @@ async def handle_google_files(user_id: str):
     except Exception as e:
         logger.exception("Failed to fetch Google Drive files")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
-def background_gdrive_import(
+async def background_gdrive_import(
     document_id: str,
     agent_id: str,
     file_id: str,
@@ -223,23 +156,6 @@ def background_gdrive_import(
     strategy: str,
     embed_model: str
 ):
-    """
-    What it does: Background task to download and ingest a Google Drive file.
-    Args:
-        document_id: Document ID.
-        agent_id: Agent ID.
-        file_id: GDrive File ID.
-        filename: Name of file.
-        mime_type: Mime type.
-        access_token: Access token.
-        refresh_token: Refresh token.
-        user_id: User ID.
-        strategy: Chunking strategy.
-        embed_model: Embed model.
-    Returns: None.
-    """
-    conn = None
-    cursor = None
     file_path = None
     try:
         from core.dependencies import UPLOAD_DIR
@@ -249,9 +165,13 @@ def background_gdrive_import(
         dest_filename = f"[G-Drive] {filename}"
         file_path = UPLOAD_DIR / dest_filename
         
-        headers = {"Authorization": f"Bearer {access_token}"}
         is_google_doc = mime_type.startswith("application/vnd.google-apps")
         
+        if is_google_doc:
+            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=text/plain"
+        else:
+            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+
         async def fetch_with_retry(url: str):
             nonlocal access_token
             current_headers = {"Authorization": f"Bearer {access_token}"}
@@ -272,12 +192,7 @@ def background_gdrive_import(
                         access_token = token_data["access_token"]
                         current_headers = {"Authorization": f"Bearer {access_token}"}
                         try:
-                            tmp_conn = get_db_connection()
-                            tmp_cursor = tmp_conn.cursor()
-                            tmp_cursor.execute("UPDATE oauth_connections SET access_token = %s, updated_at = NOW() WHERE user_id = %s AND provider = 'google'", (access_token, user_id))
-                            tmp_conn.commit()
-                            tmp_cursor.close()
-                            tmp_conn.close()
+                            await connector_repository.update_access_token_only(user_id, access_token)
                         except Exception as e:
                             logger.error(f"Failed to update token in DB: {e}")
                         
@@ -287,18 +202,7 @@ def background_gdrive_import(
                     raise Exception(f"Failed to download from Drive: {resp.text}")
                 return resp.content
 
-        if is_google_doc:
-            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType=text/plain"
-        else:
-            target_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        file_bytes = loop.run_until_complete(fetch_with_retry(target_url))
+        file_bytes = await fetch_with_retry(target_url)
         
         if is_google_doc and not dest_filename.endswith(".txt"):
             dest_filename += ".txt"
@@ -321,70 +225,48 @@ def background_gdrive_import(
 
         vectors = rag_engine.vectorize(chunks, model_name=embed_model)
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        async with get_db_cursor_async(commit=True) as cursor:
+            for text, vector in zip(chunks, vectors):
+                encrypted_chunk = encrypt_key(text)
+                await run_in_threadpool(
+                    cursor.execute,
+                    "INSERT INTO document_embeddings (document_id, content, embedding) VALUES (%s, %s, %s::vector);",
+                    (document_id, encrypted_chunk, str(vector)),
+                )
 
-        for text, vector in zip(chunks, vectors):
-            encrypted_chunk = encrypt_key(text)
-            cursor.execute(
-                "INSERT INTO document_embeddings (document_id, content, embedding) VALUES (%s, %s, %s::vector);",
-                (document_id, encrypted_chunk, str(vector)),
+            await run_in_threadpool(
+                cursor.execute,
+                "UPDATE documents SET filename = %s, status = 'completed', file_size_bytes = %s WHERE id = %s", 
+                (dest_filename, len(raw_text.encode('utf-8')), document_id)
             )
 
-        cursor.execute(
-            "UPDATE documents SET filename = %s, status = 'completed', file_size_bytes = %s WHERE id = %s", 
-            (dest_filename, len(raw_text.encode('utf-8')), document_id)
-        )
-        conn.commit()
         logger.info(f"✅ Background GDrive Sync completed for doc id: {document_id}")
 
     except Exception as e:
         logger.exception(f"Background GDrive Sync failed for doc id {document_id}")
-        if conn and cursor:
-            try:
-                cursor.execute(
+        try:
+            async with get_db_cursor_async(commit=True) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
                     "UPDATE documents SET status = 'failed' WHERE id = %s",
                     (document_id,),
                 )
-                conn.commit()
-            except Exception:
-                conn.rollback()
+        except Exception:
+            pass
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 async def handle_google_import(payload: dict, background_tasks):
-    """
-    What it does: Creates a document entry and triggers background download.
-    Args:
-        payload (dict): The import payload.
-        background_tasks: FastAPI BackgroundTasks instance.
-    Returns: A success message and list of imported files.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "SELECT embedding_model, chunk_strategy FROM agents WHERE id = %s",
-            (payload.get("agent_id"),),
-        )
-        agent_row = cursor.fetchone()
+        agent_row = await connector_repository.get_agent_embed_info(payload.get("agent_id"))
         if not agent_row:
             raise HTTPException(status_code=404, detail="Agent not found")
             
         embed_model = agent_row[0] if agent_row[0] else "all-MiniLM-L6-v2"
         strategy = agent_row[1] if agent_row[1] else "sentence"
 
-        cursor.execute("SELECT access_token, refresh_token FROM oauth_connections WHERE user_id = %s AND provider = 'google'", (payload.get("user_id"),))
-        token_row = cursor.fetchone()
+        token_row = await connector_repository.get_google_token(payload.get("user_id"))
         if not token_row:
             raise HTTPException(status_code=400, detail="Not connected to Google Drive")
             
@@ -397,12 +279,8 @@ async def handle_google_import(payload: dict, background_tasks):
             filename = file_info.get("name", "Untitled Drive File")
             mime_type = file_info.get("mimeType", "")
             
-            cursor.execute(
-                "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'processing', 0) RETURNING id;",
-                (payload.get("agent_id"), f"[G-Drive] {filename}",)
-            )
-            document_id = cursor.fetchone()[0]
-            conn.commit()
+            dest_filename = f"[G-Drive] {filename}"
+            document_id = await connector_repository.create_document_stub(payload.get("agent_id"), dest_filename)
             
             background_tasks.add_task(
                 background_gdrive_import,
@@ -422,9 +300,4 @@ async def handle_google_import(payload: dict, background_tasks):
         return {"message": f"Successfully queued {len(imported_files)} files for embedding.", "files": imported_files}
     except Exception as e:
         logger.exception("Failed to initiate Google Drive import")
-        if conn:
-            conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()

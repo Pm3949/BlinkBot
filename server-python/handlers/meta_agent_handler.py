@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from meta_agent_schemas import AgentBlueprint, SingleAgentResponse
-from database import get_db_connection
+from database_layer import meta_agent_repository
 
 load_dotenv()
 
@@ -175,100 +175,19 @@ async def handle_deploy_agent(req: dict):
         req (dict): The deployment payload.
     Returns: The deployment status and ID maps.
     """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
         blueprint = AgentBlueprint(**req.get("blueprint"))
+        workspace_id = req.get("workspace_id")
+        user_id = req.get("user_id")
+        config_data = req.get("config_data", {})
         
-        cursor.execute(
-            """
-            INSERT INTO agent_projects (workspace_id, name, description, status, blueprint_json)
-            VALUES (%s, %s, %s, 'deployed', %s)
-            RETURNING id;
-            """,
-            (req.get("workspace_id"), blueprint.project_name, blueprint.description, blueprint.model_dump_json())
+        result = await meta_agent_repository.deploy_agent_blueprint_to_db(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            blueprint=blueprint,
+            config_data=config_data
         )
-        project_id = cursor.fetchone()[0]
-
-        enabled_kb = req.get("config_data", {}).get("enabled_knowledge", {})
-        for kb in blueprint.required_knowledge:
-            if enabled_kb.get(kb.id):
-                cursor.execute(
-                    """
-                    INSERT INTO documents (project_id, blueprint_knowledge_id, filename, type, source_uri, status)
-                    VALUES (%s, %s, %s, %s, %s, 'pending')
-                    """,
-                    (project_id, kb.id, kb.name, kb.type, "")
-                )
-
-        enabled_tools = req.get("config_data", {}).get("enabled_tools", {})
-        tools_config = req.get("config_data", {}).get("tools", {})
-        for tool in blueprint.required_tools:
-            tool_config_data = tools_config.get(tool.id, {})
-            tool_config_data["is_enabled"] = bool(enabled_tools.get(tool.id))
-            
-            if "query_format" not in tool_config_data:
-                tool_config_data["query_format"] = "{}"
-            if "headers" not in tool_config_data:
-                tool_config_data["headers"] = "{}"
-                
-            cursor.execute(
-                """
-                INSERT INTO agent_tools (project_id, workspace_id, blueprint_tool_id, name, config)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (project_id, req.get("workspace_id"), tool.id, tool.name, json.dumps(tool_config_data))
-            )
-
-        agent_id_map = {}
-        for sub_agent in blueprint.sub_agents:
-            cursor.execute(
-                """
-                INSERT INTO agents (name, description, system_prompt, output_format, user_id, workspace_id, project_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                (
-                    sub_agent.role, 
-                    sub_agent.goal, 
-                    sub_agent.backstory,
-                    sub_agent.output_format_instructions,
-                    req.get("user_id"), 
-                    req.get("workspace_id"), 
-                    project_id
-                )
-            )
-            real_uuid = cursor.fetchone()[0]
-            agent_id_map[sub_agent.id] = real_uuid
-
-        for sub_agent in blueprint.sub_agents:
-            if getattr(sub_agent, 'parent_agent_id', None) and sub_agent.parent_agent_id in agent_id_map:
-                real_uuid = agent_id_map[sub_agent.id]
-                parent_real_uuid = agent_id_map[sub_agent.parent_agent_id]
-                cursor.execute(
-                    """
-                    UPDATE agents SET parent_agent_id = %s WHERE id = %s
-                    """,
-                    (parent_real_uuid, real_uuid)
-                )
-
-        cursor.execute("SELECT blueprint_tool_id, id FROM agent_tools WHERE project_id = %s", (project_id,))
-        tool_id_map = {row[0]: row[1] for row in cursor.fetchall()}
-
-        conn.commit()
-        return {
-            "status": "success", 
-            "project_id": project_id, 
-            "agent_id_map": agent_id_map,
-            "tool_id_map": tool_id_map
-        }
+        return result
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error deploying agent network: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()

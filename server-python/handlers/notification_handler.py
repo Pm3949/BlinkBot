@@ -1,7 +1,6 @@
 import logging
-from database import get_db_connection
+from database_layer import notification_repository
 from handlers.websocket_handlers import notification_manager
-
 logger = logging.getLogger(__name__)
 
 async def create_notification(workspace_id: str, title: str, message: str, notification_type: str):
@@ -14,40 +13,30 @@ async def create_notification(workspace_id: str, title: str, message: str, notif
         notification_type (str): The category of the alert (e.g. 'document_processed').
     Returns: None.
     """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO notifications (workspace_id, title, message, type)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, created_at;
-            """,
-            (workspace_id, title, message, notification_type)
-        )
-        row = cursor.fetchone()
-        conn.commit()
-        
+        row = await notification_repository.insert_notification(workspace_id, title, message, notification_type)
+        if not row:
+            return
+            
         notification_id = row[0]
         created_at = row[1].isoformat() if row[1] else None
 
-        await notification_manager.broadcast(workspace_id, {
-            "id": str(notification_id),
-            "title": title,
-            "message": message,
-            "type": notification_type,
-            "is_read": False,
-            "created_at": created_at
-        })
-        logger.info(f"Created & broadcasted notification '{title}' to workspace {workspace_id}")
+        # Broadcast after successful DB commit
+        try:
+            await notification_manager.broadcast(workspace_id, {
+                "id": str(notification_id),
+                "title": title,
+                "message": message,
+                "type": notification_type,
+                "is_read": False,
+                "created_at": created_at
+            })
+            logger.info(f"Created & broadcasted notification '{title}' to workspace {workspace_id}")
+        except Exception as b_err:
+            logger.error(f"Error broadcasting notification (DB write succeeded): {b_err}")
+
     except Exception as e:
         logger.error(f"Error creating notification: {e}")
-        if conn: conn.rollback()
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 from fastapi import HTTPException
 
@@ -58,42 +47,23 @@ async def handle_get_notifications(workspace_id: str):
         workspace_id (str): The ID of the workspace.
     Returns: A list of notifications.
     """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT id, title, message, type, is_read, created_at
-            FROM notifications
-            WHERE workspace_id = %s AND is_read = false
-            ORDER BY created_at DESC
-            LIMIT 50;
-            """,
-            (workspace_id,)
-        )
-        rows = cursor.fetchall()
-        
+        rows = await notification_repository.fetch_unread_notifications(workspace_id)
         notifications = []
-        for row in rows:
-            notifications.append({
-                "id": row[0],
-                "title": row[1],
-                "message": row[2],
-                "type": row[3],
-                "is_read": row[4],
-                "created_at": row[5].isoformat() if row[5] else None,
-            })
-            
+        if rows:
+            for row in rows:
+                notifications.append({
+                    "id": row[0],
+                    "title": row[1],
+                    "message": row[2],
+                    "type": row[3],
+                    "is_read": row[4],
+                    "created_at": row[5].isoformat() if row[5] else None,
+                })
         return notifications
     except Exception as e:
         logger.error(f"Error fetching notifications: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch notifications")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 
 async def handle_mark_notification_read(notification_id: str):
@@ -103,34 +73,14 @@ async def handle_mark_notification_read(notification_id: str):
         notification_id (str): The ID of the notification.
     Returns: A success message.
     """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            UPDATE notifications
-            SET is_read = true, read_at = now()
-            WHERE id = %s
-            RETURNING id;
-            """,
-            (notification_id,)
-        )
-        row = cursor.fetchone()
+        row = await notification_repository.mark_notification_read(notification_id)
         if not row:
             raise HTTPException(status_code=404, detail="Notification not found")
             
-        conn.commit()
         return {"message": "Notification marked as read"}
     except HTTPException:
-        if conn: conn.rollback()
         raise
     except Exception as e:
-        if conn: conn.rollback()
         logger.error(f"Error updating notification: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark notification as read")
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()

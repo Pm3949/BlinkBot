@@ -2,8 +2,6 @@ import os
 import asyncio
 import logging
 from pathlib import Path
-from fastapi import WebSocket, WebSocketDisconnect
-from database import get_db_connection
 from core.dependencies import rag_engine, UPLOAD_DIR
 from core.security import decrypt_data
 from utils import get_user_limits
@@ -11,6 +9,7 @@ from utils import get_user_limits
 logger = logging.getLogger(__name__)
 
 from handlers.websocket_handlers import upload_status_manager
+from database_layer import document_repository
 
 async def async_background_ingestion(
     document_id: str,
@@ -22,21 +21,6 @@ async def async_background_ingestion(
     workspace_id: str,
     file_path: str = None,
 ):
-    """
-    What it does: Runs the heavy lifting of reading a document, breaking it into smaller pieces, creating vector embeddings for AI search, and saving everything to the database. It runs in the background so it doesn't freeze the app.
-    Args:
-        document_id (str): The unique ID of the document in the database.
-        agent_id (str): The ID of the agent this document belongs to.
-        filename (str): The name of the file being processed.
-        temp_path (str): Where the temporary file is located on disk.
-        strategy (str): How to break the text up (e.g. 'sentence' or 'paragraph').
-        embed_model (str): Which AI model to use to create the embeddings.
-        workspace_id (str): The ID of the workspace this is happening in.
-        file_path (str, optional): The final permanent path of the file.
-    Returns: None.
-    """
-    conn = None
-    cursor = None
     try:
         logger.info(f"⚙️ Async background task started for doc: {filename} ({document_id})")
 
@@ -66,21 +50,7 @@ async def async_background_ingestion(
         # Step 4: Database Indexing
         await upload_status_manager.send_status(agent_id, "indexing", filename, "Saving chunks to database...", 0.9)
         
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        from core.security import encrypt_key
-        for text, vector in zip(chunks, vectors):
-            encrypted_chunk = encrypt_key(text)
-            cursor.execute(
-                "INSERT INTO document_embeddings (document_id, content, embedding) VALUES (%s, %s, %s::vector);",
-                (document_id, encrypted_chunk, str(vector)),
-            )
-
-        cursor.execute(
-            "UPDATE documents SET status = 'completed' WHERE id = %s", (document_id,)
-        )
-        conn.commit()
+        await document_repository.index_document_chunks(document_id, chunks, vectors)
         
         await upload_status_manager.send_status(agent_id, "completed", filename, "Successfully processed document!", 1.0)
         logger.info(f"✅ Async background task completed for doc: {filename}")
@@ -113,46 +83,21 @@ async def async_background_ingestion(
         except Exception as ne:
             logger.error(f"Failed to create notification on failure: {ne}")
 
-        if conn and cursor:
-            try:
-                cursor.execute(
-                    "UPDATE documents SET status = 'failed' WHERE id = %s",
-                    (document_id,),
-                )
-                conn.commit()
-            except Exception:
-                conn.rollback()
+        try:
+            await document_repository.mark_document_failed(document_id)
+        except Exception as dbe:
+            logger.error(f"Failed to mark document as failed: {dbe}")
+
     finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
         # Clean up the temporary unencrypted file
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
 
-def resume_interrupted_uploads():
-    """
-    What it does: Looks through the database when the server starts up to find any document uploads that were interrupted (like if the server crashed) and starts them up again.
-    Args: None.
-    Returns: None.
-    """
+async def resume_interrupted_uploads():
     logger.info("Checking for interrupted document uploads to resume...")
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT d.id, d.agent_id, d.filename, a.chunk_strategy, a.embedding_model, a.workspace_id
-            FROM documents d
-            JOIN agents a ON d.agent_id = a.id
-            WHERE d.status = 'processing'
-            """
-        )
-        rows = cursor.fetchall()
+        rows = await document_repository.get_interrupted_uploads()
         if not rows:
             logger.info("No interrupted uploads found.")
             return
@@ -191,8 +136,3 @@ def resume_interrupted_uploads():
             logger.info(f"Resumed background ingestion task for: {filename}")
     except Exception as e:
         logger.error(f"Error during interrupted uploads recovery: {e}")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()

@@ -1,3 +1,4 @@
+
 """
 Utility Functions & Background Tasks.
 Responsibility: Contains helper functions used across various routes, including 
@@ -198,6 +199,49 @@ def get_user_limits(user_id: str, cursor) -> dict:
         }
     elif plan_tier == "Custom" and limits:
         # For completely bespoke plans, read the JSON overrides from the database
+        return limits
+    else:
+        return default_limits
+
+async def get_user_limits_by_id(user_id: str) -> dict:
+    from database import get_db_cursor_async
+    from fastapi.concurrency import run_in_threadpool
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT plan_tier, limits FROM user_subscriptions WHERE user_id = %s",
+            (user_id,)
+        )
+        row = await run_in_threadpool(cursor.fetchone)
+        
+    default_limits = {
+        "agents": 1,
+        "agent_messages": 1000,
+        "storage_mb": 100,
+        "chatbots": 0,
+        "chatbot_messages": 0,
+    }
+    if not row:
+        return default_limits
+
+    plan_tier, limits = row
+    if plan_tier == "Pro":
+        return {
+            "agents": 5,
+            "agent_messages": 10000,
+            "storage_mb": 500,
+            "chatbots": 2,
+            "chatbot_messages": 5000,
+        }
+    elif plan_tier == "Enterprise":
+        return {
+            "agents": 20,
+            "agent_messages": 100000,
+            "storage_mb": 5000,
+            "chatbots": 10,
+            "chatbot_messages": 50000,
+        }
+    elif plan_tier == "Custom" and limits:
         return limits
     else:
         return default_limits

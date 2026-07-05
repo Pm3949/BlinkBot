@@ -4,20 +4,12 @@ import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import HTTPException
-from database import get_db_connection
-from routers.admin import check_super_admin, check_action_password
+from handlers.admin_handler import check_super_admin, check_action_password
+from database_layer import demo_repository
 
 logger = logging.getLogger(__name__)
 
 def _send_demo_email(req: dict, request_id: int, created_at):
-    """
-    What it does: Internal Notification: Tells the sales team that a new lead has arrived.
-    Args:
-        req (dict): The request payload.
-        request_id (int): The request ID.
-        created_at: The timestamp.
-    Returns: None.
-    """
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -77,9 +69,6 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     logger.info(f"Demo request email sent to {notify_email}")
 
 def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link: str):
-    """
-    What it does: Outbound Notification: Sends the meeting details directly to the prospect.
-    """
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -119,9 +108,6 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
         server.sendmail(smtp_user, email, msg.as_string())
 
 def _send_feedback_email(name: str, email: str):
-    """
-    What it does: Outbound Notification: Sends a 'How did we do?' email after the demo concludes.
-    """
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -160,84 +146,27 @@ def _send_feedback_email(name: str, email: str):
 
 
 async def handle_submit_demo_request(req: dict):
-    """
-    What it does: Stores the lead in the DB and emails the internal sales team.
-    Args:
-        req (dict): The request details.
-    Returns: A success message.
-    """
-    conn = None
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS demo_requests (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
-                company TEXT DEFAULT '',
-                message TEXT DEFAULT '',
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        """)
-
-        cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_date TEXT")
-        cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_time TEXT")
-        cur.execute("ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS meeting_link TEXT")
-
-        cur.execute(
-            """
-            INSERT INTO demo_requests (name, email, company, message)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, created_at
-            """,
-            (req.get('name'), req.get('email'), req.get('company'), req.get('message'))
+        row = await demo_repository.submit_demo_request(
+            req.get('name'), req.get('email'), req.get('company'), req.get('message')
         )
-        row = cur.fetchone()
-        conn.commit()
-
         try:
             _send_demo_email(req, row[0], row[1])
         except Exception as email_err:
             logger.warning(f"Demo email notification failed: {email_err}")
 
         return {"success": True, "message": "Demo request submitted successfully!", "id": row[0]}
-
     except Exception as e:
-        if conn:
-            conn.rollback()
         logger.error(f"Demo request failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if conn:
-            conn.close()
 
 
 async def handle_get_admin_demo_requests(user_id: str):
-    """
-    What it does: Fetches the pipeline of all demo requests for the Super Admin dashboard.
-    Args:
-        user_id (str): The admin user ID.
-    Returns: A list of requests.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        check_super_admin(user_id, cursor)
-
-        cursor.execute(
-            """
-            SELECT id, name, email, company, message, status, created_at, scheduled_date, scheduled_time, meeting_link
-            FROM demo_requests
-            ORDER BY created_at DESC
-            """
-        )
+        await check_super_admin(user_id)
+        rows = await demo_repository.get_admin_demo_requests()
         requests = []
-        for r in cursor.fetchall():
+        for r in rows:
             requests.append({
                 "id": r[0],
                 "name": r[1],
@@ -251,42 +180,23 @@ async def handle_get_admin_demo_requests(user_id: str):
                 "meeting_link": r[9],
             })
         return {"requests": requests}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to fetch admin demo requests")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 async def handle_update_demo_request_status(request_id: int, req: dict):
-    """
-    What it does: Moves a lead through the pipeline.
-    Args:
-        request_id (int): The request ID.
-        req (dict): The update payload.
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
         check_action_password(req.get('admin_action_password'))
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        check_super_admin(req.get('admin_user_id'), cursor)
+        await check_super_admin(req.get('admin_user_id'))
 
-        cursor.execute(
-            "UPDATE demo_requests SET status = %s WHERE id = %s RETURNING name, email",
-            (req.get('status'), request_id)
-        )
-        row = cursor.fetchone()
+        row = await demo_repository.update_demo_request_status(request_id, req.get('status'))
         if not row:
             raise HTTPException(status_code=404, detail="Demo request not found")
         
         name, email = row[0], row[1]
-        conn.commit()
 
         if req.get('status') == 'completed':
             try:
@@ -295,51 +205,28 @@ async def handle_update_demo_request_status(request_id: int, req: dict):
                 logger.warning(f"Failed to send feedback email: {email_err}")
 
         return {"message": "Status updated successfully", "status": req.get('status')}
+    except HTTPException:
+        raise
     except Exception as e:
-        if conn:
-            conn.rollback()
         logger.exception("Failed to update demo request status")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 async def handle_schedule_demo_meeting(request_id: int, req: dict):
-    """
-    What it does: Allows a Super Admin to manually assign a date, time, and Google Meet link.
-    Args:
-        request_id (int): The request ID.
-        req (dict): The schedule payload.
-    Returns: A success message.
-    """
-    conn = None
-    cursor = None
     try:
         check_action_password(req.get('admin_action_password'))
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        check_super_admin(req.get('admin_user_id'), cursor)
+        await check_super_admin(req.get('admin_user_id'))
 
-        cursor.execute("SELECT name, email FROM demo_requests WHERE id = %s", (request_id,))
-        row = cursor.fetchone()
+        row = await demo_repository.get_demo_request_contact(request_id)
         if not row:
             raise HTTPException(status_code=404, detail="Demo request not found")
         
         name, email = row[0], row[1]
         meet_link = req.get('meeting_link')
 
-        cursor.execute(
-            """
-            UPDATE demo_requests 
-            SET status = 'processing', scheduled_date = %s, scheduled_time = %s, meeting_link = %s 
-            WHERE id = %s
-            """, 
-            (req.get('date'), req.get('time'), meet_link, request_id)
+        await demo_repository.schedule_demo_meeting(
+            request_id, req.get('date'), req.get('time'), meet_link
         )
-        conn.commit()
 
         try:
             _send_meeting_invite_email(name, email, req.get('date'), req.get('time'), meet_link)
@@ -347,42 +234,19 @@ async def handle_schedule_demo_meeting(request_id: int, req: dict):
             logger.warning(f"Failed to send meeting invite email: {email_err}")
 
         return {"message": "Meeting scheduled and email sent", "link": meet_link}
+    except HTTPException:
+        raise
     except Exception as e:
-        if conn:
-            conn.rollback()
         logger.exception("Failed to schedule demo meeting")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
 
 async def handle_get_scheduled_demo_requests(user_id: str):
-    """
-    What it does: Returns only the leads that have active scheduled meetings for the dashboard.
-    Args:
-        user_id (str): The admin user ID.
-    Returns: A list of scheduled requests.
-    """
-    conn = None
-    cursor = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        check_super_admin(user_id, cursor)
-
-        cursor.execute(
-            """
-            SELECT id, name, email, company, status, scheduled_date, scheduled_time, meeting_link
-            FROM demo_requests
-            WHERE scheduled_date IS NOT NULL
-            ORDER BY scheduled_date ASC
-            """
-        )
+        await check_super_admin(user_id)
+        rows = await demo_repository.get_scheduled_demo_requests()
         requests = []
-        for r in cursor.fetchall():
+        for r in rows:
             requests.append({
                 "id": r[0],
                 "name": r[1],
@@ -394,11 +258,8 @@ async def handle_get_scheduled_demo_requests(user_id: str):
                 "meeting_link": r[7],
             })
         return {"requests": requests}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to fetch scheduled demo requests")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()

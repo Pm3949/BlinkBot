@@ -25,7 +25,7 @@ export function useChat() {
 
   const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
 
-  const { isConnected, agentTextChunks, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -46,9 +46,10 @@ export function useChat() {
     return [...dbMessages, {
       id: "optimistic-assistant",
       role: "assistant",
-      content: agentTextChunks || "Thinking..."
+      content: agentTextChunks || "",
+      status: agentStatus
     }];
-  }, [dbMessages, isTyping, agentTextChunks]);
+  }, [dbMessages, isTyping, agentTextChunks, agentStatus]);
 
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {

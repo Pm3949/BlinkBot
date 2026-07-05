@@ -21,6 +21,7 @@ rag_engine = CustomRAGEngine()
 # By forcing the engine to load the default model here, we "warm up" the cache,
 # ensuring zero latency for the very first API request.
 rag_engine._get_model('all-MiniLM-L6-v2')
+rag_engine._get_reranker_model('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 # ==========================================
 # DIRECTORY MANAGEMENT

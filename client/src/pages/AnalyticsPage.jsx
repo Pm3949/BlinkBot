@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
 import { getAuthHeaders } from '../lib/api';
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, MessageSquare, Database, Cpu, Bot } from 'lucide-react';
+import { Activity, MessageSquare, Database, Cpu, Bot, ThumbsUp } from 'lucide-react';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
@@ -62,7 +63,14 @@ export default function AnalyticsPage() {
     );
   }
 
-  const { metrics, internalSeries, widgetSeries, topChatbots } = data;
+  const { metrics, internalSeries, widgetSeries, topChatbots, feedbackStats } = data;
+  
+  const totalVotes = (feedbackStats?.upVotes || 0) + (feedbackStats?.downVotes || 0);
+  const positiveRatio = totalVotes > 0 
+    ? Math.round((feedbackStats.upVotes / totalVotes) * 100)
+    : 0;
+  
+  const PIE_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6'];
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10">
@@ -100,6 +108,12 @@ export default function AnalyticsPage() {
           value={metrics.totalWidgetMessages}
           icon={MessageSquare}
           colorClass="bg-green-500/10 text-green-500"
+        />
+        <MetricCard
+          title="Positive Feedback"
+          value={totalVotes > 0 ? `${positiveRatio}%` : 'N/A'}
+          icon={ThumbsUp}
+          colorClass="bg-amber-500/10 text-amber-500"
         />
       </div>
 
@@ -187,6 +201,44 @@ export default function AnalyticsPage() {
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No chatbots created yet.
+              </p>
+            )}
+          </div>
+
+          {/* Feedback Breakdown */}
+          <div className="glass-card p-6 border border-border/50">
+            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+              <MessageSquare className="text-amber-500 w-5 h-5" /> Negative Feedback
+            </h3>
+            
+            {feedbackStats?.categoryDistribution?.length > 0 ? (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={feedbackStats.categoryDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {feedbackStats.categoryDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
+                      itemStyle={{ color: 'hsl(var(--foreground))' }}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No categorized feedback yet.
               </p>
             )}
           </div>

@@ -38,6 +38,7 @@ class CustomRAGEngine:
         """Initializes caches and keeps startup logging lightweight."""
         logger.info("🧠 Initializing Custom RAG Engine (Zero LangChain)...")
         self.models_cache = {}
+        self.reranker_cache = {}
         logger.info("✅ Custom Engine Ready!")
 
     def _get_model(self, model_name: str):
@@ -56,6 +57,20 @@ class CustomRAGEngine:
                     f"Failed to load embedding model '{model_name}': {exc}"
                 ) from exc
         return self.models_cache[model_name]
+
+    def _get_reranker_model(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        """
+        Singleton-pattern-like loader for CrossEncoder reranker models.
+        """
+        if model_name not in self.reranker_cache:
+            logger.info("📥 Downloading/Loading reranker model: %s...", model_name)
+            try:
+                from sentence_transformers import CrossEncoder
+                self.reranker_cache[model_name] = CrossEncoder(model_name)
+            except Exception as exc:
+                logger.error(f"Failed to load reranker model '{model_name}': {exc}")
+                return None
+        return self.reranker_cache[model_name]
 
     # ==========================================
     # 1. RAW DATA EXTRACTION (PDF PARSING)
@@ -375,3 +390,65 @@ class CustomRAGEngine:
             results.append({"chunk_index": int(idx), "score": float(final_scores[idx])})
 
         return results
+
+    def rerank_documents(self, query: str, documents: list, top_k: int = 5, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list:
+        """
+        Re-ranks a list of documents against a query using a CrossEncoder model.
+        Expects `documents` to be a list of tuples or lists where the first element is the document text.
+        Returns the top_k ranked documents.
+        """
+        if not documents:
+            return []
+            
+        reranker = self._get_reranker_model(model_name)
+        if not reranker:
+            # Fallback to the original order if reranker fails to load
+            logger.warning("Reranker failed to load, falling back to original search order.")
+            return documents[:top_k]
+            
+        logger.info(f"Reranking {len(documents)} chunks...")
+        
+        # Prepare inputs for the CrossEncoder: list of [query, doc_text] pairs
+        # We assume doc[0] contains the text. We decrypt it if necessary or assume it's raw text.
+        # However, the decryption happens *after* retrieval in chat_handler. 
+        # But wait! We need to decrypt the text BEFORE reranking, otherwise the CrossEncoder sees gibberish.
+        from core.security import decrypt_key
+        
+        pairs = []
+        for doc in documents:
+            decrypted_text = decrypt_key(doc[0]) or doc[0]
+            pairs.append([query, decrypted_text])
+            
+        # Score pairs
+        scores = reranker.predict(pairs)
+        
+        # Combine documents with their new scores
+        doc_scores = list(zip(documents, scores))
+        
+        # Sort by score descending
+        doc_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return the original document structures for the top_k
+        return [doc for doc, score in doc_scores[:top_k]]
+
+    def generate_hyde_query(self, query: str, llm) -> str:
+        """
+        Generates a Hypothetical Document Embeddings (HyDE) query.
+        It uses the LLM to write a hypothetical answer to the query, and then returns
+        the original query combined with the hypothetical answer to be vectorized.
+        """
+        logger.info("Generating HyDE query expansion...")
+        prompt = f"""You are an expert answering questions. 
+Please write a short, hypothetical answer to the following question. Do not include any explanations, just the factual answer.
+
+Question: {query}
+Answer:"""
+        try:
+            response = llm.invoke(prompt)
+            hypothetical_answer = response.content.strip()
+            # Combine the original query with the hypothetical answer
+            return f"{query}\n{hypothetical_answer}"
+        except Exception as e:
+            logger.error(f"HyDE generation failed: {e}")
+            return query # Fallback to original query
+

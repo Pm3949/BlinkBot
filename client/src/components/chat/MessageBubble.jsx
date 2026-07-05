@@ -13,7 +13,7 @@ import { getAuthHeaders } from "../../lib/api";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function MessageBubble({ id, role, content, agent, chatLanguage, latency }) {
+export default function MessageBubble({ id, role, content, agent, chatLanguage, latency, status }) {
   const isUser = role === "user";
 
   const isWebSource = content?.startsWith("[WEB_SOURCE]");
@@ -168,6 +168,17 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
               Answered from Web
             </div>
           )}
+          {status && !displayContent && (
+             <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+                <span className="flex gap-1 mr-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/70 animate-bounce [animation-delay:300ms]" />
+                </span>
+                {status}
+             </div>
+          )}
+          {displayContent && (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -202,6 +213,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
           >
             {displayContent}
           </ReactMarkdown>
+          )}
         </div>
         {!isUser && (
           <div className="flex items-center justify-between mt-4 gap-8">

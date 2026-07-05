@@ -5,8 +5,8 @@ export const useAgentSocket = (url) => {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
-  // Store the active message chunks
   const [agentTextChunks, setAgentTextChunks] = useState('');
+  const [agentStatus, setAgentStatus] = useState('');
   // Queue for messages that arrive before the socket is OPEN
   const pendingPayloadRef = useRef(null);
   // Ref to track accumulated text outside React state (avoids stale closure in stream_end)
@@ -45,12 +45,16 @@ export const useAgentSocket = (url) => {
           if (data.type === 'text_chunk') {
             textAccRef.current += data.content;
             setAgentTextChunks((prev) => prev + data.content);
+            setAgentStatus('');
+          } else if (data.type === 'status') {
+            setAgentStatus(data.content);
           } else if (data.type === 'error') {
             toast.error(data.content);
           } else if (data.type === 'stream_end') {
             // Pass the accumulated text via the event so consumers don't rely on stale React state
             const fullContent = textAccRef.current;
             textAccRef.current = '';
+            setAgentStatus('');
             const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent } });
             window.dispatchEvent(streamEndEvent);
           }
@@ -95,6 +99,7 @@ export const useAgentSocket = (url) => {
   const sendChatRequest = useCallback((payload) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       setAgentTextChunks(''); // clear on new send
+      setAgentStatus('');
       textAccRef.current = '';
       socketRef.current.send(JSON.stringify({ type: 'chat_request', payload }));
     } else {
@@ -113,11 +118,13 @@ export const useAgentSocket = (url) => {
   const clearTextChunks = useCallback(() => {
     textAccRef.current = '';
     setAgentTextChunks('');
+    setAgentStatus('');
   }, []);
 
   return {
     isConnected,
     agentTextChunks,
+    agentStatus,
     sendChatRequest,
     clearTextChunks
   };
