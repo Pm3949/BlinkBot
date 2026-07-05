@@ -9,6 +9,8 @@ export const useAgentSocket = (url) => {
   const [agentTextChunks, setAgentTextChunks] = useState('');
   // Queue for messages that arrive before the socket is OPEN
   const pendingPayloadRef = useRef(null);
+  // Ref to track accumulated text outside React state (avoids stale closure in stream_end)
+  const textAccRef = useRef('');
 
   const connect = useCallback(() => {
     // Prevent duplicate connections if already open or connecting
@@ -41,13 +43,16 @@ export const useAgentSocket = (url) => {
           const data = JSON.parse(event.data);
           
           if (data.type === 'text_chunk') {
+            textAccRef.current += data.content;
             setAgentTextChunks((prev) => prev + data.content);
           } else if (data.type === 'error') {
             toast.error(data.content);
           } else if (data.type === 'stream_end') {
-             // We can fire a custom event or let the parent handle the finalized string
-             const event = new CustomEvent('agent_stream_end', { detail: { content: data.content } });
-             window.dispatchEvent(event);
+            // Pass the accumulated text via the event so consumers don't rely on stale React state
+            const fullContent = textAccRef.current;
+            textAccRef.current = '';
+            const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent } });
+            window.dispatchEvent(streamEndEvent);
           }
         } catch (err) {
           console.error('Failed to parse WebSocket text message:', err);
@@ -90,6 +95,7 @@ export const useAgentSocket = (url) => {
   const sendChatRequest = useCallback((payload) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       setAgentTextChunks(''); // clear on new send
+      textAccRef.current = '';
       socketRef.current.send(JSON.stringify({ type: 'chat_request', payload }));
     } else {
       // Socket is CONNECTING or closed — queue the payload and ensure we're connecting
@@ -104,7 +110,10 @@ export const useAgentSocket = (url) => {
     }
   }, [connect]);
   
-  const clearTextChunks = useCallback(() => setAgentTextChunks(''), []);
+  const clearTextChunks = useCallback(() => {
+    textAccRef.current = '';
+    setAgentTextChunks('');
+  }, []);
 
   return {
     isConnected,

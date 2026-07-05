@@ -55,13 +55,18 @@ export function useChat() {
     const handleStreamEnd = async (e) => {
        if (isTyping && activeSessionId) {
           setIsTyping(false);
-          await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: agentTextChunks, latency: 0 });
+          // Use e.detail.content (accumulated via ref in useAgentSocket) — NOT agentTextChunks state
+          // which may be stale due to React's async batching when the event fires
+          const finalContent = e.detail?.content || '';
+          if (finalContent) {
+            await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: finalContent, latency: 0 });
+          }
           clearTextChunks();
        }
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
-  }, [isTyping, activeSessionId, agentTextChunks, addMessage, clearTextChunks]);
+  }, [isTyping, activeSessionId, addMessage, clearTextChunks]);
 
 
   const startNewChat = async ({ agentId, agentName } = {}) => {
