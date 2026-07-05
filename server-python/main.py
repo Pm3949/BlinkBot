@@ -76,7 +76,7 @@ class PublicCORSMiddleware(BaseHTTPMiddleware):
     This intercepts requests to `/api/widget` and `/api/v1` and injects permissive CORS headers (*).
     """
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/api/widget") or request.url.path.startswith("/api/v1"):
+        if request.url.path.startswith("/api/widget") or request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/chatbots/"):
             # Handle Preflight requests (OPTIONS) which browsers send before the actual request
             if request.method == "OPTIONS":
                 return Response(status_code=200, headers={
