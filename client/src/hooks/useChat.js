@@ -18,19 +18,10 @@ export function useChat() {
     return cid;
   }, []);
   
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let baseWsUrl = import.meta.env.VITE_WS_BASE_URL 
-      ? import.meta.env.VITE_WS_BASE_URL 
-      : `${protocol}//${window.location.host.split(':')[0]}:8000`;
-      
-  // Ensure we use wss:// if the page is loaded over https://
-  if (window.location.protocol === 'https:' && baseWsUrl.startsWith('ws://')) {
-      baseWsUrl = baseWsUrl.replace('ws://', 'wss://');
-  } else if (baseWsUrl.startsWith('http://')) {
-      baseWsUrl = baseWsUrl.replace('http://', 'ws://');
-  } else if (baseWsUrl.startsWith('https://')) {
-      baseWsUrl = baseWsUrl.replace('https://', 'wss://');
-  }
+  // Derive WS base URL from VITE_API_BASE_URL (same strategy as NotificationBell)
+  // This ensures the chat WebSocket connects to the backend, not the frontend host.
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 
   const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
 
