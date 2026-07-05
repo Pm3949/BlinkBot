@@ -41,9 +41,12 @@ export function useUpdateChatbot(workspaceId) {
 
   return useMutation({
     mutationFn: ({ id, payload }) => updateChatbot(id, payload),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["chatbots", workspaceId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["chatbot", variables.id],
       });
     },
   });

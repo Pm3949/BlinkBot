@@ -39,13 +39,13 @@ def release_db_connection(conn):
         db_pool.putconn(conn)
 
 @asynccontextmanager
-async def get_db_cursor_async(commit=False):
+async def get_db_cursor_async(commit=False, cursor_factory=None):
     """
     Async context manager that borrows a connection from the pool, creates a cursor,
     yields it, handles automatic commit/rollback, and returns the connection to the pool.
     """
     conn = db_pool.getconn()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=cursor_factory) if cursor_factory else conn.cursor()
     try:
         yield cursor
         if commit:

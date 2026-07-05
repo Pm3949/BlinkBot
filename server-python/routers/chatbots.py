@@ -23,6 +23,8 @@ class ChatbotCreate(BaseModel):
 class ChatbotUpdate(BaseModel):
     name: Optional[str] = None
     settings: Optional[dict] = None
+    api_key: Optional[str] = None
+    allowed_domains: Optional[str] = None
 
 
 @router.get("/api/chatbots")

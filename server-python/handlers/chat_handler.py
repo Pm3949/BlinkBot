@@ -691,6 +691,19 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                 except Exception as e:
                     logger.error(f"Dynamic routing failed: {e}")
 
+        if provider == "openai":
+            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
+            if not key_to_use:
+                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
+            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
+        elif provider == "ollama":
+            llm = ChatOllama(model=model)
+        else:
+            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
+            if not key_to_use:
+                raise HTTPException(status_code=400, detail="Groq API Key missing.")
+            llm = ChatGroq(model_name=model, api_key=key_to_use)
+
         hyde_query = rag_engine.generate_hyde_query(message, llm)
         query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
         best_matches = await chat_repository.get_documents_hybrid(
@@ -781,19 +794,6 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
         await chat_repository.log_widget_message(chatbot_id)
-
-        if provider == "openai":
-            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
-            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-        elif provider == "ollama":
-            llm = ChatOllama(model=model)
-        else:
-            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="Groq API Key missing.")
-            llm = ChatGroq(model_name=model, api_key=key_to_use)
 
         async def stream_generator():
             full_response = ""

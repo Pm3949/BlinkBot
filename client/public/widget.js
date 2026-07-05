@@ -39,20 +39,15 @@
     { id: "ko", name: "KO" },
   ];
 
-  // 2. Fetch Chatbot Config from Supabase
+  // 2. Fetch Chatbot Config from API
   async function fetchConfig() {
     try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/chatbots?id=eq.${chatbotId}&select=*`, {
-        cache: 'no-store',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
+      const response = await fetch(`${apiUrl}/api/chatbots/${chatbotId}`, {
+        cache: 'no-store'
       });
       if (response.ok) {
-        const data = await response.json();
-        if (data && data.length > 0) {
-          const bot = data[0];
+        const bot = await response.json();
+        if (bot) {
           botSettings.name = bot.name || botSettings.name;
           
           let parsedSettings = bot.settings;
@@ -71,7 +66,7 @@
         }
       }
     } catch (err) {
-      console.warn('BlinkBot Widget: Failed to fetch settings from Supabase, using defaults.', err);
+      console.warn('BlinkBot Widget: Failed to fetch settings from API, using defaults.', err);
     }
   }
 

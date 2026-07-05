@@ -184,6 +184,7 @@ async def handle_login(email: str, password: str):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Login failed with an unexpected error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
