@@ -45,7 +45,6 @@ class ConnectorRequest(BaseModel):
 
 class CheckoutRequest(BaseModel):
     """Initial request to start a checkout process."""
-    user_id: str
     plan_tier: str
     billing_cycle: str
     # Default limits for the basic plan
@@ -58,7 +57,6 @@ class CheckoutRequest(BaseModel):
 
 class RazorpayVerifyRequest(BaseModel):
     """Schema for verifying a completed Razorpay transaction webhook/callback."""
-    user_id: str
     plan_tier: str
     billing_cycle: str
     razorpay_order_id: str
@@ -79,7 +77,6 @@ class RazorpayVerifyRequest(BaseModel):
 class WorkspaceCreate(BaseModel):
     """Schema to create a new workspace."""
     name: str
-    owner_id: str
     email: str
     user_name: str
 

@@ -1,364 +1,186 @@
-"""
-Documents Router.
-Responsibility: Handles the uploading of files (PDF, TXT, CSV, Images) and URLs.
-It extracts raw text, checks user storage limits, saves the files securely using encryption, 
-and then schedules the heavy embedding/chunking process as a background task.
-"""
-import os
-import shutil
 import logging
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
-from database import get_db_connection
-from core.dependencies import rag_engine, UPLOAD_DIR
-from core.security import encrypt_data
-from utils import background_ingestion, get_user_limits
+from typing import Optional
+from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile, Depends, Header, Request, WebSocket, WebSocketDisconnect
+
 from schemas import URLRequest, ConnectorRequest
-import asyncio
+from routers.auth import limiter
+from handlers.websocket_handlers import upload_status_manager
+from handlers.document_handler import (
+    handle_initiate_upload,
+    handle_upload_chunk,
+    handle_complete_upload,
+    handle_view_document,
+    handle_process_file,
+    handle_process_url,
+    handle_process_connector,
+    handle_get_documents,
+    handle_delete_document
+)
+from pydantic import BaseModel
+from core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(tags=["documents"])
 
-# ==========================================
-# FILE UPLOAD & PROCESSING
-# ==========================================
+class InitiateUploadRequest(BaseModel):
+    agent_id: str
+    filename: str
+    file_size_bytes: int
+
+class CompleteUploadRequest(BaseModel):
+    upload_id: str
+    agent_id: str
+    filename: str
+
+
+@router.websocket("/ws/documents/upload/status/{session_key}")
+async def upload_status_ws(websocket: WebSocket, session_key: str):
+    """
+    What it does: Opens a real-time connection so the frontend can receive progress updates as a document is processed.
+    Args:
+        websocket (WebSocket): The connection provided by the user's browser.
+        session_key (str): The unique ID of the ongoing upload session.
+    Returns: None.
+    """
+    logger.info(f"🔌 WebSocket connection requested for upload status agent: {session_key}")
+    await upload_status_manager.connect(websocket, session_key)
+    logger.info(f"✅ WebSocket connected for upload status agent: {session_key}")
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        upload_status_manager.disconnect(websocket, session_key)
+        logger.info(f"❌ WebSocket disconnected for upload status agent: {session_key}")
+
+
+@router.post("/api/documents/upload/initiate")
+@limiter.limit("10/minute")
+async def initiate_upload(req: InitiateUploadRequest, request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: Receives a request from the user to start uploading a file, checking their storage limits first.
+    Args:
+        req (InitiateUploadRequest): The user's request details including agent ID, file name, and file size.
+        request (Request): The incoming HTTP request.
+    Returns: An upload ID and recommended chunk size.
+    """
+    return await handle_initiate_upload(req.agent_id, req.file_size_bytes)
+
+
+@router.put("/api/documents/upload/chunk")
+@limiter.limit("60/minute")
+async def upload_chunk(
+    upload_id: str,
+    chunk_index: int,
+    request: Request,
+    chunk: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    What it does: Receives a piece (chunk) of a large file from the user and saves it.
+    Args:
+        upload_id (str): The upload session ID.
+        chunk_index (int): The order of this piece.
+        request (Request): The HTTP request.
+        chunk (UploadFile): The file chunk data.
+    Returns: A success message.
+    """
+    return await handle_upload_chunk(upload_id, chunk_index, chunk)
+
+
+@router.post("/api/documents/upload/complete")
+@limiter.limit("10/minute")
+async def complete_upload(
+    req: CompleteUploadRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    What it does: Finalizes a chunked file upload by joining it together and telling the system to process it.
+    Args:
+        req (CompleteUploadRequest): The request containing upload ID and filename.
+        request (Request): The HTTP request.
+        background_tasks (BackgroundTasks): FastAPIs tool for running slow tasks in the background.
+    Returns: A confirmation message.
+    """
+    return await handle_complete_upload(req.upload_id, req.agent_id, req.filename, background_tasks)
+
+
+@router.get("/api/documents/{doc_id}/view")
+async def view_document(
+    doc_id: str,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    What it does: Allows a user to view a document they uploaded by streaming it back to their browser.
+    Args:
+        doc_id (str): The ID of the document they want to look at.
+        token (str, optional): An access token provided in the URL.
+        authorization (str, optional): An access token provided in the headers.
+    Returns: A streaming response of the file.
+    """
+    return await handle_view_document(doc_id, token if token else authorization)
+
 
 @router.post("/process-file")
 async def process_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     agent_id: str = Form(...),
+    current_user: dict = Depends(get_current_user)
 ):
     """
-    Upload a supported file, extract text, create a document row, and schedule ingestion.
+    What it does: Uploads a single file (not in pieces) and starts processing it immediately.
+    Args:
+        background_tasks (BackgroundTasks): FastAPIs tool to run things later.
+        file (UploadFile): The actual file being uploaded.
+        agent_id (str): The ID of the agent learning from this file.
+    Returns: A confirmation message.
     """
-    allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg"}
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Filename is required")
+    return await handle_process_file(agent_id, file, background_tasks)
 
-    # Basic file extension validation
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only {', '.join(sorted(allowed_exts))} files are allowed.",
-        )
-
-    # os.path.basename prevents directory traversal attacks (e.g., uploading "../../etc/passwd")
-    safe_filename = os.path.basename(file.filename)
-    file_path = UPLOAD_DIR / safe_filename
-
-    # We will read the file and save the encrypted version, but we need raw text first
-    file_bytes = file.file.read()
-    
-    # Save a temporary unencrypted version so the RAG engine can extract text using standard libraries
-    temp_path = str(file_path) + ".tmp"
-    with open(temp_path, "wb") as buffer:
-        buffer.write(file_bytes)
-        
-    # Security: Encrypt the actual file before saving it permanently to disk.
-    # This ensures that if the server is compromised, the attacker only gets encrypted junk.
-    with open(file_path, "wb") as buffer:
-        buffer.write(encrypt_data(file_bytes))
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Fetch Agent Configuration
-        cursor.execute(
-            "SELECT user_id, embedding_model, chunk_strategy FROM agents WHERE id = %s",
-            (agent_id,),
-        )
-        agent_row = cursor.fetchone()
-        if not agent_row:
-            raise HTTPException(status_code=404, detail="Agent not found")
-
-        user_id = agent_row[0]
-        # Fallbacks just in case the agent doesn't have these explicitly set
-        embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
-        strategy = agent_row[2] if agent_row[2] else "sentence"
-
-        # ==========================================
-        # STORAGE LIMIT ENFORCEMENT
-        # ==========================================
-        limits = get_user_limits(user_id, cursor)
-        file_size = os.path.getsize(file_path)
-
-        # Calculate the total size of all documents owned by this user
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(d.file_size_bytes), 0)
-            FROM documents d
-            JOIN agents a ON d.agent_id = a.id
-            WHERE a.user_id = %s
-        """,
-            (user_id,),
-        )
-        current_storage = cursor.fetchone()[0] or 0
-
-        # Check if adding this new file will exceed their plan's limits
-        if current_storage + file_size > (limits["storage_mb"] * 1024 * 1024):
-            # Cleanup the files if rejected
-            os.remove(file_path)
-            os.remove(temp_path)
-            raise HTTPException(
-                status_code=403,
-                detail="Storage limit exceeded. Please upgrade your plan.",
-            )
-
-        # Extract text using the temporary unencrypted file
-        raw_text = rag_engine.extract_text_from_file(temp_path, safe_filename)
-
-        # Create the initial pending document row
-        cursor.execute(
-            "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'processing', %s) RETURNING id;",
-            (agent_id, safe_filename, file_size),
-        )
-        document_id = cursor.fetchone()[0]
-        conn.commit()
-
-        # ==========================================
-        # BACKGROUND TASK SCHEDULING
-        # ==========================================
-        # Pass the heavy lifting to a background thread so the HTTP request completes instantly
-        background_tasks.add_task(
-            background_ingestion,
-            document_id,
-            agent_id,
-            raw_text,
-            strategy,
-            embed_model,
-            str(file_path),
-        )
-        return {
-            "message": f"{ext.upper()} uploaded successfully! Processing in background..."
-        }
-    except HTTPException:
-        if conn:
-            conn.rollback()
-        raise
-    except Exception as exc:
-        logger.exception("Failed to process uploaded file")
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-        # Always clean up the temporary unencrypted file, regardless of success or failure
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-
-# ==========================================
-# URL SCRAPING & PROCESSING
-# ==========================================
 
 @router.post("/process-url")
-async def process_url(req: URLRequest, background_tasks: BackgroundTasks):
+async def process_url(req: URLRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """
-    Fetch a webpage, extract text using BeautifulSoup, create a document row, 
-    and schedule ingestion. Very similar flow to process-file.
+    What it does: Takes a website URL from the user and tells the system to scrape and process it.
+    Args:
+        req (URLRequest): The user's request with the URL.
+        background_tasks (BackgroundTasks): FastAPIs tool to run things later.
+    Returns: A confirmation message.
     """
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    return await handle_process_url(req.agent_id, req.url, background_tasks)
 
-        cursor.execute(
-            "SELECT user_id, embedding_model, chunk_strategy FROM agents WHERE id = %s",
-            (req.agent_id,),
-        )
-        agent_row = cursor.fetchone()
-        if not agent_row:
-            raise HTTPException(status_code=404, detail="Agent not found")
-
-        user_id = agent_row[0]
-        embed_model = agent_row[1] if agent_row[1] else "text-embedding-3-small"
-        strategy = agent_row[2] if agent_row[2] else "sentence"
-
-        # Web scraping logic inside the RAG engine
-        raw_text = rag_engine.extract_text_from_url(req.url)
-        # Approximate file size based on character count
-        file_size = len(raw_text.encode("utf-8"))
-
-        # Storage Limits Check
-        limits = get_user_limits(user_id, cursor)
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(d.file_size_bytes), 0)
-            FROM documents d
-            JOIN agents a ON d.agent_id = a.id
-            WHERE a.user_id = %s
-        """,
-            (user_id,),
-        )
-        current_storage = cursor.fetchone()[0] or 0
-
-        if current_storage + file_size > (limits["storage_mb"] * 1024 * 1024):
-            raise HTTPException(
-                status_code=403,
-                detail="Storage limit exceeded. Please upgrade your plan.",
-            )
-
-        cursor.execute(
-            "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'processing', %s) RETURNING id;",
-            (req.agent_id, req.url, file_size),
-        )
-        document_id = cursor.fetchone()[0]
-        conn.commit()
-
-        # Schedule the embedding job
-        background_tasks.add_task(
-            background_ingestion,
-            document_id,
-            req.agent_id,
-            raw_text,
-            strategy,
-            embed_model,
-            None,
-        )
-        return {"message": "URL scraped. Processing in background..."}
-    except HTTPException:
-        if conn:
-            conn.rollback()
-        raise
-    except Exception as exc:
-        logger.exception("Failed to process URL")
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        if conn:
-            conn.close()
-
-# ==========================================
-# CONNECTOR SYNC (MOCK)
-# ==========================================
 
 @router.post("/process-connector")
-async def process_connector(req: ConnectorRequest):
+async def process_connector(req: ConnectorRequest, current_user: dict = Depends(get_current_user)):
     """
-    Simulates a connection and data sync from third-party platforms (Google Drive, Notion, Slack).
-    Inserts a mock document row to appear instantly in the UI for demo purposes.
+    What it does: Fakes a connection to a third party tool like Slack or Google Drive for demo purposes.
+    Args:
+        req (ConnectorRequest): Details about which app to connect to.
+    Returns: A success message showing connection established.
     """
-    await asyncio.sleep(1.5) # Simulate API handshake and initial sync delay
+    return await handle_process_connector(req.agent_id, req.connector_id)
 
-    connector_names = {
-        "gdrive": "Google Drive Sync",
-        "notion": "Notion Workspace Sync",
-        "slack": "Slack Channels Sync",
-        "github": "GitHub Repository Sync"
-    }
-    display_name = connector_names.get(req.connector_id, f"{req.connector_id.capitalize()} Sync")
-
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Just insert a mock completed document
-        cursor.execute(
-            "INSERT INTO documents (agent_id, filename, status, file_size_bytes) VALUES (%s, %s, 'completed', %s) RETURNING id;",
-            (req.agent_id, display_name, 2048576) # 2MB dummy size
-        )
-        document_id = cursor.fetchone()[0]
-        
-        # Insert a dummy chunk count to make it look processed
-        # We can't insert directly into document_embeddings without generating a vector array,
-        # But `documents` chunk_count is usually joined on embeddings. 
-        # For the demo, we can just let it have 0 chunks or insert dummy embeddings.
-        # It's faster to just insert 1 dummy embedding with an empty vector or array.
-        # Actually, pgvector requires specific format. 
-        # Let's just leave chunk_count as 0 or 1, or insert a tiny vector if we have the schema.
-        # If we skip embeddings, it just shows 0 chunks, which is fine for a sync object.
-        
-        conn.commit()
-        return {"message": f"Successfully connected to {display_name}."}
-    except Exception as exc:
-        logger.exception("Failed to process connector")
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-# ==========================================
-# CRUD OPERATIONS
-# ==========================================
 
 @router.get("/agents/{agent_id}/documents")
-async def get_documents(agent_id: str):
+async def get_documents(agent_id: str, current_user: dict = Depends(get_current_user)):
     """
-    Fetches the list of all documents belonging to a specific agent.
-    Includes the chunk count so the frontend can display how thoroughly the document was processed.
+    What it does: Asks the database for all documents uploaded to a specific agent.
+    Args:
+        agent_id (str): The ID of the agent we want to see files for.
+    Returns: A list of documents.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            """
-            SELECT d.id, d.filename, d.status, d.created_at, d.file_size_bytes, COUNT(e.id) as chunk_count
-            FROM documents d
-            LEFT JOIN document_embeddings e ON d.id = e.document_id
-            WHERE d.agent_id = %s 
-            GROUP BY d.id
-            ORDER BY d.created_at DESC
-        """,
-            (agent_id,),
-        )
-        docs = [
-            {
-                "id": r[0],
-                "filename": r[1],
-                "status": r[2],
-                "created_at": r[3],
-                "file_size_bytes": r[4] or 0,
-                "chunk_count": r[5] or 0,
-            }
-            for r in cursor.fetchall()
-        ]
-        return {"documents": docs}
-    finally:
-        cursor.close()
-        conn.close()
+    return await handle_get_documents(agent_id)
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str):
+async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     """
-    Permanently deletes a document, its vector embeddings (memory), and the physical file from disk.
+    What it does: Receives a request from the user to permanently delete a document.
+    Args:
+        doc_id (str): The ID of the document to throw away.
+    Returns: A confirmation message.
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        # Fetch filename to delete the physical file
-        cursor.execute("SELECT filename FROM documents WHERE id = %s", (doc_id,))
-        doc = cursor.fetchone()
-        if doc and doc[0]:
-            from core.dependencies import UPLOAD_DIR
-            file_path = UPLOAD_DIR / doc[0]
-            import os
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-        # Cascading Deletes (though foreign keys usually handle this, it's explicitly done here)
-        cursor.execute(
-            "DELETE FROM document_embeddings WHERE document_id = %s", (doc_id,)
-        )
-        cursor.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
-        conn.commit()
-        return {"message": "Document and its memory completely deleted!"}
-    finally:
-        cursor.close()
-        conn.close()
+    return await handle_delete_document(doc_id)

@@ -20,6 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useCreateAgent } from "../../hooks/useAgents";
 import { useUIStore } from "../../store/useUIStore";
 import { useWorkspacePermissions } from "../../hooks/useSettings";
+import { getAuthHeaders } from "../../lib/api";
 import {
   Select,
   SelectContent,
@@ -202,7 +203,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     try {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/meta-agent/generate-single`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ prompt: autoPrompt })
       });
       if (!response.ok) throw new Error('Failed to generate agent config');

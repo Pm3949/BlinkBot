@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUIStore } from '../../store/useUIStore';
 import { useAuth } from '../../context/AuthContext';
+import { getAuthHeaders } from '../../lib/api';
 
 export default function AgentBuilder() {
   const [step, setStep] = useState('prompt'); // prompt, loading, configure, deploying, success
@@ -21,7 +22,7 @@ export default function AgentBuilder() {
       // 1. Generate the Blueprint
       const generateResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/meta-agent/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ prompt: promptText })
       });
 
@@ -33,12 +34,11 @@ export default function AgentBuilder() {
       // 2. Instantly Deploy behind the scenes
       const deployResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/meta-agent/deploy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           blueprint: generatedBlueprint,
-          config_data: { enabled_knowledge: {}, enabled_tools: {}, tools: {} }, // Empty initial config
+          config_data: { enabled_knowledge: {}, enabled_tools: {}, tools: {} },
           workspace_id: activeWorkspaceId,
-          user_id: user?.id
         })
       });
 

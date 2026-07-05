@@ -45,7 +45,6 @@ class DeployRequest(BaseModel):
     blueprint: AgentBlueprint
     config_data: Dict[str, Any]
     workspace_id: str
-    user_id: str
 
 class SingleAgentResponse(BaseModel):
     name: str = Field(..., description="A catchy, relevant name for the agent")

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { useUIStore } from "../store/useUIStore";
+import { getAuthHeaders } from "../lib/api";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
@@ -10,15 +11,19 @@ export function useFeedback() {
   const queryClient = useQueryClient();
 
   const getOpenFeedback = async () => {
-    if (!user?.id || !activeWorkspaceId) return [];
-    const response = await fetch(`${API_URL}/api/feedback/open?workspace_id=${activeWorkspaceId}&user_id=${user.id}`);
+    if (!activeWorkspaceId) return [];
+    const response = await fetch(`${API_URL}/api/feedback/open?workspace_id=${activeWorkspaceId}`, {
+      headers: getAuthHeaders()
+    });
     if (!response.ok) throw new Error("Failed to fetch open feedback");
     return response.json();
   };
 
   const getPendingVerification = async () => {
-    if (!user?.id || !activeWorkspaceId) return [];
-    const response = await fetch(`${API_URL}/api/feedback/pending-verification?workspace_id=${activeWorkspaceId}&user_id=${user.id}`);
+    if (!activeWorkspaceId) return [];
+    const response = await fetch(`${API_URL}/api/feedback/pending-verification?workspace_id=${activeWorkspaceId}`, {
+      headers: getAuthHeaders()
+    });
     if (!response.ok) throw new Error("Failed to fetch pending verifications");
     return response.json();
   };
@@ -27,8 +32,8 @@ export function useFeedback() {
     if (!user?.id || !activeWorkspaceId) throw new Error("Not authenticated");
     const response = await fetch(`${API_URL}/api/feedback`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, workspace_id: activeWorkspaceId, created_by: user.id }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ ...payload, workspace_id: activeWorkspaceId }),
     });
     if (!response.ok) throw new Error("Failed to submit feedback");
     return response.json();
@@ -38,8 +43,8 @@ export function useFeedback() {
     if (!user?.id) throw new Error("Not authenticated");
     const response = await fetch(`${API_URL}/api/feedback/${feedbackId}/resolve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resolved_by: user.id }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({}),
     });
     if (!response.ok) throw new Error("Failed to resolve feedback");
     return response.json();
@@ -49,8 +54,8 @@ export function useFeedback() {
     if (!user?.id) throw new Error("Not authenticated");
     const response = await fetch(`${API_URL}/api/feedback/${feedbackId}/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_satisfied, comment, user_id: user.id }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ is_satisfied, comment }),
     });
     if (!response.ok) throw new Error("Failed to verify feedback");
     return response.json();
@@ -60,12 +65,12 @@ export function useFeedback() {
     openFeedbackQuery: useQuery({
       queryKey: ["feedback", "open", activeWorkspaceId],
       queryFn: getOpenFeedback,
-      enabled: !!user?.id && !!activeWorkspaceId,
+      enabled: !!activeWorkspaceId,
     }),
     pendingVerificationsQuery: useQuery({
       queryKey: ["feedback", "pending", activeWorkspaceId],
       queryFn: getPendingVerification,
-      enabled: !!user?.id && !!activeWorkspaceId,
+      enabled: !!activeWorkspaceId,
     }),
     submitMutation: useMutation({
       mutationFn: submitFeedback,

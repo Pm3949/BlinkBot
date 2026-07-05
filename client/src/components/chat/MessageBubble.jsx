@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { useFeedback } from "../../hooks/useFeedback";
 import FeedbackModal from "./FeedbackModal";
+import { getAuthHeaders } from "../../lib/api";
 
 
 
@@ -85,7 +86,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
       const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
       const response = await fetch(`${API_URL}/api/tts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           text: cleanText,
           language: chatLanguage || "en"

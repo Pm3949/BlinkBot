@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { getAuthHeaders } from "../lib/api";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
@@ -12,7 +13,7 @@ export async function getAgents(workspaceId, includeGateways = false) {
   if (!workspaceId) return [];
 
   const url = `${API_URL}/api/agents?workspace_id=${workspaceId}${includeGateways ? '&include_gateways=true' : ''}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: getAuthHeaders() });
   if (!response.ok) {
     throw new Error("Failed to fetch agents");
   }
@@ -36,7 +37,6 @@ export async function createAgent(payload) {
     system_prompt: payload.system_prompt || "",
     output_format: payload.output_format || "",
     api_key: payload.api_key || "",
-    user_id: user.id,
     workspace_id: payload.workspace_id,
     web_search_enabled: payload.web_search_enabled || false,
     project_id: payload.project_id || null,
@@ -45,9 +45,7 @@ export async function createAgent(payload) {
 
   const response = await fetch(`${API_URL}/api/agents`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(agentPayload),
   });
 
@@ -67,9 +65,7 @@ export async function updateAgent(
 
   const response = await fetch(`${API_URL}/api/agents/${id}`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -86,6 +82,7 @@ export async function deleteAgent(id) {
 
   const response = await fetch(`${API_URL}/agents/${id}`, {
     method: "DELETE",
+    headers: getAuthHeaders()
   });
 
   if (!response.ok) {
@@ -97,7 +94,9 @@ export async function deleteAgent(id) {
 export async function getAgentProjects(workspaceId) {
   if (!workspaceId) return [];
 
-  const response = await fetch(`${API_URL}/api/agent-projects?workspace_id=${workspaceId}`);
+  const response = await fetch(`${API_URL}/api/agent-projects?workspace_id=${workspaceId}`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch agent projects");
   }
@@ -108,7 +107,9 @@ export async function getAgentProjects(workspaceId) {
 export async function getProjectSubAgents(projectId) {
   if (!projectId) return [];
 
-  const response = await fetch(`${API_URL}/api/agent-projects/${projectId}/sub-agents`);
+  const response = await fetch(`${API_URL}/api/agent-projects/${projectId}/sub-agents`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch sub agents");
   }
@@ -121,6 +122,7 @@ export async function deleteAgentProject(projectId) {
 
   const response = await fetch(`${API_URL}/api/agent-projects/${projectId}`, {
     method: "DELETE",
+    headers: getAuthHeaders()
   });
 
   if (!response.ok) {
@@ -137,9 +139,7 @@ export async function createAgentProject(payload) {
 
   const response = await fetch(`${API_URL}/api/agent-projects`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 

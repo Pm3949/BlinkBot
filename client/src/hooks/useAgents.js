@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { getAuthHeaders } from "../lib/api";
 
 import {
   createAgent,
@@ -127,7 +128,9 @@ export function useProjectTools(projectId) {
   return useQuery({
     queryKey: ["agent-projects-tools", projectId],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/agent-projects/${projectId}/tools`);
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/agent-projects/${projectId}/tools`, {
+        headers: getAuthHeaders()
+      });
       if (!response.ok) throw new Error("Failed to fetch tools");
       return response.json();
     },
@@ -141,7 +144,7 @@ export function useUpdateTool(projectId) {
     mutationFn: async ({ id, payload }) => {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/tools/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("Failed to update tool");
@@ -159,7 +162,7 @@ export function useCreateTool(projectId) {
     mutationFn: async (payload) => {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/agent-projects/${projectId}/tools`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error("Failed to create tool");

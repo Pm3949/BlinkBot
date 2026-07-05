@@ -11,6 +11,11 @@ async function getErrorMessage(response) {
   }
 }
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("access_token");
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+}
+
 export async function getDocuments(agentId) {
   if (!agentId) return [];
 
@@ -19,8 +24,9 @@ export async function getDocuments(agentId) {
     {
       method: "GET",
       headers: {
-        "ngrok-skip-browser-warning": "69420", // Ye line Ngrok ka HTML page bypass karegi
-        "Content-Type": "application/json"
+        "ngrok-skip-browser-warning": "69420",
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
       }
     }
   );
@@ -39,26 +45,88 @@ export async function uploadDocument({
   agentId,
   file,
 }) {
-  const formData = new FormData();
-  formData.append("agent_id", agentId);
-  formData.append("file", file);
+  const headers = getAuthHeaders();
 
-  const response = await fetch(
-    `${API_BASE_URL}/process-file`,
+  // 1. Initiate chunked upload session
+  const initResponse = await fetch(
+    `${API_BASE_URL}/api/documents/upload/initiate`,
     {
       method: "POST",
-      body: formData,
-    },
+      headers: {
+        "Content-Type": "application/json",
+        ...headers
+      },
+      body: JSON.stringify({
+        agent_id: agentId,
+        filename: file.name,
+        file_size_bytes: file.size,
+      })
+    }
   );
 
-  if (!response.ok) {
-    const message = await getErrorMessage(response);
+  if (!initResponse.ok) {
+    const message = await getErrorMessage(initResponse);
     throw new Error(
-      message || "Failed to upload document.",
+      message || "Failed to initiate document upload.",
     );
   }
 
-  return response.json();
+  const { upload_id, chunk_size_bytes } = await initResponse.json();
+
+  // 2. Slice and upload file chunks sequentially
+  const totalChunks = Math.ceil(file.size / chunk_size_bytes);
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunk_size_bytes;
+    const end = Math.min(file.size, start + chunk_size_bytes);
+    const chunkSlice = file.slice(start, end);
+
+    const formData = new FormData();
+    formData.append("chunk", chunkSlice, file.name);
+
+    const chunkResponse = await fetch(
+      `${API_BASE_URL}/api/documents/upload/chunk?upload_id=${upload_id}&chunk_index=${i}`,
+      {
+        method: "PUT",
+        headers: {
+          ...headers
+        },
+        body: formData
+      }
+    );
+
+    if (!chunkResponse.ok) {
+      const message = await getErrorMessage(chunkResponse);
+      throw new Error(
+        message || `Failed to upload chunk ${i + 1} of ${totalChunks}.`,
+      );
+    }
+  }
+
+  // 3. Finalize upload assembly
+  const completeResponse = await fetch(
+    `${API_BASE_URL}/api/documents/upload/complete`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers
+      },
+      body: JSON.stringify({
+        upload_id,
+        agent_id: agentId,
+        filename: file.name,
+      })
+    }
+  );
+
+  if (!completeResponse.ok) {
+    const message = await getErrorMessage(completeResponse);
+    throw new Error(
+      message || "Failed to finalize document upload.",
+    );
+  }
+
+  return completeResponse.json();
 }
 
 export async function processUrl({
@@ -71,6 +139,7 @@ export async function processUrl({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...getAuthHeaders()
       },
       body: JSON.stringify({
         agent_id: agentId,
@@ -99,6 +168,7 @@ export async function processConnector({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...getAuthHeaders()
       },
       body: JSON.stringify({
         agent_id: agentId,
@@ -122,7 +192,10 @@ export async function deleteDocument(id) {
     `${API_BASE_URL}/documents/${id}`,
     {
       method: "DELETE",
-    },
+      headers: {
+        ...getAuthHeaders()
+      }
+    }
   );
 
   if (!response.ok) {

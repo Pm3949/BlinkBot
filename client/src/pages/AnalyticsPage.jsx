@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../supabaseClient';
+import { getAuthHeaders } from '../lib/api';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -14,7 +15,9 @@ async function fetchAnalytics() {
   const user = userStr ? JSON.parse(userStr) : null;
   if (!user) throw new Error("Not authenticated");
 
-  const response = await fetch(`${API_URL}/analytics/${user.id}`);
+  const response = await fetch(`${API_URL}/analytics`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch analytics');
   }

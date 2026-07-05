@@ -6,6 +6,7 @@ import { Globe, Loader2, Bot, Brain, Key, FileText, Sparkles, Code, Network, Plu
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useProjectTools } from "../../hooks/useAgents";
 import { toast } from "sonner";
+import { getAuthHeaders } from "../../lib/api";
 import {
   Select,
   SelectContent,
@@ -69,7 +70,7 @@ export default function AgentSettingsModal({ agent, onClose }) {
     mutationFn: async (payload) => {
       const response = await fetch(`${API_URL}/api/agents/${agent.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error('Failed to update agent');

@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { getAuthHeaders } from "../lib/api";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
 
@@ -20,7 +21,9 @@ export async function getWorkspaceMembers(workspaceId = null) {
 
   // If no workspace ID provided, derive it from the user's primary workspace endpoint
   if (!resolvedWorkspaceId) {
-    const wsRes = await fetch(`${API_URL}/api/workspaces/primary/${user.id}`);
+    const wsRes = await fetch(`${API_URL}/api/workspaces/primary`, {
+      headers: getAuthHeaders()
+    });
     if (wsRes.ok) {
       const wsData = await wsRes.json();
       resolvedWorkspaceId = wsData.id;
@@ -29,7 +32,9 @@ export async function getWorkspaceMembers(workspaceId = null) {
 
   if (!resolvedWorkspaceId) return [];
 
-  const response = await fetch(`${API_URL}/api/workspaces/${resolvedWorkspaceId}/members`);
+  const response = await fetch(`${API_URL}/api/workspaces/${resolvedWorkspaceId}/members`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     throw new Error("Failed to fetch workspace members");
   }
@@ -41,7 +46,9 @@ export async function inviteMember(email, role) {
   const user = await getAuthenticatedUser();
 
   // Find current user's workspace
-  const wsRes = await fetch(`${API_URL}/api/workspaces/primary/${user.id}`);
+  const wsRes = await fetch(`${API_URL}/api/workspaces/primary`, {
+    headers: getAuthHeaders()
+  });
   if (!wsRes.ok) throw new Error("No workspace found.");
 
   const wsData = await wsRes.json();
@@ -52,9 +59,7 @@ export async function inviteMember(email, role) {
   // FastAPI backend Call
   const response = await fetch(`${API_URL}/api/workspaces/invite`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       email,
       role,
@@ -78,7 +83,7 @@ const DEFAULT_PERMISSIONS = { agents: false, database: false, notes: false };
 export async function updateMemberRole(memberId, role) {
   const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}/role`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ role }),
   });
 
@@ -92,7 +97,7 @@ export async function updateMemberRole(memberId, role) {
 export async function updateMemberPermissions(memberId, permissions) {
   const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}/permissions`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ permissions }),
   });
 
@@ -105,7 +110,8 @@ export async function updateMemberPermissions(memberId, permissions) {
 
 export async function removeMember(memberId) {
   const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers: getAuthHeaders()
   });
 
   if (!response.ok) {

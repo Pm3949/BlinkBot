@@ -89,7 +89,6 @@ export default function StudioPage() {
         name: networkForm.name,
         description: networkForm.description,
         workspace_id: activeWorkspaceId,
-        user_id: user?.id
       });
       toast.success("Network created successfully");
       setIsNetworkDialogOpen(false);

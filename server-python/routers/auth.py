@@ -1,454 +1,154 @@
-from fastapi import APIRouter, HTTPException, Request
+import logging
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-import psycopg2
-import psycopg2.extras
-import secrets
-from datetime import datetime, timedelta
-import httpx
-from urllib.parse import urlencode
-
-from core.auth import get_password_hash, verify_password, create_access_token, send_otp_email, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FRONTEND_URL, send_password_reset_email
-from database import get_db_connection
-from schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword, Verify2FA, Login2FA
-import pyotp
-
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-def create_default_workspace(cur, user_id: str, email: str):
-    cur.execute("SELECT id FROM workspaces WHERE owner_id = %s", (user_id,))
-    if cur.fetchone():
-        return
-        
-    workspace_name = f"{email.split('@')[0]}'s Workspace"
-    cur.execute("INSERT INTO workspaces (name, owner_id) VALUES (%s, %s) RETURNING id", (workspace_name, user_id))
-    workspace_id = cur.fetchone()[0]
-    
-    permissions = '{"agents": true, "database": true, "notes": true}'
-    cur.execute("""
-        INSERT INTO workspace_members (workspace_id, user_id, email, name, role, permissions)
-        VALUES (%s, %s, %s, %s, 'Owner', %s::jsonb)
-    """, (workspace_id, user_id, email, email.split('@')[0], permissions))
+from schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword, Login2FA
+from handlers.auth_handler import (
+    handle_google_login,
+    handle_google_callback,
+    handle_register,
+    handle_verify_otp,
+    handle_login,
+    handle_forgot_password,
+    handle_reset_password,
+    handle_setup_2fa,
+    handle_verify_2fa_setup,
+    handle_login_2fa
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
 
+
 @router.get("/google/login")
 async def google_login(request: Request):
-    if not GOOGLE_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Google Auth is not configured")
-        
+    """
+    What it does: HTTP endpoint to initiate Google OAuth login.
+    Args:
+        request (Request): The incoming request.
+    Returns: A redirect to the Google consent screen.
+    """
     base_url = str(request.base_url).rstrip("/")
-    redirect_uri = f"{base_url}/auth/google/callback"
-    
-    auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
-    params = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "consent"
-    }
-    return RedirectResponse(f"{auth_url}?{urlencode(params)}")
+    auth_url = await handle_google_login(base_url)
+    return RedirectResponse(auth_url)
+
 
 @router.get("/google/callback")
 async def google_callback(request: Request, code: str):
-    if not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="Google Auth is not configured")
-        
+    """
+    What it does: HTTP endpoint that Google redirects back to after user consent.
+    Args:
+        request (Request): The incoming request.
+        code (str): The OAuth code.
+    Returns: A redirect to the frontend with the access token.
+    """
     base_url = str(request.base_url).rstrip("/")
-    redirect_uri = f"{base_url}/auth/google/callback"
-    
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "code": code,
-        "grant_type": "authorization_code",
-        "redirect_uri": redirect_uri
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(token_url, data=data)
-        token_data = response.json()
-        
-        if "error" in token_data:
-            raise HTTPException(status_code=400, detail=token_data.get("error_description", "Failed to fetch token"))
-            
-        access_token = token_data["access_token"]
-        
-        user_info_response = await client.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-        user_info = user_info_response.json()
-        
-    email = user_info.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Failed to fetch email from Google")
-        
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id FROM public.users WHERE email = %s", (email,))
-        user = cur.fetchone()
-        
-        if not user:
-            dummy_password_hash = get_password_hash(secrets.token_urlsafe(32))
-            cur.execute("""
-                INSERT INTO public.users (email, password_hash, is_verified)
-                VALUES (%s, %s, TRUE) RETURNING id
-            """, (email, dummy_password_hash))
-            user_id = str(cur.fetchone()[0])
-        else:
-            user_id = str(user['id'])
-            cur.execute("UPDATE public.users SET is_verified = TRUE WHERE id = %s", (user_id,))
-            
-        create_default_workspace(cur, user_id, email)
-        conn.commit()
-        
-        jwt_token = create_access_token(user_id=user_id, email=email)
-        
-        frontend_redirect = FRONTEND_URL
-        if frontend_redirect == "*":
-            frontend_redirect = "http://localhost:5173"
-        elif "," in frontend_redirect:
-            if "localhost" in str(request.url) or "127.0.0.1" in str(request.url):
-                frontend_redirect = "http://localhost:5173"
-            else:
-                frontend_redirect = "https://blinkbot.in"
-        return RedirectResponse(f"{frontend_redirect}/auth/callback?token={jwt_token}")
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
-def generate_otp():
-    return str(secrets.randbelow(900000) + 100000)
+    request_url = str(request.url)
+    redirect_url = await handle_google_callback(base_url, request_url, code)
+    return RedirectResponse(redirect_url)
+
 
 @router.post("/register")
 @limiter.limit("5/minute")
 async def register(request: Request, payload: UserRegister):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT id FROM public.users WHERE email = %s", (payload.email,))
-        if cur.fetchone():
-            raise HTTPException(status_code=400, detail="Email already registered")
+    """
+    What it does: HTTP endpoint to register a new user and trigger an OTP email.
+    Args:
+        request (Request): The incoming request.
+        payload (UserRegister): The user's registration details.
+    Returns: A success message.
+    """
+    return await handle_register(payload.email, payload.password)
 
-        hashed_password = get_password_hash(payload.password)
-        otp = generate_otp()
-        otp_expiry = datetime.utcnow() + timedelta(minutes=10)
-
-        cur.execute("""
-            INSERT INTO public.users (email, password_hash, otp_secret, otp_expires_at, is_verified)
-            VALUES (%s, %s, %s, %s, FALSE) RETURNING id
-        """, (payload.email, hashed_password, otp, otp_expiry))
-        user_id = cur.fetchone()[0]
-        conn.commit()
-
-        send_otp_email(payload.email, otp)
-        return {"message": "User registered. Please check your email for the OTP.", "user_id": user_id, "requires_otp": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
 
 @router.post("/verify-otp")
 @limiter.limit("5/minute")
 async def verify_otp(request: Request, payload: VerifyOTP):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, otp_secret, otp_expires_at, is_verified FROM public.users WHERE email = %s", (payload.email,))
-        user = cur.fetchone()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        if user['is_verified']:
-            raise HTTPException(status_code=400, detail="User already verified")
-        if user['otp_secret'] != payload.otp:
-            raise HTTPException(status_code=400, detail="Invalid OTP")
-        
-        # Check expiry timezone safely
-        expiry = user['otp_expires_at']
-        if expiry.tzinfo:
-            expiry = expiry.replace(tzinfo=None)
-            
-        if expiry < datetime.utcnow():
-            raise HTTPException(status_code=400, detail="OTP expired")
+    """
+    What it does: HTTP endpoint to verify the email OTP during registration.
+    Args:
+        request (Request): The incoming request.
+        payload (VerifyOTP): The OTP details.
+    Returns: The access token and user info.
+    """
+    return await handle_verify_otp(payload.email, payload.otp)
 
-        # Mark verified
-        cur.execute("UPDATE public.users SET is_verified = TRUE, otp_secret = NULL, otp_expires_at = NULL WHERE id = %s", (user['id'],))
-        
-        create_default_workspace(cur, str(user['id']), payload.email)
-        conn.commit()
-
-        access_token = create_access_token(user_id=str(user['id']), email=payload.email)
-        return {
-            "access_token": access_token, 
-            "token_type": "bearer", 
-            "user": {"id": str(user['id']), "email": payload.email}
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
 
 @router.post("/login")
 @limiter.limit("10/minute")
 async def login(request: Request, payload: UserLogin):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, password_hash, is_verified, two_factor_enabled FROM public.users WHERE email = %s", (payload.email,))
-        user = cur.fetchone()
-        
-        if not user or not verify_password(payload.password, user['password_hash']):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+    """
+    What it does: HTTP endpoint to log a user in.
+    Args:
+        request (Request): The incoming request.
+        payload (UserLogin): The login details.
+    Returns: The access token or a 2FA requirement flag.
+    """
+    return await handle_login(payload.email, payload.password)
 
-        if not user['is_verified']:
-            # Resend OTP
-            otp = generate_otp()
-            otp_expiry = datetime.utcnow() + timedelta(minutes=10)
-            cur.execute("UPDATE public.users SET otp_secret = %s, otp_expires_at = %s WHERE id = %s", (otp, otp_expiry, user['id']))
-            conn.commit()
-            send_otp_email(payload.email, otp)
-            return {"message": "Account not verified. A new OTP has been sent to your email.", "requires_otp": True}
-            
-        create_default_workspace(cur, str(user['id']), payload.email)
-        conn.commit()
-
-        if user.get('two_factor_enabled'):
-            return {"requires_2fa": True, "user_id": str(user['id'])}
-
-        access_token = create_access_token(user_id=str(user['id']), email=payload.email)
-        return {
-            "access_token": access_token, 
-            "token_type": "bearer", 
-            "user": {"id": str(user['id']), "email": payload.email}
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
 
 @router.post("/forgot-password")
 @limiter.limit("3/minute")
 async def forgot_password(request: Request, payload: ForgotPassword):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, is_verified FROM public.users WHERE email = %s", (payload.email,))
-        user = cur.fetchone()
-        
-        if not user:
-            return {"message": "If that email exists, we've sent a password reset link."}
-            
-        otp = generate_otp()
-        otp_expiry = datetime.utcnow() + timedelta(minutes=10)
-        
-        cur.execute("UPDATE public.users SET otp_secret = %s, otp_expires_at = %s WHERE id = %s", (otp, otp_expiry, user['id']))
-        conn.commit()
-        
-        send_password_reset_email(payload.email, otp)
-        return {"message": "If that email exists, we've sent a password reset link."}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+    """
+    What it does: HTTP endpoint to trigger a password reset email.
+    Args:
+        request (Request): The incoming request.
+        payload (ForgotPassword): The user's email.
+    Returns: A generic success message.
+    """
+    return await handle_forgot_password(payload.email)
+
 
 @router.post("/reset-password")
 @limiter.limit("5/minute")
 async def reset_password(request: Request, payload: ResetPassword):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT id, otp_secret, otp_expires_at FROM public.users WHERE email = %s", (payload.email,))
-        user = cur.fetchone()
-        
-        if not user:
-            raise HTTPException(status_code=400, detail="Invalid request")
-            
-        if user['otp_secret'] != payload.token:
-            raise HTTPException(status_code=400, detail="Invalid OTP")
-            
-        expiry = user['otp_expires_at']
-        if expiry.tzinfo:
-            expiry = expiry.replace(tzinfo=None)
-            
-        if expiry < datetime.utcnow():
-            raise HTTPException(status_code=400, detail="OTP expired")
-            
-        hashed_password = get_password_hash(payload.new_password)
-        
-        cur.execute("""
-            UPDATE public.users 
-            SET password_hash = %s, otp_secret = NULL, otp_expires_at = NULL, is_verified = TRUE 
-            WHERE id = %s
-        """, (hashed_password, user['id']))
-        conn.commit()
-        
-        return {"message": "Password reset successfully. You can now log in."}
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+    """
+    What it does: HTTP endpoint to finalize a password reset.
+    Args:
+        request (Request): The incoming request.
+        payload (ResetPassword): The reset details.
+    Returns: A success message.
+    """
+    return await handle_reset_password(payload.email, payload.token, payload.new_password)
+
 
 @router.post("/2fa/setup")
 async def setup_2fa(request: Request, payload: dict):
     """
-    Generates a secure Base32 TOTP secret and returns the provision URI for 
-    apps like Google Authenticator or Authy.
+    What it does: HTTP endpoint to generate a new 2FA setup QR code/URI.
+    Args:
+        request (Request): The incoming request.
+        payload (dict): The user ID.
+    Returns: The provisioning URI and secret.
     """
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=400, detail="User ID required")
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT two_factor_enabled FROM user_settings WHERE user_id = %s", (user_id,))
-        settings = cur.fetchone()
-        if settings and settings['two_factor_enabled']:
-            raise HTTPException(status_code=400, detail="2FA already enabled")
-            
-        # Get email from auth.users or fallback to public.users
-        cur.execute("SELECT email FROM auth.users WHERE id = %s", (user_id,))
-        auth_user = cur.fetchone()
-        email = auth_user['email'] if auth_user else None
-        
-        if not email:
-            cur.execute("SELECT email FROM public.users WHERE id = %s", (user_id,))
-            legacy_user = cur.fetchone()
-            if not legacy_user:
-                raise HTTPException(status_code=404, detail="User not found")
-            email = legacy_user['email']
-            
-        secret = pyotp.random_base32()
-        
-        if not settings:
-            cur.execute("INSERT INTO user_settings (user_id, totp_secret) VALUES (%s, %s)", (user_id, secret))
-        else:
-            cur.execute("UPDATE user_settings SET totp_secret = %s WHERE user_id = %s", (secret, user_id))
-            
-        # Keep legacy table in sync just in case
-        cur.execute("UPDATE public.users SET totp_secret = %s WHERE id = %s", (secret, user_id))
-        conn.commit()
-        
-        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name="BlinkBot")
-        return {"provisioning_uri": uri, "secret": secret}
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+    return await handle_setup_2fa(payload.get("user_id"))
+
 
 @router.post("/2fa/verify-setup")
 async def verify_2fa_setup(request: Request, payload: dict):
-    user_id = payload.get("user_id")
-    totp_code = payload.get("totp_code")
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT totp_secret FROM user_settings WHERE user_id = %s", (user_id,))
-        settings = cur.fetchone()
-        
-        secret = settings['totp_secret'] if settings and settings['totp_secret'] else None
-        if not secret:
-            cur.execute("SELECT totp_secret FROM public.users WHERE id = %s", (user_id,))
-            legacy_user = cur.fetchone()
-            if not legacy_user or not legacy_user['totp_secret']:
-                raise HTTPException(status_code=400, detail="2FA setup not initiated")
-            secret = legacy_user['totp_secret']
-            
-        totp = pyotp.TOTP(secret)
-        if not totp.verify(totp_code):
-            raise HTTPException(status_code=400, detail="Invalid OTP code")
-            
-        # The user_settings table has its own boolean
-        if not settings:
-            cur.execute("INSERT INTO user_settings (user_id, two_factor_enabled, totp_secret) VALUES (%s, TRUE, %s)", (user_id, secret))
-        else:
-            cur.execute("UPDATE user_settings SET two_factor_enabled = TRUE, totp_secret = %s WHERE user_id = %s", (secret, user_id))
-            
-        cur.execute("UPDATE public.users SET two_factor_enabled = TRUE, totp_secret = %s WHERE id = %s", (secret, user_id))
-        conn.commit()
-        return {"message": "2FA successfully enabled"}
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+    """
+    What it does: HTTP endpoint to verify the first 2FA code and finalize setup.
+    Args:
+        request (Request): The incoming request.
+        payload (dict): The user ID and TOTP code.
+    Returns: A success message.
+    """
+    return await handle_verify_2fa_setup(payload.get("user_id"), payload.get("totp_code"))
+
 
 @router.post("/login/2fa")
 @limiter.limit("5/minute")
 async def login_2fa(request: Request, payload: Login2FA):
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    try:
-        cur.execute("SELECT totp_secret FROM user_settings WHERE user_id = %s", (payload.user_id,))
-        settings = cur.fetchone()
-        
-        cur.execute("SELECT email, totp_secret FROM public.users WHERE id = %s", (payload.user_id,))
-        legacy_user = cur.fetchone()
-        
-        secret = settings['totp_secret'] if settings and settings['totp_secret'] else None
-        if not secret and legacy_user:
-            secret = legacy_user['totp_secret']
-            
-        if not secret:
-            raise HTTPException(status_code=400, detail="Invalid request or 2FA not setup")
-            
-        totp = pyotp.TOTP(secret)
-        if not totp.verify(payload.totp_code):
-            raise HTTPException(status_code=401, detail="Invalid Authenticator code")
-            
-        cur.execute("SELECT email FROM auth.users WHERE id = %s", (payload.user_id,))
-        auth_user = cur.fetchone()
-        email = auth_user['email'] if auth_user else (legacy_user['email'] if legacy_user else None)
-        
-        if not email:
-            raise HTTPException(status_code=404, detail="User not found")
-            
-        access_token = create_access_token(user_id=payload.user_id, email=email)
-        return {
-            "access_token": access_token, 
-            "token_type": "bearer", 
-            "user": {"id": payload.user_id, "email": email}
-        }
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cur.close()
-        conn.close()
+    """
+    What it does: HTTP endpoint to process a 2FA login attempt.
+    Args:
+        request (Request): The incoming request.
+        payload (Login2FA): The login details.
+    Returns: The access token and user info.
+    """
+    return await handle_login_2fa(payload.user_id, payload.totp_code)

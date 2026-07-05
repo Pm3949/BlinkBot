@@ -54,7 +54,6 @@ export function useChatMutations() {
     mutationFn: async ({ agentId, title = "New chat" }) => {
       const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
       const data = await createChatSession({
-        user_id: user.id,
         workspace_id: activeWorkspaceId,
         agent_id: agentId || null,
         title

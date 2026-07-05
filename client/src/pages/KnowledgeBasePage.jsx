@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { usePrimaryWorkspace, useWorkspacePermissions } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
+import { getAuthHeaders } from "../lib/api";
 import { useAgents, useAgentProjects, useProjectSubAgents } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
@@ -221,7 +222,9 @@ export default function KnowledgeBasePage() {
       const fetchTokenAndOpenPicker = async () => {
         try {
           const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
-          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token?user_id=${user.id}`);
+          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token`, {
+            headers: getAuthHeaders()
+          });
           if (resp.ok) {
             const data = await resp.json();
             openGooglePicker(data.access_token, data.api_key, data.client_id);
@@ -235,6 +238,41 @@ export default function KnowledgeBasePage() {
       fetchTokenAndOpenPicker();
     }
   }, [searchParams, selectedAgentId, user, canManageDatabase]);
+
+  // WebSocket for Document Ingestion Status Updates
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    const wsBaseUrl = API_URL.replace(/^http/, "ws");
+    const ws = new WebSocket(`${wsBaseUrl}/ws/documents/upload/status/${selectedAgentId}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const { status, filename, detail, progress } = data;
+        
+        if (status === "chunking") {
+          toast.loading(`Chunking ${filename}...`, { id: filename });
+        } else if (status === "embeddings") {
+          toast.loading(`Generating embeddings for ${filename}...`, { id: filename });
+        } else if (status === "indexing") {
+          toast.loading(`Indexing ${filename} into database...`, { id: filename });
+        } else if (status === "completed") {
+          toast.success(`Successfully processed ${filename}!`, { id: filename });
+          queryClient.invalidateQueries({ queryKey: ["documents", selectedAgentId] });
+        } else if (status === "failed") {
+          toast.error(`Processing failed for ${filename}: ${detail}`, { id: filename });
+          queryClient.invalidateQueries({ queryKey: ["documents", selectedAgentId] });
+        }
+      } catch (err) {
+        console.error("Error parsing websocket message:", err);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [selectedAgentId, queryClient]);
 
   const filteredDocuments = useMemo(() => {
     const normalizedSearch =
@@ -354,7 +392,9 @@ export default function KnowledgeBasePage() {
         setConnectingTo("gdrive");
         try {
           const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
-          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token?user_id=${user.id}`);
+          const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/token`, {
+            headers: getAuthHeaders()
+          });
           if (resp.ok) {
             const data = await resp.json();
             openGooglePicker(data.access_token, data.api_key, data.client_id);
@@ -421,10 +461,9 @@ export default function KnowledgeBasePage() {
                     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.blinkbot.in";
                     const resp = await fetch(`${API_BASE_URL}/api/v1/connectors/google/import`, {
                       method: "POST",
-                      headers: { "Content-Type": "application/json" },
+                      headers: getAuthHeaders(),
                       body: JSON.stringify({
                         agent_id: selectedAgentId,
-                        user_id: user.id,
                         files: files
                       })
                     });
@@ -432,7 +471,7 @@ export default function KnowledgeBasePage() {
                     const resData = await resp.json();
                     if (resp.ok) {
                       toast.success(resData.message, { id: "sync-toast" });
-                      queryClient.invalidateQueries(["documents", selectedAgentId]);
+                      queryClient.invalidateQueries({ queryKey: ["documents", selectedAgentId] });
                     } else {
                       toast.error(resData.detail || "Failed to import selected files.", { id: "sync-toast" });
                     }
@@ -980,14 +1019,14 @@ export default function KnowledgeBasePage() {
             <div className="flex-1 p-6 overflow-hidden flex items-center justify-center">
               {previewDoc && getDocumentType(previewDoc) === "PDF" && (
                 <iframe 
-                  src={`${API_URL}/uploads/${previewDoc.filename}`} 
+                  src={`${API_URL}/api/documents/${previewDoc.id}/view?token=${encodeURIComponent(localStorage.getItem("access_token") || "")}`} 
                   className="w-full h-full rounded-lg border border-border bg-white"
                   title="PDF Preview"
                 />
               )}
               {previewDoc && ["PNG", "JPG", "JPEG"].includes(getDocumentType(previewDoc)) && (
                 <img 
-                  src={`${API_URL}/uploads/${previewDoc.filename}`} 
+                  src={`${API_URL}/api/documents/${previewDoc.id}/view?token=${encodeURIComponent(localStorage.getItem("access_token") || "")}`} 
                   alt="Preview" 
                   className="max-w-full max-h-full object-contain rounded-lg border border-border"
                 />
@@ -999,3 +1038,7 @@ export default function KnowledgeBasePage() {
     </div>
   );
 }
+
+
+
+

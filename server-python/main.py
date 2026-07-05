@@ -230,8 +230,16 @@ scheduler.add_job(cleanup_old_chat_data, 'cron', hour=0, minute=0)
 
 # Hook the scheduler into FastAPI's lifecycle events
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     scheduler.start()
+    
+    # Auto-resume any interrupted document ingestion tasks on startup
+    try:
+        from handlers.document_processor import resume_interrupted_uploads
+        resume_interrupted_uploads()
+    except Exception as e:
+        logger.error(f"Failed to resume interrupted uploads on startup: {e}")
+
 
 @app.on_event("shutdown")
 def shutdown_event():

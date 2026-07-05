@@ -1,10 +1,21 @@
 import logging
-import json
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends
-from database import get_db_connection
-from core.security import encrypt_key, decrypt_key
+from fastapi import APIRouter, Depends
+from core.auth import get_current_user
+
+from handlers.agent_handler import (
+    handle_get_agents,
+    handle_create_agent,
+    handle_update_agent,
+    handle_create_agent_project,
+    handle_get_agent_projects,
+    handle_get_project_sub_agents,
+    handle_delete_agent_project,
+    handle_get_project_tools,
+    handle_update_project_tool,
+    handle_create_project_tool
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +32,6 @@ class AgentCreate(BaseModel):
     output_format: Optional[str] = ""
     api_key: Optional[str] = ""
     language: Optional[str] = "en"
-    user_id: str
     workspace_id: str
     web_search_enabled: bool = False
     project_id: Optional[str] = None
@@ -43,500 +53,123 @@ class AgentUpdate(BaseModel):
     is_active: Optional[bool] = None
     endpoints: Optional[list] = None
 
-@router.get("/api/agents")
-async def get_agents(workspace_id: str, include_gateways: bool = False):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        if include_gateways:
-            condition = "WHERE workspace_id = %s AND (project_id IS NULL OR parent_agent_id IS NULL)"
-        else:
-            condition = "WHERE workspace_id = %s AND project_id IS NULL"
-            
-        cursor.execute(
-            f"""
-            SELECT id, name, description, llm_provider, llm_model, 
-                   embedding_model, chunk_strategy, system_prompt, 
-                   api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, project_id, is_active, output_format
-            FROM agents 
-            {condition}
-            ORDER BY created_at DESC
-            """,
-            (workspace_id,)
-        )
-        rows = cursor.fetchall()
-        
-        agents = []
-        for row in rows:
-            agents.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "llm_provider": row[3],
-                "llm_model": row[4],
-                "embedding_model": row[5],
-                "chunk_strategy": row[6],
-                "system_prompt": row[7],
-                "api_key": decrypt_key(row[8]) or "",
-                "language": row[9],
-                "user_id": row[10],
-                "workspace_id": row[11],
-                "created_at": row[12].isoformat() if row[12] else None,
-                "web_search_enabled": row[13],
-                "project_id": row[14],
-                "is_active": row[15],
-                "output_format": row[16]
-            })
-            
-        return agents
-    except Exception as e:
-        logger.error(f"Error fetching agents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.post("/api/agents")
-async def create_agent(agent: AgentCreate):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            INSERT INTO agents (name, description, llm_provider, llm_model, 
-                              embedding_model, chunk_strategy, system_prompt, output_format, 
-                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, name, description, llm_provider, llm_model, 
-                      embedding_model, chunk_strategy, system_prompt, output_format, 
-                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints;
-            """,
-            (agent.name, agent.description, agent.llm_provider, agent.llm_model,
-             agent.embedding_model, agent.chunk_strategy, agent.system_prompt, agent.output_format,
-             encrypt_key(agent.api_key), agent.language, agent.user_id, agent.workspace_id, agent.web_search_enabled, agent.project_id, agent.parent_agent_id, json.dumps(agent.endpoints))
-        )
-        row = cursor.fetchone()
-        conn.commit()
-        
-        return {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2],
-            "llm_provider": row[3],
-            "llm_model": row[4],
-            "embedding_model": row[5],
-            "chunk_strategy": row[6],
-            "system_prompt": row[7],
-            "output_format": row[8],
-            "api_key": decrypt_key(row[9]) or "",
-            "language": row[10],
-            "user_id": row[11],
-            "workspace_id": row[12],
-            "created_at": row[13].isoformat() if row[13] else None,
-            "web_search_enabled": row[14],
-            "endpoints": row[17] if len(row) > 17 else []
-        }
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error creating agent: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.put("/api/agents/{agent_id}")
-async def update_agent(agent_id: str, payload: dict):
-    import json
-    conn = None
-    cursor = None
-    try:
-        if not payload:
-            return {}
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # We build the update query dynamically
-        set_clauses = []
-        values = []
-        for key, value in payload.items():
-            # Allow only valid columns to be updated
-            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints"]:
-                set_clauses.append(f"{key} = %s")
-                if key == "api_key":
-                    values.append(encrypt_key(value))
-                elif key == "endpoints":
-                    values.append(json.dumps(value))
-                else:
-                    values.append(value)
-                
-        if not set_clauses:
-            raise HTTPException(status_code=400, detail="No valid fields to update")
-            
-        values.append(agent_id)
-        
-        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints;"
-        
-        cursor.execute(query, tuple(values))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Agent not found")
-            
-        # Insert Notification
-        cursor.execute(
-            """
-            INSERT INTO notifications (workspace_id, title, message, type)
-            VALUES (%s, %s, %s, 'agent_setting_updated');
-            """,
-            (
-                row[12], # workspace_id
-                "Agent Settings Updated",
-                f"Settings for agent '{row[1]}' were updated."
-            )
-        )
-            
-        conn.commit()
-        
-        return {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2],
-            "llm_provider": row[3],
-            "llm_model": row[4],
-            "embedding_model": row[5],
-            "chunk_strategy": row[6],
-            "system_prompt": row[7],
-            "output_format": row[8],
-            "api_key": decrypt_key(row[9]) or "",
-            "language": row[10],
-            "user_id": row[11],
-            "workspace_id": row[12],
-            "created_at": row[13].isoformat() if row[13] else None,
-            "web_search_enabled": row[14],
-            "is_active": row[15],
-            "endpoints": row[16] if len(row) > 16 else []
-        }
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error updating agent: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
 class AgentProjectCreate(BaseModel):
     name: str
     description: Optional[str] = ""
     workspace_id: str
-    user_id: str
-
-@router.post("/api/agent-projects")
-async def create_agent_project(project: AgentProjectCreate):
-    import json
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 1. Create the Project
-        cursor.execute(
-            """
-            INSERT INTO agent_projects (name, description, status, workspace_id, blueprint_json)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id;
-            """,
-            (project.name, project.description, "active", project.workspace_id, json.dumps({}))
-        )
-        project_id = cursor.fetchone()[0]
-        
-        # 2. Create the default Master Agent (Router) for this project
-        cursor.execute(
-            """
-            INSERT INTO agents (name, description, llm_provider, llm_model, 
-                              embedding_model, chunk_strategy, system_prompt, output_format, 
-                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id;
-            """,
-            (
-                f"{project.name} Master", 
-                "The central router agent for this network.", 
-                "groq", 
-                "llama-3.1-8b-instant",
-                "all-MiniLM-L6-v2", 
-                "sentence", 
-                "You are the master coordinator for this network. Analyze user requests and delegate to your sub-agents as necessary.", 
-                "",
-                encrypt_key(""), 
-                "en", 
-                project.user_id, 
-                project.workspace_id, 
-                False, 
-                project_id, 
-                None, 
-                json.dumps([])
-            )
-        )
-        
-        conn.commit()
-        return {"status": "success", "id": project_id}
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error creating agent project: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.get("/api/agent-projects")
-async def get_agent_projects(workspace_id: str):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT id, name, description, status, created_at, blueprint_json
-            FROM agent_projects 
-            WHERE workspace_id = %s 
-            ORDER BY created_at DESC
-            """,
-            (workspace_id,)
-        )
-        rows = cursor.fetchall()
-        
-        projects = []
-        for row in rows:
-            projects.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "status": row[3],
-                "created_at": row[4].isoformat() if row[4] else None,
-                "blueprint": row[5]
-            })
-            
-        return projects
-    except Exception as e:
-        logger.error(f"Error fetching agent projects: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.get("/api/agent-projects/{project_id}/sub-agents")
-async def get_project_sub_agents(project_id: str):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """
-            SELECT id, name, description, llm_provider, llm_model, 
-                   embedding_model, chunk_strategy, system_prompt, 
-                   api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints
-            FROM agents 
-            WHERE project_id = %s 
-            ORDER BY created_at ASC
-            """,
-            (project_id,)
-        )
-        rows = cursor.fetchall()
-        
-        agents = []
-        for row in rows:
-            agents.append({
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "llm_provider": row[3],
-                "llm_model": row[4],
-                "embedding_model": row[5],
-                "chunk_strategy": row[6],
-                "system_prompt": row[7],
-                "api_key": decrypt_key(row[8]) or "",
-                "language": row[9],
-                "user_id": row[10],
-                "workspace_id": row[11],
-                "created_at": row[12].isoformat() if row[12] else None,
-                "web_search_enabled": row[13],
-                "parent_agent_id": row[14],
-                "is_active": row[15],
-                "output_format": row[16],
-                "endpoints": row[17] if len(row) > 17 else []
-            })
-            
-        return agents
-    except Exception as e:
-        logger.error(f"Error fetching sub-agents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.delete("/api/agent-projects/{project_id}")
-async def delete_agent_project(project_id: str):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Delete all document embeddings linked to the project or its agents
-        cursor.execute("""
-            DELETE FROM document_embeddings
-            WHERE document_id IN (
-                SELECT id FROM documents WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
-                OR project_id = %s
-            )
-        """, (project_id, project_id))
-        
-        # Delete all documents linked to the project or its agents
-        cursor.execute("DELETE FROM documents WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s) OR project_id = %s", (project_id, project_id))
-        
-        # Delete all chat messages linked to the project's agents
-        cursor.execute("""
-            DELETE FROM chat_messages 
-            WHERE session_id IN (
-                SELECT id FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
-            )
-        """, (project_id,))
-        
-        # Delete all chat sessions linked to the project's agents
-        cursor.execute("DELETE FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)", (project_id,))
-        
-        # Delete all agents linked to the project
-        cursor.execute("DELETE FROM agents WHERE project_id = %s", (project_id,))
-
-        cursor.execute("DELETE FROM agent_projects WHERE id = %s", (project_id,))
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Project not found")
-            
-        conn.commit()
-        return {"status": "success", "message": "Project deleted successfully"}
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error deleting project: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-class ToolUpdate(BaseModel):
-    name: str
-    config: dict
-
-@router.get("/api/agent-projects/{project_id}/tools")
-async def get_project_tools(project_id: str):
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, name, config, blueprint_tool_id FROM agent_tools WHERE project_id = %s ORDER BY created_at ASC",
-            (project_id,)
-        )
-        rows = cursor.fetchall()
-        tools = []
-        for row in rows:
-            tools.append({
-                "id": row[0],
-                "name": row[1],
-                "config": row[2] if isinstance(row[2], dict) else {},
-                "blueprint_tool_id": row[3]
-            })
-        return tools
-    except Exception as e:
-        logger.error(f"Error fetching tools: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
-
-@router.put("/api/tools/{tool_id}")
-async def update_project_tool(tool_id: str, payload: ToolUpdate):
-    import json
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            "UPDATE agent_tools SET name = %s, config = %s WHERE id = %s RETURNING id;",
-            (payload.name, json.dumps(payload.config), tool_id)
-        )
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Tool not found")
-            
-        conn.commit()
-        return {"status": "success"}
-    except HTTPException:
-        if conn: conn.rollback()
-        raise
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error updating tool: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
 
 class ToolCreate(BaseModel):
     name: str
     config: dict
 
-@router.post("/api/agent-projects/{project_id}/tools")
-async def create_project_tool(project_id: str, payload: ToolCreate):
-    import json
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT workspace_id FROM agent_projects WHERE id = %s", (project_id,))
-        project_row = cursor.fetchone()
-        if not project_row:
-            raise HTTPException(status_code=404, detail="Project not found")
-            
-        workspace_id = project_row[0]
+class ToolUpdate(BaseModel):
+    name: str
+    config: dict
 
-        cursor.execute(
-            """
-            INSERT INTO agent_tools (project_id, workspace_id, blueprint_tool_id, name, config)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id;
-            """,
-            (project_id, workspace_id, "custom_tool_" + payload.name.lower().replace(" ", "_"), payload.name, json.dumps(payload.config))
-        )
-        tool_id = cursor.fetchone()[0]
-        conn.commit()
-        return {"status": "success", "id": tool_id}
-    except Exception as e:
-        if conn: conn.rollback()
-        logger.error(f"Error creating tool: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if cursor: cursor.close()
-        if conn: conn.close()
+@router.get("/api/agents")
+async def get_agents(workspace_id: str, include_gateways: bool = False, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to retrieve a list of AI agents for a workspace.
+    Args:
+        workspace_id (str): The workspace to query.
+        include_gateways (bool): Whether to include master router agents.
+    Returns: A list of agents.
+    """
+    return await handle_get_agents(workspace_id, include_gateways)
+
+@router.post("/api/agents")
+async def create_agent(agent: AgentCreate, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to create a new AI agent.
+    Args:
+        agent (AgentCreate): The validated JSON payload containing the agent configuration.
+    Returns: The newly created agent data.
+    """
+    data = agent.dict()
+    data["user_id"] = current_user["sub"]
+    return await handle_create_agent(data)
+
+@router.put("/api/agents/{agent_id}")
+async def update_agent(agent_id: str, payload: dict, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to dynamically update an agent's settings.
+    Args:
+        agent_id (str): The ID of the agent to edit.
+        payload (dict): A dictionary of the fields to update.
+    Returns: The updated agent data.
+    """
+    return await handle_update_agent(agent_id, payload)
+
+@router.post("/api/agent-projects")
+async def create_agent_project(project: AgentProjectCreate, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to create a new Multi-Agent Project and its master router.
+    Args:
+        project (AgentProjectCreate): The new project details.
+    Returns: A success object with the new project ID.
+    """
+    return await handle_create_agent_project(
+        project.name, project.description, project.workspace_id, current_user["sub"]
+    )
+
+@router.get("/api/agent-projects")
+async def get_agent_projects(workspace_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to list all projects in a workspace.
+    Args:
+        workspace_id (str): The workspace to query.
+    Returns: A list of projects.
+    """
+    return await handle_get_agent_projects(workspace_id)
+
+@router.get("/api/agent-projects/{project_id}/sub-agents")
+async def get_project_sub_agents(project_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to list all agents tied to a specific project.
+    Args:
+        project_id (str): The project to query.
+    Returns: A list of agents.
+    """
+    return await handle_get_project_sub_agents(project_id)
+
+@router.delete("/api/agent-projects/{project_id}")
+async def delete_agent_project(project_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to entirely delete a project and all its data.
+    Args:
+        project_id (str): The project to destroy.
+    Returns: A success message.
+    """
+    return await handle_delete_agent_project(project_id)
+
+@router.get("/api/agent-projects/{project_id}/tools")
+async def get_project_tools(project_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to retrieve the tools configured for a project.
+    Args:
+        project_id (str): The project to query.
+    Returns: A list of tools.
+    """
+    return await handle_get_project_tools(project_id)
+
+@router.put("/api/tools/{tool_id}")
+async def update_project_tool(tool_id: str, payload: ToolUpdate, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to modify an existing custom tool.
+    Args:
+        tool_id (str): The ID of the tool to update.
+        payload (ToolUpdate): The new tool name and config.
+    Returns: A success message.
+    """
+    return await handle_update_project_tool(tool_id, payload.name, payload.config)
+
+@router.post("/api/agent-projects/{project_id}/tools")
+async def create_project_tool(project_id: str, payload: ToolCreate, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to create a new custom tool.
+    Args:
+        project_id (str): The project to attach the tool to.
+        payload (ToolCreate): The tool name and config.
+    Returns: A success object with the new tool ID.
+    """
+    return await handle_create_project_tool(project_id, payload.name, payload.config)

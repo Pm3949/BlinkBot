@@ -4,6 +4,7 @@ import { Network, FileText, Key, CheckCircle2, Bot, Settings, Loader2 } from 'lu
 import { useForm } from 'react-hook-form';
 import AgentSettingsModal from '../agents/AgentSettingsModal';
 import { toast } from 'sonner';
+import { getAuthHeaders } from '../../lib/api';
 
 export default function BlueprintConfigurator({ blueprint, deployData, onFinish }) {
   const { register, handleSubmit, watch } = useForm();
@@ -21,7 +22,7 @@ export default function BlueprintConfigurator({ blueprint, deployData, onFinish 
           config.is_enabled = data.enabled_tools?.[blueprintToolId] !== false;
           return fetch(`${import.meta.env.VITE_API_BASE_URL}/api/tools/${dbToolId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ name: toolDetails.name, config })
           });
         }

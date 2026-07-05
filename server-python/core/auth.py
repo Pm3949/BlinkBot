@@ -184,3 +184,29 @@ def send_password_reset_email(to_email: str, otp: str):
         print(f"Password reset email sent successfully to {to_email}")
     except Exception as e:
         print(f"Failed to send email to {to_email}: {e}")
+
+# ==========================================
+# AUTHENTICATION DEPENDENCY
+# ==========================================
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer(auto_error=False)
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """
+    Dependency to verify the incoming JWT bearer token using SUPABASE_JWT_SECRET.
+    Returns the decoded payload if valid.
+    """
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Missing authorization credentials")
+    
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+

@@ -1,4 +1,5 @@
 import { supabase } from "../supabaseClient";
+import { getAuthHeaders } from "../lib/api";
 
 async function getAuthenticatedUser() {
   const userStr = localStorage.getItem("user");
@@ -9,7 +10,9 @@ async function getAuthenticatedUser() {
 export async function getSubscription() {
   const user = await getAuthenticatedUser();
 
-  const response = await fetch(`${API_URL}/api/billing/subscription/${user.id}`);
+  const response = await fetch(`${API_URL}/api/billing/subscription`, {
+    headers: getAuthHeaders()
+  });
 
   if (!response.ok) {
     throw new Error("Failed to fetch subscription");
@@ -43,7 +46,6 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
   }
 
   const payload = {
-    user_id: user.id,
     plan_tier: planTier,
     billing_cycle: billingCycle,
     workspaces_limit: limits.workspaces || 1,
@@ -56,7 +58,7 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
 
   const response = await fetch(`${API_URL}/create-razorpay-order`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -80,7 +82,7 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
           // Verify payment
           const verifyRes = await fetch(`${API_URL}/razorpay/verify`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders(),
             body: JSON.stringify({
               ...payload,
               razorpay_order_id: response.razorpay_order_id,

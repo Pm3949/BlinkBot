@@ -3,6 +3,7 @@ import { Bell, Check, Trash2 } from "lucide-react";
 import { supabase } from "../../supabaseClient";
 import { toast } from "sonner";
 import { useUIStore } from "../../store/useUIStore";
+import { getAuthHeaders } from "../../lib/api";
 
 export default function NotificationBell() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
@@ -13,11 +14,14 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!activeWorkspaceId) return;
 
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
     // Fetch initial notifications
     const fetchNotifications = async () => {
       try {
-        const API_BASE = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
-        const res = await fetch(`${API_BASE}/api/notifications?workspace_id=${activeWorkspaceId}`);
+        const res = await fetch(`${API_BASE}/api/notifications?workspace_id=${activeWorkspaceId}`, {
+          headers: getAuthHeaders()
+        });
         if (res.ok) {
           const data = await res.json();
           setNotifications(data);
@@ -28,28 +32,24 @@ export default function NotificationBell() {
     };
     fetchNotifications();
 
-    // Subscribe to realtime inserts
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `workspace_id=eq.${activeWorkspaceId}`
-        },
-        (payload) => {
-          setNotifications((prev) => [payload.new, ...prev]);
-          toast.info(payload.new.title, {
-            description: payload.new.message
-          });
-        }
-      )
-      .subscribe();
+    // Subscribe to backend WebSocket notifications channel
+    const wsBaseUrl = API_BASE.replace(/^http/, "ws");
+    const ws = new WebSocket(`${wsBaseUrl}/ws/notifications/${activeWorkspaceId}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const newNotification = JSON.parse(event.data);
+        setNotifications((prev) => [newNotification, ...prev]);
+        toast.info(newNotification.title, {
+          description: newNotification.message
+        });
+      } catch (err) {
+        console.error("Failed to parse incoming notification", err);
+      }
+    };
 
     return () => {
-      supabase.removeChannel(channel);
+      ws.close();
     };
   }, [activeWorkspaceId]);
 
@@ -68,7 +68,8 @@ export default function NotificationBell() {
     try {
       const API_BASE = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
       await fetch(`${API_BASE}/api/notifications/${id}/read`, {
-        method: "PUT"
+        method: "PUT",
+        headers: getAuthHeaders()
       });
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (err) {
