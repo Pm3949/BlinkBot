@@ -228,7 +228,7 @@ export default function ChatPage() {
               />
             ))}
 
-            {loading && (
+                        {/* {loading && (
               <div className="flex items-center gap-3 px-6 py-4 bg-card/50 border border-border w-fit rounded-2xl shadow-sm">
                 <div className="flex gap-1.5">
                   <div className="h-2 w-2 rounded-full bg-primary/70 animate-bounce" />
@@ -237,7 +237,8 @@ export default function ChatPage() {
                 </div>
                 <span className="text-sm font-medium text-muted-foreground animate-pulse">Thinking...</span>
               </div>
-            )}
+            )} */}
+
             <div ref={messagesEndRef} />
           </div>
         </div>
