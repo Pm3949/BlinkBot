@@ -7,10 +7,15 @@ export const useAgentSocket = (url) => {
   const reconnectTimeoutRef = useRef(null);
   // Store the active message chunks
   const [agentTextChunks, setAgentTextChunks] = useState('');
+  // Queue for messages that arrive before the socket is OPEN
+  const pendingPayloadRef = useRef(null);
 
   const connect = useCallback(() => {
-    // Prevent multiple connections
-    if (socketRef.current?.readyState === WebSocket.OPEN) return;
+    // Prevent duplicate connections if already open or connecting
+    if (
+      socketRef.current?.readyState === WebSocket.OPEN ||
+      socketRef.current?.readyState === WebSocket.CONNECTING
+    ) return;
 
     const ws = new WebSocket(url);
     socketRef.current = ws;
@@ -20,6 +25,13 @@ export const useAgentSocket = (url) => {
       setIsConnected(true);
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      // Flush any message that was queued while the socket was connecting
+      if (pendingPayloadRef.current) {
+        const queued = pendingPayloadRef.current;
+        pendingPayloadRef.current = null;
+        setAgentTextChunks('');
+        ws.send(JSON.stringify({ type: 'chat_request', payload: queued }));
       }
     };
 
@@ -64,6 +76,8 @@ export const useAgentSocket = (url) => {
   useEffect(() => {
     connect();
     return () => {
+      // Clear any pending payload on unmount to avoid stale sends
+      pendingPayloadRef.current = null;
       if (socketRef.current) {
         socketRef.current.close();
       }
@@ -78,8 +92,15 @@ export const useAgentSocket = (url) => {
       setAgentTextChunks(''); // clear on new send
       socketRef.current.send(JSON.stringify({ type: 'chat_request', payload }));
     } else {
-      toast.error("Cannot send text, socket not open");
-      connect(); // try to reconnect
+      // Socket is CONNECTING or closed — queue the payload and ensure we're connecting
+      console.warn('WebSocket not open yet — queuing message and waiting for connection...');
+      pendingPayloadRef.current = payload;
+      setAgentTextChunks('');
+      // Only reconnect if socket is fully closed (not just still CONNECTING)
+      if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
+        connect();
+      }
+      // The queued payload will be sent in ws.onopen
     }
   }, [connect]);
   
