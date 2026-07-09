@@ -452,3 +452,81 @@ Answer:"""
             logger.error(f"HyDE generation failed: {e}")
             return query # Fallback to original query
 
+    def apply_mmr(
+        self,
+        query: str,
+        documents: list,
+        top_k: int = 5,
+        lambda_mult: float = 0.5,
+        model_name: str = "all-MiniLM-L6-v2",
+    ) -> list:
+        """
+        Maximal Marginal Relevance (MMR)
+        Balances relevance to the query with diversity among the selected documents.
+        `documents` is expected to be a list of tuples/lists where doc[0] is the text content.
+        """
+        import numpy as np
+        from core.security import decrypt_key
+
+        if not documents:
+            return []
+
+        # If there are fewer docs than top_k, just return them
+        if len(documents) <= top_k:
+            return documents
+
+        logger.info(f"Applying MMR to {len(documents)} candidate chunks...")
+
+        # 1. Extract and decrypt text
+        texts = [decrypt_key(doc[0]) or doc[0] for doc in documents]
+
+        # 2. Get embeddings for query and all candidates
+        query_embedding = np.array(self.vectorize([query], model_name=model_name)[0])
+        doc_embeddings = np.array(self.vectorize(texts, model_name=model_name))
+
+        # Calculate Query-Document Similarities
+        q_norm = np.linalg.norm(query_embedding) or 1e-10
+        doc_norms = np.linalg.norm(doc_embeddings, axis=1)
+        doc_norms[doc_norms == 0] = 1e-10
+
+        sim_to_query = np.dot(doc_embeddings, query_embedding) / (doc_norms * q_norm)
+
+        # Calculate Document-Document Similarities
+        # (N, D) dot (D, N) -> (N, N)
+        sim_matrix = np.dot(doc_embeddings, doc_embeddings.T)
+        norm_matrix = np.outer(doc_norms, doc_norms)
+        sim_matrix = sim_matrix / norm_matrix
+
+        selected_indices = []
+        unselected_indices = list(range(len(documents)))
+
+        # 3. Iteratively select documents
+        while len(selected_indices) < top_k and unselected_indices:
+            if not selected_indices:
+                # First document is simply the one with highest relevance to query
+                best_idx = unselected_indices[np.argmax(sim_to_query[unselected_indices])]
+            else:
+                # For subsequent documents, calculate MMR score
+                best_idx = None
+                max_mmr_score = -float("inf")
+
+                for idx in unselected_indices:
+                    # Relevance to query
+                    relevance = sim_to_query[idx]
+                    
+                    # Maximum similarity to any ALREADY selected document
+                    redundancy = np.max(sim_matrix[idx, selected_indices])
+                    
+                    # MMR Formula
+                    mmr_score = lambda_mult * relevance - (1 - lambda_mult) * redundancy
+                    
+                    if mmr_score > max_mmr_score:
+                        max_mmr_score = mmr_score
+                        best_idx = idx
+
+            selected_indices.append(best_idx)
+            unselected_indices.remove(best_idx)
+
+        return [documents[i] for i in selected_indices]
+
+

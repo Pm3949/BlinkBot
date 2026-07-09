@@ -345,7 +345,7 @@ export default function AgentSettingsModal({ agent, onClose }) {
                       onClick={() => {
                         updateField("endpoints", [
                           ...formData.endpoints,
-                          { connection_id: "", name: "New Endpoint", path: "", method: "GET", description: "", payload_format: "" }
+                          { connection_id: "", name: "New Endpoint", path: "", method: "GET", description: "", payload_format: "", expected_output: "" }
                         ]);
                       }}
                     >
@@ -493,6 +493,20 @@ export default function AgentSettingsModal({ agent, onClose }) {
                                   updateField("endpoints", newEps);
                                 }}
                                 placeholder='{"user_id": "{id}"}'
+                                rows={3}
+                                className="w-full bg-background font-mono text-xs border border-border rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-primary/20 outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold mb-1">Expected Output (JSON)</label>
+                              <textarea 
+                                value={ep.expected_output || ""}
+                                onChange={(e) => {
+                                  const newEps = [...formData.endpoints];
+                                  newEps[idx].expected_output = e.target.value;
+                                  updateField("endpoints", newEps);
+                                }}
+                                placeholder='{"user_name": "John", "age": 30}'
                                 rows={3}
                                 className="w-full bg-background font-mono text-xs border border-border rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-primary/20 outline-none"
                               />

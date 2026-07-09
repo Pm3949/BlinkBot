@@ -5,6 +5,8 @@ from typing import Optional, List, Dict
 import asyncio
 from fastapi import WebSocket, HTTPException
 from fastapi.responses import StreamingResponse
+import aiohttp
+import json
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
 
@@ -20,6 +22,82 @@ from core.scrubber import scrub_pii
 from handlers.websocket_handlers import agent_connection_manager
 
 logger = logging.getLogger(__name__)
+
+def create_webhook_tool(endpoint, project_tools_dict):
+    from langchain_core.tools import tool
+    import json as json_lib
+    
+    conn_id = endpoint.get("connection_id")
+    base_url = ""
+    headers = {}
+    
+    if conn_id and conn_id in project_tools_dict:
+        try:
+            config = json_lib.loads(project_tools_dict[conn_id]) if isinstance(project_tools_dict[conn_id], str) else project_tools_dict[conn_id]
+            base_url = config.get("base_url", "")
+            if config.get("api_key"):
+                headers["Authorization"] = config.get("api_key")
+            if config.get("headers"):
+                custom_headers = json_lib.loads(config.get("headers")) if isinstance(config.get("headers"), str) else config.get("headers")
+                headers.update(custom_headers)
+        except Exception as e:
+            logger.error(f"Error parsing config: {e}")
+    else:
+        base_url = endpoint.get("base_url", "")
+        if endpoint.get("api_key"):
+            headers["Authorization"] = endpoint.get("api_key")
+        if endpoint.get("headers"):
+            try:
+                custom_headers = json_lib.loads(endpoint.get("headers")) if isinstance(endpoint.get("headers"), str) else endpoint.get("headers")
+                headers.update(custom_headers)
+            except Exception:
+                pass
+
+    full_url = base_url.rstrip("/") + "/" + endpoint.get("path", "").lstrip("/")
+    method = endpoint.get("method", "GET")
+    name = endpoint.get("name", "Custom_Action").replace(" ", "_").replace("-", "_")
+    description = endpoint.get("description", "Execute external API action.")
+    payload_format = endpoint.get("payload_format", "")
+    expected_output = endpoint.get("expected_output", "")
+    
+    if payload_format:
+        description += f"\nExpected JSON arguments: {payload_format}"
+        
+    if expected_output:
+        description += f"\nThe expected response from the API will look like this: {expected_output}"
+
+    @tool
+    async def execute_webhook(**kwargs) -> str:
+        """Execute the webhook with the provided arguments."""
+        try:
+            # If Langchain passes kwargs dynamically, or if it passes it under a single 'kwargs' key
+            payload_dict = kwargs.get("kwargs", kwargs)
+            if "payload" in payload_dict and len(payload_dict) == 1:
+                payload_dict = payload_dict["payload"]
+
+            logger.info(f"🔨 TOOL TRIGGERED: Executing webhook '{name}' to {full_url}")
+            logger.info(f"📦 PAYLOAD: {json_lib.dumps(payload_dict)}")
+            async with aiohttp.ClientSession() as session:
+                kwargs = {"headers": headers}
+                if method.upper() in ["POST", "PUT", "PATCH"]:
+                    kwargs["json"] = payload_dict
+                async with session.request(method, full_url, **kwargs) as response:
+                    logger.info(f"✅ WEBHOOK RESPONSE STATUS: {response.status}")
+                    try:
+                        resp = await response.json()
+                        logger.info(f"📄 WEBHOOK RESPONSE JSON: {json_lib.dumps(resp)}")
+                        return json_lib.dumps(resp)
+                    except Exception:
+                        text_resp = await response.text()
+                        logger.info(f"📄 WEBHOOK RESPONSE TEXT: {text_resp}")
+                        return text_resp
+        except Exception as e:
+            logger.error(f"❌ Error executing webhook {name}: {str(e)}")
+            return f"Error executing {name}: {str(e)}"
+            
+    execute_webhook.name = name
+    execute_webhook.description = description
+    return execute_webhook
 
 
 async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
@@ -66,9 +144,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         project_id,
                         parent_agent_id,
                         is_active,
+                        endpoints_json,
                     ) = agent_data
                     embed_model = embed_model or "text-embedding-3-small"
                     custom_api_key = decrypt_key(custom_api_key)
+                    endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
 
                     if not is_active:
                         await agent_connection_manager.send_json(
@@ -160,6 +240,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                         embed_model,
                                         web_search_enabled,
                                         is_active,
+                                        endpoints_json,
                                     ) = await chat_repository.get_agent_routing_info(
                                         active_agent_id
                                     )
@@ -209,6 +290,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             emb_model,
                             web_enabled,
                             is_act,
+                            e_json,
                         ) = await chat_repository.get_agent_routing_info(aid)
                         
                         emb_model = emb_model or "text-embedding-3-small"
@@ -218,10 +300,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         formatted_prompt = sys_prompt
                         if out_fmt:
                             formatted_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{out_fmt}"
-                        formatted_prompt += f"{mem_patch}\n\nYou are a highly intelligent ReAct agent. You have access to tools to search the knowledge base"
-                        if web_enabled:
-                            formatted_prompt += " and the web"
-                        formatted_prompt += ".\nUse the tools iteratively if needed. Format your final response beautifully in Markdown.\n\nCRITICAL RULE: If you decide to call a tool, YOUR ENTIRE RESPONSE MUST BE ONLY THE TOOL CALL. Do NOT output any conversational text, greetings, or thoughts before or after the tool call. IF YOU OUTPUT TEXT AND A TOOL CALL TOGETHER, THE SYSTEM WILL CRASH."
+                        formatted_prompt += f"{mem_patch}\n\nCRITICAL INSTRUCTIONS:\n1. Provide natural, conversational, and direct answers without robotic introductions.\n2. Do NOT mention that you are an AI, an agent, or what tools you are using. Do not narrate your actions.\n3. Use the available tools iteratively if needed. You have tools for searching knowledge AND tools for taking actions (like creating users or tracking orders). If a user asks you to perform an action, you MUST use the appropriate action tool immediately. Format your final response beautifully in Markdown.\n4. EXTREMELY STRICT GROUNDING RULE: If the user asks for factual information and you cannot find the answer using your tools, you MUST reply ONLY with a brief apology stating you do not have that information, and then YOU MUST STOP. Do NOT invent, hallucinate, or guess ANY products, pricing, or company details. Do NOT provide examples of what you might sell. If it's not in the knowledge base, it does not exist."
                         
                         lang_map = {
                             "en": "English", "es": "Spanish", "fr": "French", "de": "German",
@@ -245,7 +324,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         
                         @tool
                         async def search_knowledge_base(query: str) -> str:
-                            """Search the internal knowledge base for documents. Use this first for ANY company-specific or factual questions."""
+                            """Search the internal knowledge base for documents. Use this first for ANY company-specific or factual questions. If a search yields 'No related documents found', DO NOT retry with a different query. Instead, tell the user the information is not available."""
                             hyde_query = rag_engine.generate_hyde_query(query, llm_inst)
                             q_vec = rag_engine.vectorize([hyde_query], model_name=emb_model)[0]
                             best = await chat_repository.get_documents_hybrid(hyde_query, str(q_vec), aid, 15)
@@ -260,13 +339,14 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                         seen.add(item[0])
                                         best.append(item)
                                         
-                            best = rag_engine.rerank_documents(query, best, top_k=5)
+                            best = rag_engine.rerank_documents(query, best, top_k=10)
+                            best = rag_engine.apply_mmr(query, best, top_k=5)
                             docs = "\n---\n".join([decrypt_key(m[0]) or m[0] for m in best]) if best else "No related documents found."
                             return docs
 
                         @tool
                         async def search_web(query: str) -> str:
-                            """Search the internet for current events, news, or general world knowledge."""
+                            """Search the internet for current events, news, or general world knowledge. If a search yields no useful results, DO NOT retry with a different query. Tell the user the information is not available."""
                             try:
                                 from langchain_community.tools import DuckDuckGoSearchRun
                                 search = DuckDuckGoSearchRun()
@@ -277,7 +357,30 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                         t_list = [search_knowledge_base]
                         if web_enabled:
                             t_list.append(search_web)
+                            
+                        agent_endpoints = endpoints_map.get(str(aid), [])
+                        for ep in agent_endpoints:
+                            if ep.get("method") and ep.get("path"):
+                                webhook_tool = create_webhook_tool(ep, project_tools_dict)
+                                t_list.append(webhook_tool)
+                                
                         return t_list
+
+                    project_tools_dict = {}
+                    endpoints_map = {}
+                    endpoints_map[str(agent_id)] = endpoints
+                    
+                    if project_id:
+                        from database_layer.agent_repository import get_project_tools
+                        p_tools = await get_project_tools(project_id)
+                        project_tools_dict = {str(t[0]): t[2] for t in p_tools}
+                        
+                    if project_id and not parent_agent_id and sub_agents:
+                        for sa in sub_agents:
+                            try:
+                                endpoints_map[str(sa[0])] = json.loads(sa[3]) if isinstance(sa[3], str) else (sa[3] or [])
+                            except Exception:
+                                endpoints_map[str(sa[0])] = []
 
                     graph = build_multi_agent_graph(
                         master_agent_id=agent_id,
@@ -412,6 +515,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         embed_model,
                         web_search_enabled,
                         is_active,
+                        endpoints_json,
                     ) = agent_data
                     embed_model = embed_model or "text-embedding-3-small"
                     custom_api_key = decrypt_key(custom_api_key)
@@ -447,8 +551,9 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         hyde_query, str(query_vector), agent_id, 15
                     )
                     best_matches = rag_engine.rerank_documents(
-                        message, best_matches, top_k=5
+                        message, best_matches, top_k=10
                     )
+                    best_matches = rag_engine.apply_mmr(message, best_matches, top_k=5)
 
                     context = "No specific documents found."
                     if best_matches:
@@ -591,9 +696,11 @@ async def handle_api_v1_chat(
             project_id,
             parent_agent_id,
             is_active,
+            endpoints_json,
         ) = agent_data
         embed_model = embed_model or "text-embedding-3-small"
         custom_api_key = decrypt_key(custom_api_key)
+        endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
 
         if not is_active:
 
@@ -673,6 +780,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             embed_model,
                             web_search_enabled,
                             is_active,
+                            endpoints_json,
                         ) = agent_data
                         embed_model = embed_model or "text-embedding-3-small"
                         custom_api_key = decrypt_key(custom_api_key)
@@ -723,7 +831,8 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                     unique_combined.append(item)
             best_matches = unique_combined
 
-        best_matches = rag_engine.rerank_documents(message, best_matches, top_k=5)
+        best_matches = rag_engine.rerank_documents(message, best_matches, top_k=10)
+        best_matches = rag_engine.apply_mmr(message, best_matches, top_k=5)
 
         context = "No specific documents found."
         if best_matches:

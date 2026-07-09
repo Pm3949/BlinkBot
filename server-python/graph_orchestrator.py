@@ -75,6 +75,7 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
             
         try:
             response = await llm_with_tools.ainvoke(msgs)
+            print("AGENT RESPONSE:", response)
         except Exception as e:
             if "Failed to call a function" in str(e) or "tool" in str(e).lower() or "400" in str(e):
                 print(f"Groq API Error caught: {e}. Falling back to standard LLM without tools.")

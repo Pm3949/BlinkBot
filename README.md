@@ -1,37 +1,43 @@
-# 🚀 BlinkBot
+# 🚀 BlinkBot (formerly RAGMate)
 
 BlinkBot is an enterprise-grade AI Assistant platform that allows teams to build, manage, and deploy custom Retrieval-Augmented Generation (RAG) agents. Train agents on your own custom documents, interact with them in isolated team workspaces, and seamlessly deploy them via embeddable chat widgets!
 
-## ✨ Key Features
+## ✨ Currently Implemented Features
 
-*   **🧠 Custom AI Agents**: Create specialized AI agents powered by OpenAI, Groq, or Ollama. Customize their system prompts, temperatures, and chunking strategies.
-*   **📚 Retrieval-Augmented Generation (RAG)**: Upload PDFs and TXT files to give your agents highly-specific context. Powered by PostgreSQL `pgvector`.
-*   **🌐 Real-Time Web Search**: Enable the Web Search toggle to allow agents to seamlessly blend private vector knowledge with real-time web context via DuckDuckGo.
-*   **🏢 Team Workspaces & RBAC**: Isolate agents, documents, and chat histories by workspace. Invite teammates with granular Role-Based Access Control (Admin, Editor, Teammate, Owner).
-*   **🔔 Enterprise Real-Time Notifications**: A fully integrated notification bell powered by Supabase WebSockets. Teammates are instantly notified without page reloads when feedback is submitted, tickets are resolved, or agent settings are updated. Includes automated database cleanup via `pg_cron`.
-*   **💬 Embeddable Chat Widgets**: Generate snippets to embed your AI agents directly onto external websites.
+### 🧠 Advanced AI & Agent Architectures
+*   **Multi-Model Support**: Native support for OpenAI, Groq, and Ollama.
+*   **Dynamic Multi-Agent Routing (Intent Orchestrator)**: A "Master Agent" intelligently orchestrates and routes user queries to specialized sub-agents based on the context.
+*   **Real-Time Streaming**: Token-by-token WebSocket streaming for low-latency chat interactions across the dashboard and external widgets.
+*   **Voice Capabilities**: Built-in Text-to-Speech (Google TTS) and Speech-to-Text (Groq Whisper API) for multimodal interactions.
 
----
+### 📚 Enterprise-Grade RAG Engine
+*   **Advanced Retrieval**: Utilizes `pgvector` for semantic search, enhanced natively with **HyDE** (Hypothetical Document Embeddings) and **Cross-Encoder Reranking** for maximum contextual accuracy.
+*   **Multi-Source Ingestion**: Upload PDFs, TXTs, or directly scrape URLs (via native `/process-url` support). 
+*   **Google Drive Integration**: Connect and import files directly from Google Drive via OAuth2.
+*   **Real-Time Web Search**: Agents can dynamically execute tools to blend private vector knowledge with real-time web context via DuckDuckGo.
+*   **Custom API Connections (Action Webhooks)**: Dedicated API Manager to configure external REST API endpoints, allowing agents to execute actions (like creating Jira tickets or sending emails) natively.
+
+### 🏢 Team & Workspace Management
+*   **Isolated Workspaces & RBAC**: Isolate agents, documents, and chat histories. Granular Role-Based Access Control (Admin, Editor, Teammate, Owner) enforced at the UI, API, and Database (RLS) levels.
+*   **Real-Time Notifications**: Fully integrated WebSocket notification bell powered by Supabase Realtime.
+*   **Developer API**: Users can generate API keys to query their RAG agents programmatically from external applications.
+*   **User Analytics**: Dedicated dashboards to track agent performance, message quotas, and billing metrics.
 
 ## 🛠️ Technology Stack
 
 **Frontend (Client)**
-*   React + Vite
-*   Tailwind CSS + Lucide Icons (Premium Glassmorphism UI)
-*   Zustand (State Management)
-*   React Query / TanStack Query (Data Fetching)
-*   Supabase JS Client (Realtime WebSockets)
+*   React 19 + Vite
+*   Tailwind CSS + Radix UI + Framer Motion (Premium Glassmorphism UI)
+*   Zustand (State) + TanStack Query (Data Fetching)
 
 **Backend (Server)**
-*   FastAPI (Python)
-*   LangChain (LLM Orchestration)
-*   Pydantic (Strict API Validation)
+*   FastAPI (Python) + LangChain + LangGraph
+*   Groq / OpenAI / Ollama (LLM inference)
+*   BackgroundTasks & APScheduler for cron jobs and data cleanup
 
 **Database**
-*   Supabase (PostgreSQL)
-*   `pgvector` (Vector Embeddings)
-*   `pg_cron` (Automated cleanup jobs)
-*   Row Level Security (RLS) for multi-tenant isolation
+*   Supabase (PostgreSQL) + `pgvector` + `pg_cron`
+*   Row Level Security (RLS) for strict multi-tenant isolation
 
 ---
 
@@ -59,6 +65,9 @@ npm run dev
 
 ---
 
-## 🤝 Contribution
+## 🗺️ Roadmap / What's Next
 
-When contributing, ensure all notification types are strictly validated through the `NotificationType` Enum in the FastAPI backend schemas!
+While BlinkBot is highly capable, here are the next high-impact features planned:
+1. **Chat Exports**: Add functionality for users to download chat histories as beautifully formatted PDFs or Markdown.
+2. **Expanded Data Connectors**: Expand beyond Google Drive to include Notion, Slack, Confluence, and GitHub integrations.
+3. **GraphRAG / MMR**: Implement Maximal Marginal Relevance for more diverse document retrieval.
