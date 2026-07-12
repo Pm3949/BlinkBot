@@ -145,10 +145,32 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         parent_agent_id,
                         is_active,
                         endpoints_json,
+                        code_interpreter_enabled,
+                        databases_encrypted,
+                        native_integrations_encrypted,
                     ) = agent_data
-                    embed_model = embed_model or "text-embedding-3-small"
-                    custom_api_key = decrypt_key(custom_api_key)
+                    
+                    if not is_active:
+                        await agent_connection_manager.send_json(
+                            {"type": "error", "content": "Agent is inactive."}, client_id
+                        )
+                        continue
+
                     endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
+                    databases_str = decrypt_key(databases_encrypted)
+                    databases = json.loads(databases_str) if databases_str else []
+                    
+                    native_integrations_str = decrypt_key(native_integrations_encrypted)
+                    native_integrations = json.loads(native_integrations_str) if native_integrations_str else []
+
+                    from prompts import get_system_prompt
+                    system_prompt = get_system_prompt({
+                        "system_prompt": system_prompt,
+                        "api_endpoints": endpoints,
+                        "native_integrations": native_integrations,
+                        "db_connections": databases,
+                        "enable_code_interpreter": code_interpreter_enabled
+                    })
 
                     if not is_active:
                         await agent_connection_manager.send_json(
@@ -205,18 +227,32 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     temperature=0.0,
                                 )
 
-                            routing_prompt = f"""You are the Master Coordinator Router.
-Analyze the user's latest message and choose the best specialized sub-agent to handle it.
-
-Available Agents:
-{agent_descriptions}
-
-User's Latest Message: {message}
-
-Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
+                            from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
+                            routing_prompt = ROUTING_SYSTEM_PROMPT.format(
+                                agent_descriptions=agent_descriptions,
+                                message=message
+                            )
                             try:
-                                routing_response = router_llm.invoke(routing_prompt)
-                                chosen_uuid = routing_response.content.strip()
+                                import re
+                                router_llm_json = router_llm.bind(response_format={"type": "json_object"})
+                                routing_response = router_llm_json.invoke(routing_prompt)
+                                content = routing_response.content.strip()
+                                
+                                # Clean markdown if any
+                                if content.startswith("```json"):
+                                    content = content[7:]
+                                if content.endswith("```"):
+                                    content = content[:-3]
+                                content = content.strip()
+                                
+                                try:
+                                    parsed = json.loads(content)
+                                    chosen_uuid = parsed.get("agent_id", "").strip().lower()
+                                except json.JSONDecodeError:
+                                    # Fallback to regex
+                                    uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', content, re.IGNORECASE)
+                                    chosen_uuid = uuid_match.group(0).lower() if uuid_match else content
+                                
                                 chosen_agent = next(
                                     (
                                         sa
@@ -230,6 +266,14 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                 ):
                                     active_agent_id = chosen_agent[0]
                                     routed_agent_name = chosen_agent[1]
+                                    await agent_connection_manager.send_json(
+                                        {
+                                            "type": "routing_decision",
+                                            "agent_id": str(active_agent_id),
+                                            "agent_name": routed_agent_name
+                                        },
+                                        client_id
+                                    )
                                     (
                                         agent_name,
                                         system_prompt,
@@ -241,6 +285,9 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                         web_search_enabled,
                                         is_active,
                                         endpoints_json,
+                                        code_interpreter_enabled,
+                                        databases_encrypted,
+                                        native_integrations_encrypted
                                     ) = await chat_repository.get_agent_routing_info(
                                         active_agent_id
                                     )
@@ -291,6 +338,9 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             web_enabled,
                             is_act,
                             e_json,
+                            c_interp,
+                            db_enc,
+                            n_int_enc
                         ) = await chat_repository.get_agent_routing_info(aid)
                         
                         emb_model = emb_model or "text-embedding-3-small"
@@ -364,11 +414,42 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                 webhook_tool = create_webhook_tool(ep, project_tools_dict)
                                 t_list.append(webhook_tool)
                                 
+                        agent_dbs = databases_map.get(str(aid), [])
+                        for db in agent_dbs:
+                            if db.get("connection_string") and db.get("name"):
+                                from tools.sql_tools import create_sql_tools
+                                sql_tools = create_sql_tools(db.get("connection_string"), db.get("name"))
+                                t_list.extend(sql_tools)
+                                
+                        if code_interpreter_enabled and str(aid) == str(agent_id):
+                            from tools.code_tools import create_code_tools
+                            t_list.extend(create_code_tools())
+                            
+                        # Also check if a sub-agent has code interpreter enabled
+                        if str(aid) != str(agent_id) and code_interpreter_map.get(str(aid), False):
+                            from tools.code_tools import create_code_tools
+                            t_list.extend(create_code_tools())
+
+                        # Add native integrations
+                        agent_native = native_integrations_map.get(str(aid), [])
+                        if agent_native:
+                            from tools.native_tools import create_native_tools
+                            # user_id is in the outer scope
+                            n_tools = create_native_tools(user_id, agent_native)
+                            t_list.extend(n_tools)
+
                         return t_list
 
                     project_tools_dict = {}
                     endpoints_map = {}
+                    databases_map = {}
+                    code_interpreter_map = {}
+                    native_integrations_map = {}
+                    
                     endpoints_map[str(agent_id)] = endpoints
+                    databases_map[str(agent_id)] = databases
+                    code_interpreter_map[str(agent_id)] = code_interpreter_enabled
+                    native_integrations_map[str(agent_id)] = native_integrations
                     
                     if project_id:
                         from database_layer.agent_repository import get_project_tools
@@ -381,6 +462,20 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                                 endpoints_map[str(sa[0])] = json.loads(sa[3]) if isinstance(sa[3], str) else (sa[3] or [])
                             except Exception:
                                 endpoints_map[str(sa[0])] = []
+                            try:
+                                db_str = decrypt_key(sa[5])
+                                databases_map[str(sa[0])] = json.loads(db_str) if db_str else []
+                            except Exception:
+                                databases_map[str(sa[0])] = []
+                            try:
+                                code_interpreter_map[str(sa[0])] = bool(sa[4])
+                            except Exception:
+                                code_interpreter_map[str(sa[0])] = False
+                            try:
+                                n_str = decrypt_key(sa[6]) if len(sa) > 6 else None
+                                native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
+                            except Exception:
+                                native_integrations_map[str(sa[0])] = []
 
                     graph = build_multi_agent_graph(
                         master_agent_id=agent_id,
@@ -427,6 +522,16 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
                             output = event["data"].get("output", {})
                             if isinstance(output, dict):
                                 routed_name = output.get("routed_agent_name")
+                                routed_id = output.get("active_agent_id")
+                                if routed_id:
+                                    await agent_connection_manager.send_json(
+                                        {
+                                            "type": "routing_decision",
+                                            "agent_id": str(routed_id),
+                                            "agent_name": routed_name
+                                        },
+                                        client_id
+                                    )
                                 if routed_name and routed_name != gateway_name:
                                     await agent_connection_manager.send_json(
                                         {"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_name}]*\n\n"}, client_id
@@ -746,15 +851,11 @@ async def handle_api_v1_chat(
                         model_name=model, api_key=key_to_use, temperature=0.0
                     )
 
-                routing_prompt = f"""You are the Master Coordinator Router.
-Analyze the user's latest message and choose the best specialized sub-agent to handle it.
-
-Available Agents:
-{agent_descriptions}
-
-User's Latest Message: {message}
-
-Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
+                from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
+                routing_prompt = ROUTING_SYSTEM_PROMPT.format(
+                    agent_descriptions=agent_descriptions,
+                    message=message
+                )
 
                 try:
                     routing_response = router_llm.invoke(routing_prompt)
@@ -943,6 +1044,17 @@ Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text,
 
 async def handle_delete_agent(agent_id: str):
     try:
+        agent_data = await chat_repository.get_agent_for_chat(agent_id)
+        if not agent_data:
+            return {"message": "Agent not found or already deleted"}
+            
+        agent_name = agent_data[1]
+        if agent_name in ["Network Manager", "General Assistant"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"The {agent_name} is a permanent core agent and cannot be deleted individually. You must delete the entire project."
+            )
+
         deleted_count = await chat_repository.delete_agent(agent_id)
         if deleted_count == 0:
             return {"message": "Agent not found or already deleted"}
@@ -950,6 +1062,8 @@ async def handle_delete_agent(agent_id: str):
         return {
             "message": f"Agent and {deleted_count - 1} sub-agents completely wiped!"
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

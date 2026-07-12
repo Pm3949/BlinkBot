@@ -1,6 +1,7 @@
 import operator
 import os
 import asyncio
+import json
 from typing import TypedDict, Annotated, Sequence, Optional, List, Callable, Dict, Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.graph import StateGraph, END
@@ -30,20 +31,48 @@ def build_multi_agent_graph(
         if not sub_agents or len(sub_agents) <= 1:
             return {"active_agent_id": master_agent_id, "routed_agent_name": gateway_name}
             
-        agent_descriptions = "\n".join([f"ID: {sa[0]} | Name: {sa[1]} | Description: {sa[2]}" for sa in sub_agents])
-        routing_prompt = f"""You are the Master Coordinator Router.
-Analyze the user's latest message and choose the best specialized sub-agent to handle it.
-
-Available Agents:
-{agent_descriptions}
-
-User's Latest Message: {state['messages'][-1].content}
-
-Respond ONLY with the exact UUID of the chosen agent. Do not add any extra text, markdown, or formatting."""
+        agent_descriptions_list = []
+        for sa in sub_agents:
+            is_master = str(sa[0]) == str(master_agent_id)
+            role_tag = (
+                " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]"
+                if is_master
+                else ""
+            )
+            agent_descriptions_list.append(
+                f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}"
+            )
+        agent_descriptions = "\n".join(agent_descriptions_list)
+        
+        from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
+        routing_prompt = ROUTING_SYSTEM_PROMPT.format(
+            agent_descriptions=agent_descriptions,
+            message=state['messages'][-1].content
+        )
+        
+        import re
         
         try:
-            routing_response = await router_llm.ainvoke(routing_prompt)
-            chosen_uuid = routing_response.content.strip()
+            router_llm_json = router_llm.bind(response_format={"type": "json_object"})
+            routing_response = await router_llm_json.ainvoke(routing_prompt)
+            content = routing_response.content.strip()
+            
+            # Clean markdown if any
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            try:
+                parsed = json.loads(content)
+                chosen_uuid = parsed.get("agent_id", "").strip().lower()
+            except json.JSONDecodeError:
+                # Fallback to regex
+                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', content, re.IGNORECASE)
+                chosen_uuid = uuid_match.group(0).lower() if uuid_match else content
+            
+            
             chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
             
             if chosen_agent and str(chosen_agent[0]) != str(master_agent_id):

@@ -23,3 +23,7 @@ pyotp==2.10.0
 qrcode==8.2
 slowapi
 duckduckgo-search
+SQLAlchemy==2.0.31
+e2b_code_interpreter==1.0.3
+fastapi-sso==0.16.0
+langchain-huggingface==0.0.3

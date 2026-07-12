@@ -3,7 +3,11 @@ from fastapi.concurrency import run_in_threadpool
 
 async def get_analytics_metrics(user_id: str):
     async with get_db_cursor_async(commit=False) as cursor:
-        await run_in_threadpool(cursor.execute, "SELECT COUNT(*) FROM agents WHERE user_id = %s", (user_id,))
+        await run_in_threadpool(
+            cursor.execute, 
+            "SELECT COUNT(*) FROM agents WHERE user_id = %s AND name NOT IN ('Network Manager', 'General Assistant')", 
+            (user_id,)
+        )
         total_agents = (await run_in_threadpool(cursor.fetchone))[0] or 0
 
         await run_in_threadpool(

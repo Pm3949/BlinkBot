@@ -37,6 +37,9 @@ class AgentCreate(BaseModel):
     project_id: Optional[str] = None
     parent_agent_id: Optional[str] = None
     endpoints: Optional[list] = []
+    databases: Optional[list] = []
+    code_interpreter_enabled: bool = False
+    native_integrations: Optional[list] = []
 
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
@@ -52,6 +55,9 @@ class AgentUpdate(BaseModel):
     web_search_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
     endpoints: Optional[list] = None
+    databases: Optional[list] = None
+    code_interpreter_enabled: Optional[bool] = None
+    native_integrations: Optional[list] = None
 
 class AgentProjectCreate(BaseModel):
     name: str

@@ -102,7 +102,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth
+from routers import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth, oauth
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
@@ -126,6 +126,7 @@ app.include_router(meta_agent.router)
 app.include_router(demo.router)
 app.include_router(auth.router)
 app.include_router(connectors.router)
+app.include_router(oauth.router, prefix="/api/auth", tags=["OAuth Native Integrations"])
 
 # ==========================================
 # RATE LIMITING & STATIC FILES

@@ -16,7 +16,8 @@ async def get_agents(workspace_id: str, include_gateways: bool = False):
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, project_id, is_active, output_format
+                   web_search_enabled, project_id, is_active, output_format,
+                   endpoints, code_interpreter_enabled, databases, native_integrations
             FROM agents 
             {condition}
             ORDER BY created_at DESC
@@ -32,11 +33,11 @@ async def create_agent(payload_data: dict):
             """
             INSERT INTO agents (name, description, llm_provider, llm_model, 
                               embedding_model, chunk_strategy, system_prompt, output_format, 
-                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, name, description, llm_provider, llm_model, 
                       embedding_model, chunk_strategy, system_prompt, output_format, 
-                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints;
+                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations;
             """,
             (
                 payload_data.get("name"), 
@@ -54,7 +55,10 @@ async def create_agent(payload_data: dict):
                 payload_data.get("web_search_enabled", False), 
                 payload_data.get("project_id"), 
                 payload_data.get("parent_agent_id"), 
-                json.dumps(payload_data.get("endpoints", []))
+                json.dumps(payload_data.get("endpoints", [])),
+                payload_data.get("code_interpreter_enabled", False),
+                encrypt_key(json.dumps(payload_data.get("databases", []))),
+                encrypt_key(json.dumps(payload_data.get("native_integrations", [])))
             )
         )
         return await run_in_threadpool(cursor.fetchone)
@@ -64,12 +68,14 @@ async def update_agent(agent_id: str, payload: dict):
         set_clauses = []
         values = []
         for key, value in payload.items():
-            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints"]:
+            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id"]:
                 set_clauses.append(f"{key} = %s")
                 if key == "api_key":
                     values.append(encrypt_key(value))
                 elif key == "endpoints":
                     values.append(json.dumps(value))
+                elif key == "databases" or key == "native_integrations":
+                    values.append(encrypt_key(json.dumps(value)))
                 else:
                     values.append(value)
                 
@@ -78,10 +84,14 @@ async def update_agent(agent_id: str, payload: dict):
             
         values.append(agent_id)
         
-        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints;"
+        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, parent_agent_id;"
         
         await run_in_threadpool(cursor.execute, query, tuple(values))
-        return await run_in_threadpool(cursor.fetchone)
+        row = await run_in_threadpool(cursor.fetchone)
+        if row:
+            columns = [desc[0] for desc in cursor.description]
+            return dict(zip(columns, row))
+        return None
 
 async def create_agent_project(name: str, description: str, workspace_id: str, user_id: str):
     async with get_db_cursor_async(commit=True) as cursor:
@@ -101,12 +111,12 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
             """
             INSERT INTO agents (name, description, llm_provider, llm_model, 
                               embedding_model, chunk_strategy, system_prompt, output_format, 
-                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
             (
-                f"{name} Master", 
+                "Network Manager", 
                 "The central router agent for this network.", 
                 "groq", 
                 "llama-3.1-8b-instant",
@@ -121,9 +131,47 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
                 False, 
                 project_id, 
                 None, 
-                json.dumps([])
+                json.dumps([]),
+                False,
+                encrypt_key(json.dumps([])),
+                encrypt_key(json.dumps([]))
             )
         )
+        manager_id = (await run_in_threadpool(cursor.fetchone))[0]
+        
+        # Create General Assistant
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO agents (name, description, llm_provider, llm_model, 
+                              embedding_model, chunk_strategy, system_prompt, output_format, 
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id;
+            """,
+            (
+                "General Assistant", 
+                "A versatile assistant for general queries and web search.", 
+                "groq", 
+                "llama-3.1-8b-instant",
+                "all-MiniLM-L6-v2", 
+                "sentence", 
+                "You are a helpful general assistant. Use your tools to answer user queries accurately.", 
+                "",
+                encrypt_key(""), 
+                "en", 
+                user_id, 
+                workspace_id, 
+                True, # Web search enabled
+                project_id, 
+                manager_id, 
+                json.dumps([]),
+                False,
+                encrypt_key(json.dumps([])),
+                encrypt_key(json.dumps([]))
+            )
+        )
+
         return project_id
 
 async def get_agent_projects(workspace_id: str):
@@ -148,7 +196,7 @@ async def get_project_sub_agents(project_id: str):
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints
+                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints, code_interpreter_enabled, databases, native_integrations
             FROM agents 
             WHERE project_id = %s 
             ORDER BY created_at ASC

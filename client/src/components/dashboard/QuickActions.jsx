@@ -15,13 +15,6 @@ export default function QuickActions({ onCreateAgent }) {
       action: () => navigate("/studio"),
     },
     {
-      icon: UploadCloud,
-      label: "Upload Data",
-      description: "Index files into knowledge base",
-      color: "from-emerald-500/10 to-teal-500/10 text-emerald-500 border-emerald-500/20",
-      action: () => navigate("/knowledge"),
-    },
-    {
       icon: MessageSquare,
       label: "Start Chat",
       description: "Interact with assistants live",

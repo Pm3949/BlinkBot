@@ -48,6 +48,9 @@ export const useAgentSocket = (url) => {
             setAgentStatus('');
           } else if (data.type === 'status') {
             setAgentStatus(data.content);
+          } else if (data.type === 'routing_decision') {
+            const routingEvent = new CustomEvent('agent_routing_decision', { detail: { agent_id: data.agent_id, agent_name: data.agent_name } });
+            window.dispatchEvent(routingEvent);
           } else if (data.type === 'error') {
             toast.error(data.content);
           } else if (data.type === 'stream_end') {

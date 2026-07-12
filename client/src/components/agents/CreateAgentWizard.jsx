@@ -60,6 +60,16 @@ export const AVAILABLE_MODELS = {
       name: "Llama 3.3 70B (Free - Smart)",
       requiresKey: false,
     },
+    {
+      id: "mixtral-8x7b-32768",
+      name: "Mixtral 8x7B (Large Context)",
+      requiresKey: false,
+    },
+    {
+      id: "qwen-2.5-32b",
+      name: "Qwen 2.5 32B (Coding/Logic)",
+      requiresKey: false,
+    },
   ],
 
   openai: [

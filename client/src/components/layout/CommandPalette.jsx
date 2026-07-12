@@ -39,12 +39,7 @@ const commands = [
     shortcut: "G",
     path: "/agents",
   },
-  {
-    icon: Database,
-    label: "Knowledge Base",
-    shortcut: "K",
-    path: "/knowledge",
-  },
+
   {
     icon: BarChart3,
     label: "Analytics",

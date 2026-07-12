@@ -12,7 +12,7 @@ import { useChat } from "../hooks/useChat";
 import VerificationBanner from "../components/chat/VerificationBanner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
-import AgentSettingsModal from "../components/agents/AgentSettingsModal";
+
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -160,27 +160,14 @@ export default function ChatPage() {
            </button>
         </div>
 
-        <div className="absolute top-4 right-4 z-10">
-           <Link 
-             to="/knowledge"
-             state={{ 
-               preselectedAgentId: selectedAgentId,
-               preselectedNetworkId: activeSubAgentDetails?.project_id || null
-             }}
-             className="flex items-center gap-2 px-3 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
-             title="View Knowledge Base"
-           >
-             <Database size={16} />
-             <span className="text-sm font-medium">Knowledge</span>
-           </Link>
-        </div>
+
 
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-2xl">
           <span className="font-medium text-sm text-foreground">{activeAgent?.name || "Select an Agent"}</span>
           {activeAgent && activeAgent.id && (
              <button 
-               onClick={() => setAgentToEdit(activeAgent)}
-               className="p-1 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+               onClick={() => navigate(`/agent/${activeAgent.id}/settings`, { state: { agent: activeAgent } })}
+               className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition"
                title="Agent Settings"
              >
                <Settings2 size={16} />
@@ -251,12 +238,7 @@ export default function ChatPage() {
         />
       </div>
 
-      {agentToEdit && (
-        <AgentSettingsModal
-          agent={agentToEdit}
-          onClose={() => setAgentToEdit(null)}
-        />
-      )}
+
     </div>
   );
 }

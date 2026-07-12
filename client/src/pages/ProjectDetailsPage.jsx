@@ -1,14 +1,44 @@
-import React, { useState, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAgentProjects, useProjectSubAgents, useUpdateAgent, useDeleteAgent } from '../hooks/useAgents';
+import { useSandboxChat } from '../hooks/useSandboxChat';
 import { useUIStore } from '../store/useUIStore';
-import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2 } from 'lucide-react';
-import AgentSettingsModal from '../components/agents/AgentSettingsModal';
+import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2, MessagesSquare } from 'lucide-react';
 import ApiToolsModal from '../components/agents/ApiToolsModal';
 import CreateAgentWizard from '../components/agents/CreateAgentWizard';
+import StudioSandboxChat from '../components/chat/StudioSandboxChat';
 import { Switch } from '../components/ui/switch';
 import { Button } from '../components/ui/button';
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState } from '@xyflow/react';
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Handle, Position } from '@xyflow/react';
+
+const MasterNode = ({ data }) => (
+  <>
+    {data.label}
+    <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-purple-500 border-2 border-background" />
+  </>
+);
+
+const AgentNode = ({ data }) => {
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-indigo-500 border-2 border-background" />
+      <div className={`transition-all duration-500 relative rounded-xl ${data.isActiveRoute ? 'scale-[1.03] z-10' : ''}`}>
+        {data.isActiveRoute && (
+          <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-500 opacity-50 blur-xl animate-pulse -z-10" />
+        )}
+        <div className={`relative bg-card border border-border p-3 rounded-xl transition-all duration-500 ${data.isActiveRoute ? 'ring-2 ring-purple-500 ring-offset-4 ring-offset-background shadow-[0_0_40px_rgba(168,85,247,0.4)] border-transparent' : ''}`}>
+          {data.label}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-indigo-500 border-2 border-background" />
+    </>
+  );
+};
+
+const nodeTypes = {
+  masterNode: MasterNode,
+  agentNode: AgentNode,
+};
 import dagre from 'dagre';
 import '@xyflow/react/dist/style.css';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
@@ -31,7 +61,7 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 
   nodes.forEach((node) => {
     // node dimensions are approximately 260x140
-    dagreGraph.setNode(node.id, { width: 280, height: 160 });
+    dagreGraph.setNode(node.id, { width: 320, height: 160 });
   });
 
   edges.forEach((edge) => {
@@ -49,7 +79,7 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 
     // Shift node to top-left to align properly
     newNode.position = {
-      x: nodeWithPosition.x - 280 / 2,
+      x: nodeWithPosition.x - 320 / 2,
       y: nodeWithPosition.y - 160 / 2,
     };
 
@@ -61,12 +91,40 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 
 export default function ProjectDetailsPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const [agentToEdit, setAgentToEdit] = useState(null);
   const [isToolsModalOpen, setIsToolsModalOpen] = useState(false);
   const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
   const [addingParentId, setAddingParentId] = useState(null);
   const [agentToDelete, setAgentToDelete] = useState(null);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [isSandboxOpen, setIsSandboxOpen] = useState(false);
+  const [activeRoutingAgentId, setActiveRoutingAgentId] = useState(null);
+  const [chatLanguage, setChatLanguage] = useState("en");
+
+  const {
+    messages,
+    loading,
+    sendMessage,
+    clearSandbox
+  } = useSandboxChat();
+
+  useEffect(() => {
+    const handleRoutingDecision = (e) => {
+      setActiveRoutingAgentId(e.detail.agent_id);
+    };
+    const handleStreamEnd = () => {
+      setTimeout(() => setActiveRoutingAgentId(null), 1000); // Wait a second before clearing
+    };
+    
+    window.addEventListener('agent_routing_decision', handleRoutingDecision);
+    window.addEventListener('agent_stream_end', handleStreamEnd);
+    return () => {
+      window.removeEventListener('agent_routing_decision', handleRoutingDecision);
+      window.removeEventListener('agent_stream_end', handleStreamEnd);
+    };
+  }, []);
 
   const handleAddAgent = (parentId = null) => {
     setAddingParentId(parentId);
@@ -111,60 +169,29 @@ export default function ProjectDetailsPage() {
   const createInitialNodes = () => {
     if (!subAgents.length) return [];
     
-    // Create a central Master Node
-    const nodes = [
-      {
-        id: 'master',
-        position: { x: 400, y: 50 },
+    const nodes = [];
+    subAgents.forEach((agent) => {
+      const isActiveRoute = activeRoutingAgentId === agent.id;
+      nodes.push({
+        id: agent.id,
+        type: agent.name === 'Network Manager' ? 'masterNode' : 'agentNode',
+        position: { x: 0, y: 0 },
         className: 'group',
-        style: {
+        style: agent.name === 'Network Manager' ? {
           backgroundColor: 'var(--card)',
           color: 'var(--text)',
           borderColor: '#a855f7',
           borderWidth: '2px',
           borderRadius: '0.75rem',
           padding: '0.75rem',
-          boxShadow: '0 0 25px rgba(168, 85, 247, 0.5)',
-          width: 192,
-        },
-        data: { 
-          label: (
-            <div className="flex flex-col items-center w-full relative">
-              <div className="h-10 w-10 rounded-full bg-purple-500/20 flex items-center justify-center mb-2">
-                <Bot className="text-purple-500" size={20} />
-              </div>
-              <strong className="text-sm font-semibold mb-2">Master Coordinator</strong>
-              
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleAddAgent(null); }}
-                className="absolute -bottom-[28px] left-1/2 -translate-x-1/2 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg nodrag z-50 cursor-pointer hover:bg-indigo-700 hover:scale-110"
-                title="Add Root Agent"
-              >
-                <Plus size={18} />
-              </button>
-            </div>
-          )
-        },
-        type: 'input',
-      }
-    ];
-
-    subAgents.forEach((agent) => {
-      nodes.push({
-        id: agent.id,
-        position: { x: 0, y: 0 },
-        className: 'group',
-        style: {
-          backgroundColor: 'var(--card)',
-          color: 'var(--text)',
-          borderColor: 'var(--border)',
-          borderRadius: '1rem',
-          padding: '1rem',
-          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-          width: 280,
-          height: 140,
+          width: 320,
+        } : {
+          width: 320,
+          border: 'none',
+          background: 'transparent',
         },
         data: {
+          isActiveRoute,
           label: (
             <div className="flex flex-col h-full text-left">
               <div className="flex items-center justify-between mb-2 gap-2">
@@ -173,14 +200,16 @@ export default function ProjectDetailsPage() {
                   <strong className="text-[15px] font-bold truncate" title={agent.name}>{agent.name}</strong>
                 </div>
                 <div onClick={(e) => e.stopPropagation()} className="shrink-0 nodrag flex items-center gap-2">
-                  <button
-                    onClick={() => handleDeleteAgent(agent)}
-                    disabled={deleteAgentMutation.isPending}
-                    className="text-muted-foreground hover:text-red-500 transition-colors"
-                    title="Delete Agent"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {!['Network Manager', 'General Assistant'].includes(agent.name) && (
+                    <button
+                      onClick={() => handleDeleteAgent(agent)}
+                      disabled={deleteAgentMutation.isPending}
+                      className="text-muted-foreground hover:text-red-500 transition-colors"
+                      title="Delete Agent"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                   <Switch
                     checked={agent.is_active !== false}
                     disabled={updateAgentMutation.isPending}
@@ -195,22 +224,13 @@ export default function ProjectDetailsPage() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    setAgentToEdit(agent);
+                    navigate(`/agent/${agent.id}/settings`, { state: { agent } });
                   }}
                   className="flex items-center justify-center gap-1.5 p-2 rounded-lg flex-1 transition hover:bg-primary hover:text-primary-foreground bg-muted text-muted-foreground font-medium text-xs"
                   title="Settings"
                 >
                   <Settings size={14} /> Settings
                 </button>
-                <Link
-                  to="/knowledge"
-                  state={{ preselectedAgentId: agent.id, preselectedNetworkId: projectId }}
-                  className="flex items-center justify-center gap-1.5 p-2 rounded-lg flex-1 transition hover:bg-primary hover:text-primary-foreground bg-muted text-muted-foreground font-medium text-xs"
-                  title="Knowledge Base"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Database size={14} /> Knowledge
-                </Link>
               </div>
               
               <button
@@ -234,40 +254,95 @@ export default function ProjectDetailsPage() {
 
   const createInitialEdges = () => {
     if (!subAgents.length) return [];
-    
-    // First, connect any top-level agents (no parent) to the master node
-    const rootEdges = subAgents
-      .filter(agent => !agent.parent_agent_id)
-      .map(agent => ({
-        id: `e-master-${agent.id}`,
-        source: 'master',
-        target: agent.id,
-        type: 'smoothstep',
-        animated: true,
-        style: { stroke: '#a855f7', strokeWidth: 2 }
-      }));
 
-    // Then, use the exact dynamic logic for hierarchical edges
+    // Build a set of all agent IDs in the active path (from active agent up to root)
+    const activePathSet = new Set();
+    let currentId = activeRoutingAgentId;
+    while (currentId) {
+      activePathSet.add(currentId);
+      const currentAgent = subAgents.find(a => a.id === currentId);
+      if (currentAgent && currentAgent.parent_agent_id) {
+        currentId = currentAgent.parent_agent_id;
+      } else {
+        currentId = null;
+      }
+    }
+
     const dynamicEdges = subAgents
-      .filter(agent => agent.parent_agent_id) // Only create edges if a parent exists
-      .map(agent => ({
-        id: `e-${agent.parent_agent_id}-${agent.id}`,
-        source: agent.parent_agent_id,
-        target: agent.id,
-        type: 'smoothstep', // Using smoothstep as requested
-        animated: true,
-        style: { stroke: '#a855f7', strokeWidth: 2 }
-      }));
+      .filter(agent => agent.parent_agent_id)
+      .map(agent => {
+        const isEdgeActive = activePathSet.has(agent.id) && activePathSet.has(agent.parent_agent_id);
+        
+        return {
+          id: `e-${agent.parent_agent_id}-${agent.id}`,
+          source: agent.parent_agent_id,
+          target: agent.id,
+          type: 'smoothstep',
+          animated: isEdgeActive || activeRoutingAgentId === agent.parent_agent_id,
+          style: { 
+            stroke: isEdgeActive ? '#a855f7' : '#6b7280', 
+            strokeWidth: isEdgeActive ? 3 : 2 
+          }
+        };
+      });
 
-    return [...rootEdges, ...dynamicEdges];
+    return dynamicEdges;
   };
 
-  const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(() => {
-    if (!subAgents.length) return { nodes: [], edges: [] };
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  useEffect(() => {
+    if (!subAgents.length) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
     const rawNodes = createInitialNodes();
     const rawEdges = createInitialEdges();
-    return getLayoutedElements(rawNodes, rawEdges, 'TB');
-  }, [subAgents, updateAgentMutation.isPending]);
+    const layout = getLayoutedElements(rawNodes, rawEdges, 'TB');
+    setNodes(layout.nodes);
+    setEdges(layout.edges);
+  }, [subAgents, activeRoutingAgentId, updateAgentMutation.isPending]);
+
+  const onConnect = useCallback(
+    async (params) => {
+      setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#a855f7', strokeWidth: 2 } }, eds));
+      try {
+        const targetAgent = subAgents.find(a => a.id === params.target);
+        if (targetAgent) {
+          await updateAgentMutation.mutateAsync({ 
+            id: targetAgent.id, 
+            payload: { parent_agent_id: params.source }
+          });
+          toast.success("Connection updated");
+        }
+      } catch (err) {
+        toast.error("Failed to update connection");
+      }
+    },
+    [setEdges, subAgents, updateAgentMutation]
+  );
+
+  const onEdgesDelete = useCallback(
+    async (deletedEdges) => {
+      try {
+        for (const edge of deletedEdges) {
+          const targetAgent = subAgents.find(a => a.id === edge.target);
+          if (targetAgent) {
+            await updateAgentMutation.mutateAsync({
+              id: targetAgent.id,
+              payload: { parent_agent_id: null }
+            });
+          }
+        }
+        toast.success("Connection removed");
+      } catch (err) {
+        toast.error("Failed to remove connection");
+      }
+    },
+    [subAgents, updateAgentMutation]
+  );
 
   if (isProjectsLoading || isAgentsLoading) {
     return <div className="p-10"><LoadingSkeleton /></div>;
@@ -311,47 +386,79 @@ export default function ProjectDetailsPage() {
         </div>
       </div>
 
-      <div className="flex-1 bg-background rounded-2xl border border-border overflow-hidden relative">
-        {subAgents.length > 0 ? (
-          <ReactFlow 
-            nodes={layoutedNodes} 
-            edges={layoutedEdges}
-            fitView
-            attributionPosition="bottom-right"
-            nodesDraggable={true}
-            colorMode="system"
-          >
-            <Background gap={16} />
-            <Controls />
-            <MiniMap 
-              nodeColor={(node) => {
-                if (node.id === 'master') return '#e9d5ff';
-                return '#fff';
-              }}
-              maskColor="rgba(0, 0, 0, 0.1)"
-            />
-          </ReactFlow>
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center mb-2">
-              <Bot className="text-indigo-500" size={32} />
-            </div>
-            <p>Your network is currently empty.</p>
+      <div className="flex-1 relative flex overflow-hidden">
+        <div className="flex-1 relative h-[calc(100vh-140px)]">
+          {!isSandboxOpen && (
             <button
-              onClick={() => handleAddAgent(null)}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl btn-primary text-white font-medium text-sm transition-all shadow-lg shadow-primary/25"
+              onClick={() => setIsSandboxOpen(true)}
+              className="absolute top-4 right-4 z-10 flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg transition-colors font-medium text-sm"
             >
-              <Plus size={18} />
-              Create Master Agent
+              <MessagesSquare size={16} />
+              Test Network
             </button>
-          </div>
+          )}
+
+          {subAgents.length > 0 ? (
+            <ReactFlow 
+              nodes={nodes} 
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onEdgesDelete={onEdgesDelete}
+              nodeTypes={nodeTypes}
+              fitView
+              attributionPosition="bottom-right"
+              nodesDraggable={true}
+              colorMode="system"
+            >
+              <Background gap={16} />
+              <Controls className="!bg-card !border-border !fill-foreground" />
+            </ReactFlow>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
+                <Bot size={32} />
+              </div>
+              <p>No agents in this network yet.</p>
+              <button
+                onClick={() => handleAddAgent(null)}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                Create Master Agent
+              </button>
+            </div>
+          )}
+        </div>
+        
+        {isSandboxOpen && (
+          <StudioSandboxChat
+            messages={messages}
+            loading={loading}
+            onSend={(content) => {
+              const manager = subAgents.find(a => a.name === 'Network Manager');
+              if (manager) {
+                sendMessage({
+                  agentId: manager.id,
+                  agentName: manager.name,
+                  content,
+                  language: chatLanguage
+                });
+              } else {
+                toast.error("Network Manager not found!");
+              }
+            }}
+            agent={subAgents.find(a => a.name === 'Network Manager')}
+            chatLanguage={chatLanguage}
+            setChatLanguage={setChatLanguage}
+            onClose={() => {
+              setIsSandboxOpen(false);
+              clearSandbox();
+            }}
+          />
         )}
       </div>
 
-      {agentToEdit && (
-        <AgentSettingsModal agent={agentToEdit} onClose={() => setAgentToEdit(null)} />
-      )}
-      
       {isToolsModalOpen && (
         <ApiToolsModal project={project} onClose={() => setIsToolsModalOpen(false)} />
       )}

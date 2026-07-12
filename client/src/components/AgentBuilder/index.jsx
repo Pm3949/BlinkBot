@@ -45,10 +45,9 @@ export default function AgentBuilder() {
       if (!deployResponse.ok) throw new Error('Failed to deploy agent network');
       const deploymentResult = await deployResponse.json();
 
-      // 3. Enter Configuration Mode
-      setBlueprint(generatedBlueprint);
-      setDeployData(deploymentResult);
-      setStep('configure');
+      // 3. Go directly to the network screen
+      toast.success('Agent Network provisioned successfully!');
+      window.location.href = `/studio/project/${deploymentResult.project_id}`;
     } catch (error) {
       console.error(error);
       toast.error('Failed to create agent network');

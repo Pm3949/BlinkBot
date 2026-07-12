@@ -51,11 +51,6 @@ const groups = [
         icon: Globe,
         path: "/chatbots",
       },
-      {
-        label: "Knowledge",
-        icon: Database,
-        path: "/knowledge",
-      },
     ],
   },
   {

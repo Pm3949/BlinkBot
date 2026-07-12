@@ -36,7 +36,11 @@ async def handle_get_agents(workspace_id: str, include_gateways: bool = False):
                 "web_search_enabled": row[13],
                 "project_id": row[14],
                 "is_active": row[15],
-                "output_format": row[16]
+                "output_format": row[16],
+                "endpoints": row[17] if len(row) > 17 else [],
+                "code_interpreter_enabled": row[18] if len(row) > 18 else False,
+                "databases": json.loads(decrypt_key(row[19])) if len(row) > 19 and decrypt_key(row[19]) else [],
+                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else []
             })
         return agents
     except Exception as e:
@@ -72,7 +76,10 @@ async def handle_create_agent(payload_data: dict):
             "workspace_id": row[12],
             "created_at": row[13].isoformat() if row[13] else None,
             "web_search_enabled": row[14],
-            "endpoints": row[17] if len(row) > 17 else []
+            "endpoints": row[17] if len(row) > 17 else [],
+            "code_interpreter_enabled": row[18] if len(row) > 18 else False,
+            "databases": json.loads(decrypt_key(row[19])) if len(row) > 19 and decrypt_key(row[19]) else [],
+            "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else []
         }
     except Exception as e:
         logger.error(f"Error creating agent: {e}")
@@ -93,39 +100,43 @@ async def handle_update_agent(agent_id: str, payload: dict):
 
         row = await agent_repository.update_agent(agent_id, payload)
         if not row:
-            if not any(k in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints"] for k in payload.keys()):
+            if not any(k in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id"] for k in payload.keys()):
                 raise HTTPException(status_code=400, detail="No valid fields to update")
             raise HTTPException(status_code=404, detail="Agent not found")
             
         try:
             from handlers.notification_handler import create_notification
             await create_notification(
-                workspace_id=str(row[12]),
+                workspace_id=str(row["workspace_id"]),
                 title="Agent Settings Updated",
-                message=f"Settings for agent '{row[1]}' were updated.",
+                message=f"Settings for agent '{row['name']}' were updated.",
                 notification_type="agent_setting_updated"
             )
         except Exception as ne:
             logger.error(f"Failed to create settings update notification: {ne}")
             
         return {
-            "id": row[0],
-            "name": row[1],
-            "description": row[2],
-            "llm_provider": row[3],
-            "llm_model": row[4],
-            "embedding_model": row[5],
-            "chunk_strategy": row[6],
-            "system_prompt": row[7],
-            "output_format": row[8],
-            "api_key": decrypt_key(row[9]) or "",
-            "language": row[10],
-            "user_id": row[11],
-            "workspace_id": row[12],
-            "created_at": row[13].isoformat() if row[13] else None,
-            "web_search_enabled": row[14],
-            "is_active": row[15],
-            "endpoints": row[16] if len(row) > 16 else []
+            "id": row["id"],
+            "name": row["name"],
+            "description": row["description"],
+            "llm_provider": row["llm_provider"],
+            "llm_model": row["llm_model"],
+            "embedding_model": row["embedding_model"],
+            "chunk_strategy": row["chunk_strategy"],
+            "system_prompt": row["system_prompt"],
+            "output_format": row["output_format"],
+            "api_key": decrypt_key(row["api_key"]) or "",
+            "language": row["language"],
+            "user_id": row["user_id"],
+            "workspace_id": row["workspace_id"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "web_search_enabled": row["web_search_enabled"],
+            "parent_agent_id": row.get("parent_agent_id"),
+            "is_active": row["is_active"],
+            "endpoints": row["endpoints"] if "endpoints" in row else [],
+            "code_interpreter_enabled": row.get("code_interpreter_enabled", False),
+            "databases": json.loads(decrypt_key(row["databases"])) if row.get("databases") and decrypt_key(row["databases"]) else [],
+            "native_integrations": json.loads(decrypt_key(row["native_integrations"])) if row.get("native_integrations") and decrypt_key(row["native_integrations"]) else []
         }
     except HTTPException:
         raise
@@ -206,7 +217,10 @@ async def handle_get_project_sub_agents(project_id: str):
                 "parent_agent_id": row[14],
                 "is_active": row[15],
                 "output_format": row[16],
-                "endpoints": row[17] if len(row) > 17 else []
+                "endpoints": row[17] if len(row) > 17 else [],
+                "code_interpreter_enabled": row[18] if len(row) > 18 else False,
+                "databases": json.loads(decrypt_key(row[19])) if len(row) > 19 and decrypt_key(row[19]) else [],
+                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else []
             })
         return agents
     except Exception as e:

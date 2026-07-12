@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Bot,
   Plus,
@@ -24,7 +24,7 @@ import { useAgents, useDeleteAgent, useAgentProjects, useDeleteAgentProject, use
 import { useWorkspacePermissions } from "../hooks/useSettings";
 import EmptyState from "../components/shared/EmptyState";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
-import AgentSettingsModal from "../components/agents/AgentSettingsModal";
+
 import AgentBuilder from "../components/AgentBuilder";
 import { useUIStore } from "../store/useUIStore";
 import { toast } from "sonner";
@@ -58,6 +58,7 @@ const cardVariants = {
 };
 
 export default function StudioPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const setCreateAgentWizardOpen = useUIStore((state) => state.setCreateAgentWizardOpen);
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
@@ -432,7 +433,7 @@ export default function StudioPage() {
                         <div className="absolute right-0 top-full mt-2 w-44 bg-card rounded-xl shadow-xl border border-border py-1 z-20">
                           <button
                             className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted flex items-center gap-2 transition"
-                            onClick={(e) => { e.preventDefault(); setAgentToEdit(agent); setOpenDropdownId(null); }}
+                            onClick={(e) => { e.preventDefault(); navigate(`/agent/${agent.id}/settings`, { state: { agent } }); setOpenDropdownId(null); }}
                           >
                             <Settings size={14} /> Settings
                           </button>
@@ -476,12 +477,12 @@ export default function StudioPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mt-5">
-                  <Link
-                    to="/knowledge"
+                  <button
+                    onClick={(e) => { e.preventDefault(); navigate(`/agent/${agent.id}/settings`, { state: { agent } }); }}
                     className="flex items-center justify-center gap-1.5 py-2 rounded-xl border border-border hover:bg-muted text-sm font-medium transition"
                   >
-                    <Database size={14} /> Knowledge
-                  </Link>
+                    <Settings size={14} /> Settings
+                  </button>
                   <Link
                     to="/chat"
                     className="flex items-center justify-center gap-1.5 py-2 rounded-xl btn-primary text-white text-sm font-medium transition"
@@ -496,8 +497,6 @@ export default function StudioPage() {
       )}
 
       {/* ── Modals ── */}
-      {agentToEdit && <AgentSettingsModal agent={agentToEdit} onClose={() => setAgentToEdit(null)} />}
-
       <Dialog open={!!agentToDelete} onOpenChange={(open) => {
         if (!open) {
           setAgentToDelete(null);

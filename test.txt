@@ -6,120 +6,80 @@ This document outlines the End-to-End (E2E) test cases for the Multi-Agent
 chatbot backend. It covers the Router Agent and five specialized sub-agents.
 
 ====================================================================
-PART 1: MULTI-AGENT NETWORK CREATION (SYSTEM PROMPTS)
+PART 1: MULTI-AGENT NETWORK CREATION (SYSTEM PROMPTS & DESCRIPTIONS)
 ====================================================================
-Before running the tests, ensure the agents are created with the following System Prompts in the RAGMate Studio:
+Before running the tests, ensure the agents are created with the following System Prompts AND strict descriptions in the RAGMate Studio. 
+*Note: The Description field is what the Master Agent reads to decide routing, so it must be extremely specific to avoid catching all queries!*
 
 1. [MASTER] Router/Handoff Agent
-   Prompt: "You are the Master Coordinator for our e-commerce store. Your job is to greet users and route their queries to the correct specialized agent. Do NOT answer questions yourself unless it's a basic greeting. Available agents: Product Selection, Order Tracking, Cart & Checkout, Customer Support, Payment & Billing."
-   [Endpoints]: None needed (acts as router).
+   Description: "The primary orchestrator that routes user queries."
+   Prompt: "You are the Master Coordinator for our e-commerce store. Your ONLY job is to greet users and route their queries to the correct specialized agent. Do NOT answer questions yourself unless it's a basic greeting. If the user asks about an order, route to Order Tracking. If they ask about products, route to Product Selection. If it's about payments, route to Billing. Only route to Customer Support for FAQs like refunds or store policies."
+   [Endpoints]: None needed (acts as a router).
 
 2. [SUB] Product Selection Agent
-   Prompt: "You are the Product Specialist. Help users find products, filter by price/category, compare items, and make recommendations based on their needs. You have access to the product search tool."
+   Description: "USE THIS AGENT ONLY when the user is searching for products to buy, asking for recommendations, comparing items, or asking about prices."
+   Prompt: "You are the Product Specialist. Help users find products, filter by price/category, compare items, and make recommendations based on their needs. You MUST use the Search_Products API tool to answer product questions."
    [Endpoints]: 
-   - Name: Search_Products
+   - Base URL: https://dummyjson.com
+   - Endpoint Name: Search_Products
    - Method: GET
-   - URL: https://dummyjson.com/products/search?q={query}
+   - Path: /products/search?q={query}
+   - Description (Instructions for Agent): Use this to search for products based on the user's query.
+   - Payload Format (JSON): {"query": "{search_term}"}
+   - Expected Output (JSON): {"products": [{"id": "number", "title": "string", "price": "number"}]}
+   - API Key / Auth Header: (Leave Blank)
+   - Headers (JSON): {}
 
 3. [SUB] Order Tracking Agent
-   Prompt: "You are the Logistics Expert. Your sole job is to help users track their orders, check delivery dates, and handle shipping issues. Always ask for an Order ID if not provided. You have access to the Order_Track API tool."
+   Description: "USE THIS AGENT ONLY when the user is asking where their package is, tracking an order, or checking delivery dates."
+   Prompt: "You are the Logistics Expert. Your sole job is to help users track their orders, check delivery dates, and handle shipping issues. Always ask for an Order ID if not provided. You MUST use the Track_Order API tool."
    [Endpoints]:
-   - Name: Track_Order
+   - Base URL: https://eond0bml7q8bo6n.m.pipedream.net
+   - Endpoint Name: Track_Order
    - Method: POST
-   - URL: https://eond0bml7q8bo6n.m.pipedream.net/track
-   - Expected Payload: {"order_id": "{id}"}
+   - Path: /track
+   - Description (Instructions for Agent): Use this tool to get real-time tracking information when a user provides an Order ID.
+   - Payload Format (JSON): {"order_id": "{id}"}
+   - Expected Output (JSON): {"status": "Shipped", "delivery_date": "2026-10-15"}
+   - API Key / Auth Header: (Leave Blank)
+   - Headers (JSON): {"Content-Type": "application/json"}
 
 4. [SUB] Cart & Checkout Agent
-   Prompt: "You are the Checkout Assistant. Help users manage their shopping cart, apply promo codes, and summarize their order before payment."
+   Description: "USE THIS AGENT ONLY when the user is asking what is in their shopping cart, applying promo codes, or preparing to checkout."
+   Prompt: "You are the Checkout Assistant. Help users manage their shopping cart, apply promo codes, and summarize their order before payment. Use your tools to check the cart."
    [Endpoints]:
-   - Name: Add_To_Cart
+   - Base URL: https://dummyjson.com
+   - Endpoint Name: Add_To_Cart
    - Method: POST
-   - URL: https://dummyjson.com/carts/add
-   - Expected Payload: {"userId": 1, "products": [{"id": "{product_id}", "quantity": "{qty}"}]}
+   - Path: /carts/add
+   - Description (Instructions for Agent): Use this to add a specific product to the user's shopping cart.
+   - Payload Format (JSON): {"userId": 1, "products": [{"id": "{product_id}", "quantity": "{qty}"}]}
+   - Expected Output (JSON): {"id": "number", "total": "number", "totalProducts": "number"}
+   - API Key / Auth Header: (Leave Blank)
+   - Headers (JSON): {"Content-Type": "application/json"}
 
 5. [SUB] Customer Support Agent
-   Prompt: "You are the Customer Support Representative. Answer questions about return policies, refunds, warranties, and general store FAQs."
-   [Endpoints]: None needed (uses Knowledge Base documents).
+   Description: "USE THIS AGENT ONLY for store FAQs, return policies, refund policies, and general store information. DO NOT use this for orders, payments, or products."
+   Prompt: "You are the Customer Support Representative. Answer questions about return policies, refunds, warranties, and general store FAQs. Do NOT answer questions about specific products or order tracking."
+   [Endpoints]: None needed (Relies purely on the RAG Knowledge Base documents you upload).
 
 6. [SUB] Payment & Billing Agent
-   Prompt: "You are the Billing Specialist. Handle queries related to payment methods, invoice generation, and failed transactions."
+   Description: "USE THIS AGENT ONLY when the user is asking about credit card declines, payment errors (like error 402), invoices, or failed transactions."
+   Prompt: "You are the Billing Specialist. Handle queries related to payment methods, invoice generation, and failed transactions. Use the Verify_Payment tool to check errors."
    [Endpoints]:
-   - Name: Verify_Payment
+   - Base URL: https://eond0bml7q8bo6n.m.pipedream.net
+   - Endpoint Name: Verify_Payment
    - Method: POST
-   - URL: https://eond0bml7q8bo6n.m.pipedream.net
-   - Expected Payload: {"transaction_id": "{tx_id}"}
+   - Path: /verify
+   - Description (Instructions for Agent): Use this to check the status of a failed or declined payment transaction.
+   - Payload Format (JSON): {"transaction_id": "{tx_id}"}
+   - Expected Output (JSON): {"status": "Declined", "reason": "Insufficient Funds"}
+   - API Key / Auth Header: (Leave Blank)
+   - Headers (JSON): {"Content-Type": "application/json"}
 
 
 ====================================================================
 PART 2: TEST CASES (HAPPY PATH & EDGE CASES)
 ====================================================================
 
---------------------------------------------------------------------
-TC-01: Happy Path - Basic Routing & Product Search
---------------------------------------------------------------------
-Description: Verify that the Router correctly identifies a product search and routes it to the Product Selection Agent.
-Prerequisites: None
-User Input: "I'm looking for a cheap laptop under $500 for college."
-Expected Agent Triggered: Product Selection Agent
-Expected Output / Action: 
-- Backend Action: Triggers product search API/tool with constraints (price < $500, category: laptop).
-- Bot Reply: "I can help you find a great college laptop! Here are a few top-rated options under $500..."
-
---------------------------------------------------------------------
-TC-02: Happy Path - Order Tracking with Tool Execution
---------------------------------------------------------------------
-Description: Verify the Order Tracking agent correctly asks for missing parameters and triggers its tool.
-Prerequisites: User has an active order (Mock ID: ORD-999).
-User Input 1: "Where is my package?"
-Expected Agent Triggered: Order Tracking Agent
-Expected Output 1: "I'd be happy to check that for you. Could you please provide your Order ID?"
-User Input 2: "It is ORD-999"
-Expected Agent Triggered: Order Tracking Agent
-Expected Output / Action:
-- Backend Action: Agent triggers `Order_Track` webhook with payload `{"order_id": "ORD-999"}`.
-- Bot Reply: "Your order ORD-999 is currently out for delivery and should arrive by 8 PM tonight."
-
---------------------------------------------------------------------
-TC-03: Edge Case - Multi-Intent Query (Handoff Required)
---------------------------------------------------------------------
-Description: User asks a dual-intent question. Verify the current agent answers its part and seamlessly hands off the rest.
-Prerequisites: User is viewing their cart.
-User Input: "Can I apply the code SAVE20 to my cart? Also, what is your return policy if I don't like the items?"
-Expected Agent Triggered: Cart & Checkout Agent (initial) -> Customer Support Agent (handoff)
-Expected Output / Action:
-- Backend Action: Cart Agent validates promo code.
-- Bot Reply (Cart Agent): "Yes, I've successfully applied SAVE20 to your cart! Regarding your return policy question, let me transfer you to our Support team..."
-- Bot Reply (Support Agent): "Hello! Our return policy allows you to return any items within 30 days for a full refund..."
-
---------------------------------------------------------------------
-TC-04: Edge Case - Failed Transaction Troubleshooting
---------------------------------------------------------------------
-Description: Verify the Billing Agent correctly handles a frustrated user with a declined card.
-Prerequisites: User attempted checkout and failed with Error 402.
-User Input: "My card keeps getting declined and I'm getting an error 402. Fix this!"
-Expected Agent Triggered: Payment & Billing Agent
-Expected Output / Action:
-- Backend Action: Billing Agent checks transaction logs.
-- Bot Reply: "I'm sorry you're having trouble checking out. Error 402 usually means the bank blocked the transaction for fraud protection. Please check if you received a text from your bank, or you can try checking out with PayPal instead."
-
---------------------------------------------------------------------
-TC-05: Edge Case - Out of Scope Query
---------------------------------------------------------------------
-Description: Verify the bot gracefully handles a query completely unrelated to e-commerce.
-Prerequisites: None
-User Input: "Can you write a python script to scrape a website?"
-Expected Agent Triggered: Router/Handoff Agent (or Master)
-Expected Output / Action:
-- Backend Action: None
-- Bot Reply: "I specialize in helping you shop, track orders, and manage your account for this store. I cannot write Python scripts. Is there anything store-related I can help you with today?"
-
---------------------------------------------------------------------
-TC-06: Happy Path - Cart Summary & Checkout
---------------------------------------------------------------------
-Description: Verify the Cart Agent can accurately summarize cart contents before payment.
-Prerequisites: User has 2 items in cart (1x Mouse, 1x Keyboard).
-User Input: "What's in my cart and how much is the total?"
-Expected Agent Triggered: Cart & Checkout Agent
-Expected Output / Action:
-- Backend Action: Triggers internal `Get_Cart` API tool.
-- Bot Reply: "You currently have 1x Wireless Mouse ($20) and 1x Mechanical Keyboard ($80) in your cart. Your total before tax is $100. Are you ready to proceed to checkout?"
+(Test Cases remain the same - verify routing matches the new strict descriptions above!)

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Network, FileText, Key, CheckCircle2, Bot, Settings, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import AgentSettingsModal from '../agents/AgentSettingsModal';
 import { toast } from 'sonner';
 import { getAuthHeaders } from '../../lib/api';
 
@@ -102,21 +101,7 @@ export default function BlueprintConfigurator({ blueprint, deployData, onFinish 
                       </h3>
                       <p className="text-muted-foreground mt-1 text-sm">{agent.goal}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setEditingAgent({
-                        id: dbAgentId,
-                        name: agent.role,
-                        description: agent.goal,
-                        system_prompt: agent.backstory,
-                        llm_provider: 'google',
-                        llm_model: 'gemini-2.5-flash',
-                        workspace_id: deployData.workspace_id
-                      })}
-                      className="p-2 bg-background border border-border hover:bg-muted text-foreground rounded-lg transition flex items-center gap-2 text-sm font-medium"
-                    >
-                      <Settings className="w-4 h-4" /> Settings
-                    </button>
+
                   </div>
                 </div>
               </div>
@@ -226,9 +211,6 @@ export default function BlueprintConfigurator({ blueprint, deployData, onFinish 
         </motion.div>
       </form>
 
-      {editingAgent && (
-        <AgentSettingsModal agent={editingAgent} onClose={() => setEditingAgent(null)} />
-      )}
     </motion.div>
   );
 }

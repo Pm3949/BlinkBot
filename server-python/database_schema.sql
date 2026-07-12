@@ -60,7 +60,10 @@ ADD COLUMN model TEXT DEFAULT 'llama-3.1-8b-instant',
 ADD COLUMN api_key TEXT,
 ADD COLUMN description TEXT,
 ADD COLUMN embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',
-ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph';
+ADD COLUMN chunk_strategy TEXT DEFAULT 'paragraph',
+ADD COLUMN code_interpreter_enabled BOOLEAN DEFAULT FALSE,
+ADD COLUMN databases TEXT,
+ADD COLUMN native_integrations TEXT;
 
 -- 1. CHAT SESSIONS TABLE (ChatGPT ke left sidebar ki lists ke liye)
 CREATE TABLE chat_sessions (

@@ -10,7 +10,8 @@ import DashboardPage from "../pages/DashboardPage";
 import LoginPage from "../pages/LoginPage";
 import StudioPage from "../pages/StudioPage";
 import ProjectDetailsPage from "../pages/ProjectDetailsPage";
-import KnowledgeBasePage from "../pages/KnowledgeBasePage";
+import AgentSettingsPage from "../pages/AgentSettingsPage";
+
 import ChatPage from "../pages/ChatPage";
 import ChatbotsPage from "../pages/ChatbotsPage";
 import ChatbotEditorPage from "../pages/ChatbotEditorPage";
@@ -114,6 +115,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: "agent/:agentId/settings",
+        element: (
+          <PermissionRoute permission="canManageAgents" label="Agent Settings">
+            <AgentSettingsPage />
+          </PermissionRoute>
+        ),
+      },
+      {
         path: "chatbots",
         element: <ChatbotsPage />,
       },
@@ -125,14 +134,7 @@ export const router = createBrowserRouter([
           </PermissionRoute>
         ),
       },
-      {
-        path: "knowledge",
-        element: (
-          <PermissionRoute permission="canManageDatabase" label="Knowledge Base">
-            <KnowledgeBasePage />
-          </PermissionRoute>
-        ),
-      },
+
 
 
       // ── Admin-only routes ─────────────────────────────────────────
