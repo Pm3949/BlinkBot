@@ -15,7 +15,8 @@ from handlers.auth_handler import (
     handle_reset_password,
     handle_setup_2fa,
     handle_verify_2fa_setup,
-    handle_login_2fa
+    handle_login_2fa,
+    handle_disable_2fa
 )
 
 logger = logging.getLogger(__name__)
@@ -152,3 +153,14 @@ async def login_2fa(request: Request, payload: Login2FA):
     Returns: The access token and user info.
     """
     return await handle_login_2fa(payload.user_id, payload.totp_code)
+
+@router.post("/2fa/disable")
+async def disable_2fa(request: Request, payload: dict):
+    """
+    What it does: HTTP endpoint to disable 2FA.
+    Args:
+        request (Request): The incoming request.
+        payload (dict): The user ID.
+    Returns: A success message.
+    """
+    return await handle_disable_2fa(payload.get("user_id"))

@@ -11,7 +11,7 @@ import { useUIStore } from "../store/useUIStore";
 import { useUserSettings, useUpdateUserSettings, usePrimaryWorkspace, useUpdateWorkspace } from "../hooks/useSettings";
 import { toast } from "sonner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
-import { setup2FA, verifySetup2FA } from "../services/authService";
+import { setup2FA, verifySetup2FA, disable2FA } from "../services/authService";
 import { QRCodeSVG } from "qrcode.react";
 import { useAuth } from "../context/AuthContext";
 
@@ -222,8 +222,13 @@ export default function SettingsPage() {
               className={`px-4 py-2 rounded-xl text-white ${settings?.two_factor_enabled ? 'bg-green-600 hover:bg-green-700' : 'btn-primary'}`}
               onClick={async () => {
                 if (settings?.two_factor_enabled) {
-                   await updateSettingsMutation.mutateAsync({ two_factor_enabled: false });
-                   toast.success("2FA Disabled");
+                   try {
+                     await disable2FA(user.id);
+                     await updateSettingsMutation.mutateAsync({ two_factor_enabled: false });
+                     toast.success("2FA Disabled");
+                   } catch (e) {
+                     toast.error("Failed to disable 2FA");
+                   }
                 } else {
                    try {
                      const data = await setup2FA(user.id);

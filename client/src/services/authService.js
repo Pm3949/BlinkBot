@@ -93,3 +93,14 @@ export async function verifySetup2FA({ user_id, totp_code }) {
   if (!response.ok) throw new Error(data.detail || data.message || "Failed to verify 2FA");
   return data;
 }
+
+export async function disable2FA(user_id) {
+  const response = await fetch(`${API_URL}/auth/2fa/disable`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || data.message || "Failed to disable 2FA");
+  return data;
+}

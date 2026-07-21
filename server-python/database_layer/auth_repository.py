@@ -125,3 +125,8 @@ async def enable_2fa(user_id: str, secret: str, settings_exist: bool):
             await run_in_threadpool(cursor.execute, "UPDATE user_settings SET two_factor_enabled = TRUE, totp_secret = %s WHERE user_id = %s", (secret, user_id))
             
         await run_in_threadpool(cursor.execute, "UPDATE public.users SET two_factor_enabled = TRUE, totp_secret = %s WHERE id = %s", (secret, user_id))
+
+async def disable_2fa(user_id: str):
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(cursor.execute, "UPDATE user_settings SET two_factor_enabled = FALSE, totp_secret = NULL WHERE user_id = %s", (user_id,))
+        await run_in_threadpool(cursor.execute, "UPDATE public.users SET two_factor_enabled = FALSE, totp_secret = NULL WHERE id = %s", (user_id,))

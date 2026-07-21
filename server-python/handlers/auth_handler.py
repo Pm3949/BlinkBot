@@ -310,3 +310,12 @@ async def handle_login_2fa(user_id: str, totp_code: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+async def handle_disable_2fa(user_id: str):
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID required")
+    try:
+        await auth_repository.disable_2fa(user_id)
+        return {"message": "2FA successfully disabled"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
