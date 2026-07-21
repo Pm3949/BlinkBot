@@ -3,7 +3,7 @@ import json
 import os
 from fastapi import HTTPException
 from utils import send_invite_email
-from database_layer import workspace_repository
+from db import workspace_repository
 
 logger = logging.getLogger(__name__)
 

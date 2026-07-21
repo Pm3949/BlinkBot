@@ -1,6 +1,6 @@
 import logging
 from fastapi import HTTPException
-from database_layer import analytics_repository
+from db import analytics_repository
 
 logger = logging.getLogger(__name__)
 

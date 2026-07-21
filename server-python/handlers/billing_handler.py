@@ -3,7 +3,7 @@ import logging
 import razorpay
 from fastapi import HTTPException
 from core.dependencies import razorpay_client, RAZORPAY_KEY_ID
-from database_layer import billing_repository
+from db import billing_repository
 
 logger = logging.getLogger(__name__)
 

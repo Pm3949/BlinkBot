@@ -7,7 +7,7 @@ import asyncio
 from fastapi import HTTPException
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
-from database_layer import connector_repository
+from db import connector_repository
 
 logger = logging.getLogger(__name__)
 

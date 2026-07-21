@@ -9,7 +9,7 @@ from utils import get_user_limits
 logger = logging.getLogger(__name__)
 
 from handlers.websocket_handlers import upload_status_manager
-from database_layer import document_repository
+from db import document_repository
 
 async def async_background_ingestion(
     document_id: str,

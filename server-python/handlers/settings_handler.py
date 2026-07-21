@@ -1,7 +1,7 @@
 import logging
 from fastapi import HTTPException
 from core.security import encrypt_key, decrypt_key
-from database_layer import settings_repository
+from db import settings_repository
 
 logger = logging.getLogger(__name__)
 

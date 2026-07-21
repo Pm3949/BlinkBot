@@ -2,7 +2,7 @@ import { supabase } from "../supabaseClient";
 import { getAuthHeaders } from "../lib/api";
 
 // We need the python backend URL to fetch analytics. It's usually VITE_API_BASE_URL or hardcoded for now.
-const API_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`;
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 async function getAuthenticatedUser() {
   const userStr = localStorage.getItem("user");

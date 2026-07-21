@@ -1,6 +1,6 @@
 import logging
 from fastapi import HTTPException
-from database_layer import chatbot_repository
+from db import chatbot_repository
 
 logger = logging.getLogger(__name__)
 

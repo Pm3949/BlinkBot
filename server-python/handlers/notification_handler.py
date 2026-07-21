@@ -1,5 +1,5 @@
 import logging
-from database_layer import notification_repository
+from db import notification_repository
 from handlers.websocket_handlers import notification_manager
 logger = logging.getLogger(__name__)
 

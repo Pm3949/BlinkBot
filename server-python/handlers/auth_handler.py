@@ -16,7 +16,7 @@ from core.auth import (
     GOOGLE_CLIENT_SECRET, 
     FRONTEND_URL
 )
-from database_layer import auth_repository
+from db import auth_repository
 
 logger = logging.getLogger(__name__)
 

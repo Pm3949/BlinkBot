@@ -1,7 +1,7 @@
 import logging
 import uuid
 from fastapi import HTTPException
-from database_layer import chat_history_repository
+from db import chat_history_repository
 
 logger = logging.getLogger(__name__)
 

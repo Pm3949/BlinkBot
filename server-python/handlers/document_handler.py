@@ -17,7 +17,7 @@ from utils import background_ingestion, get_user_limits_by_id
 from schemas import URLRequest, ConnectorRequest
 from handlers.document_processor import async_background_ingestion
 from handlers.websocket_handlers import upload_status_manager
-from database_layer import document_repository
+from db import document_repository
 
 logger = logging.getLogger(__name__)
 

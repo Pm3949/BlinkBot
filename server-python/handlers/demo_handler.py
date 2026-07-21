@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from fastapi import HTTPException
 from handlers.admin_handler import check_super_admin, check_action_password
-from database_layer import demo_repository
+from db import demo_repository
 
 logger = logging.getLogger(__name__)
 

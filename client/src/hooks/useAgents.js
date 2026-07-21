@@ -128,7 +128,7 @@ export function useProjectTools(projectId) {
   return useQuery({
     queryKey: ["agent-projects-tools", projectId],
     queryFn: async () => {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/agent-projects/${projectId}/tools`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"}/api/agent-projects/${projectId}/tools`, {
         headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error("Failed to fetch tools");
@@ -142,7 +142,7 @@ export function useUpdateTool(projectId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, payload }) => {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/tools/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"}/api/tools/${id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -160,7 +160,7 @@ export function useCreateTool(projectId) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload) => {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || `${import.meta.env.VITE_API_BASE_URL}`}/api/agent-projects/${projectId}/tools`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"}/api/agent-projects/${projectId}/tools`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),

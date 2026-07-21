@@ -15,7 +15,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
 
-from database_layer import chat_repository
+from db import chat_repository
 from core.dependencies import rag_engine
 from core.security import decrypt_key
 from core.scrubber import scrub_pii
@@ -452,7 +452,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     native_integrations_map[str(agent_id)] = native_integrations
                     
                     if project_id:
-                        from database_layer.agent_repository import get_project_tools
+                        from db.agent_repository import get_project_tools
                         p_tools = await get_project_tools(project_id)
                         project_tools_dict = {str(t[0]): t[2] for t in p_tools}
                         

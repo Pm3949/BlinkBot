@@ -1,7 +1,7 @@
 import logging
 import os
 from fastapi import HTTPException
-from database_layer import admin_repository
+from db import admin_repository
 
 logger = logging.getLogger(__name__)
 

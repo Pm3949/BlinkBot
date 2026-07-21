@@ -1,6 +1,6 @@
 import logging
 from fastapi import HTTPException
-from database_layer import feedback_repository
+from db import feedback_repository
 
 logger = logging.getLogger(__name__)
 
