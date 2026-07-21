@@ -17,6 +17,9 @@ class UserSettingsUpdate(BaseModel):
     openai_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
     two_factor_enabled: Optional[bool] = None
 
 @router.get("/api/settings")
@@ -45,5 +48,8 @@ async def update_user_settings(payload: UserSettingsUpdate, current_user: dict =
         payload.openai_api_key,
         payload.groq_api_key,
         payload.gemini_api_key,
+        payload.openrouter_api_key,
+        payload.anthropic_api_key,
+        payload.huggingface_api_key,
         payload.two_factor_enabled
     )

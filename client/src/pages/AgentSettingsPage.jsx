@@ -3,10 +3,11 @@ import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
-import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp } from "lucide-react";
+import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useEffect } from "react";
-import { useWorkspacePermissions } from "../hooks/useSettings";
+import { useWorkspacePermissions, useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
+import { useActiveModels } from "../hooks/useModels";
 import { useAuth } from "../context/AuthContext";
 import { useProjectTools } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector } from "../hooks/useDocuments";
@@ -175,9 +176,36 @@ export default function AgentSettingsPage() {
     native_integrations: agent?.native_integrations || [],
   });
 
+  const { data: activeModelsData } = useActiveModels();
+  const { data: userSettings } = useUserSettings();
+  const updateSettingsMutation = useUpdateUserSettings();
+  const [showCustomOverride, setShowCustomOverride] = useState(false);
+
+  const isProviderKeyPresent = (provider) => {
+    if (formData.api_key?.trim()) return true;
+    const keyName = `${provider}_api_key`;
+    return Boolean(userSettings?.[keyName]?.trim());
+  };
+
+  const dynamicModels = useMemo(() => {
+    if (activeModelsData?.providers) {
+      const formatted = {};
+      Object.keys(activeModelsData.providers).forEach((prov) => {
+        formatted[prov] = activeModelsData.providers[prov].map((m) => ({
+          id: m.model_id,
+          name: m.name,
+          requiresKey: m.requires_key,
+          description: m.description,
+        }));
+      });
+      return formatted;
+    }
+    return AVAILABLE_MODELS;
+  }, [activeModelsData]);
+
   const currentModels = useMemo(
-    () => AVAILABLE_MODELS[formData.provider] || [],
-    [formData.provider]
+    () => dynamicModels[formData.provider] || AVAILABLE_MODELS[formData.provider] || [],
+    [formData.provider, dynamicModels]
   );
 
   const selectedModel = currentModels.find(
@@ -191,7 +219,7 @@ export default function AgentSettingsPage() {
       ...(key === "provider"
         ? {
           model:
-            AVAILABLE_MODELS[value]?.find((availableModel) => availableModel.id)?.id || prev.model,
+            (dynamicModels[value] || AVAILABLE_MODELS[value])?.find((availableModel) => availableModel.id)?.id || prev.model,
         }
         : {}),
     }));
@@ -223,6 +251,12 @@ export default function AgentSettingsPage() {
     if (!formData.name.trim()) {
       toast.error("Agent name is required.");
       return;
+    }
+
+    // If API key was typed, also save it to common DB user_settings so Models page and all agents benefit
+    if (selectedModel?.requiresKey && formData.api_key?.trim() && formData.provider) {
+      const keyName = `${formData.provider}_api_key`;
+      updateSettingsMutation.mutate({ [keyName]: formData.api_key.trim() });
     }
 
     const payload = {
@@ -364,72 +398,174 @@ export default function AgentSettingsPage() {
               {activeTab === 'model' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div>
-                    <h3 className="text-2xl font-bold">AI Model</h3>
-                    <p className="text-muted-foreground text-sm mt-1">Select the intelligence powering this agent.</p>
+                    <h3 className="text-2xl font-bold flex items-center gap-2">
+                      <Brain className="text-primary" size={24} /> AI Model & Intelligence Engine
+                    </h3>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      Configure the primary LLM engine, embedding model, and inference parameters powering this agent.
+                    </p>
                   </div>
-                  <div className="space-y-5 bg-card p-6 rounded-2xl border border-border shadow-sm">
+
+                  {/* Main Container */}
+                  <div className="space-y-6 bg-card p-6 sm:p-8 rounded-3xl border border-border shadow-md">
+                    {/* Provider Selection */}
                     <div>
-                      <label className="block text-sm font-semibold mb-2">Provider</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {providers.map((p) => (
-                          <button
-                            key={p.id}
-                            onClick={() => updateField("provider", p.id)}
-                            className={`p-4 rounded-xl border text-center transition-all ${formData.provider === p.id ? "border-primary bg-primary/10 shadow-sm" : "border-border hover:border-primary/40 bg-background"
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                        1. Select AI Provider Platform
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {providers.map((p) => {
+                          const isSelected = formData.provider === p.id;
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => updateField("provider", p.id)}
+                              className={`p-3.5 rounded-2xl border text-center transition-all relative flex flex-col justify-center items-center h-16 ${
+                                isSelected
+                                  ? "border-primary bg-primary/10 text-primary font-bold shadow-sm ring-1 ring-primary"
+                                  : "border-border/70 hover:border-primary/40 bg-background text-muted-foreground hover:text-foreground font-semibold"
                               }`}
-                          >
-                            <h4 className={`font-semibold text-sm ${formData.provider === p.id ? "text-primary" : "text-foreground"}`}>{p.name}</h4>
-                          </button>
-                        ))}
+                            >
+                              <h4 className="text-xs capitalize">{p.name}</h4>
+                              {isSelected && (
+                                <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary" />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-semibold mb-1.5">Specific Model</label>
+                    {/* Specific Model Selection */}
+                    <div className="pt-2 border-t border-border/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          2. Select Specific Model
+                        </label>
+                        <span className="text-xs text-muted-foreground">
+                          Available: {currentModels.length} models
+                        </span>
+                      </div>
+
                       <Select value={formData.model} onValueChange={(val) => updateField("model", val)}>
-                        <SelectTrigger className="w-full rounded-xl py-5">
-                          <SelectValue />
+                        <SelectTrigger className="w-full rounded-2xl py-6 px-4 border-input bg-background font-medium">
+                          <SelectValue placeholder="Choose an AI model..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          {currentModels.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                          ))}
+                        <SelectContent className="max-h-72">
+                          {currentModels.map((m) => {
+                            const isEnabled = !m.requiresKey || isProviderKeyPresent(formData.provider);
+                            return (
+                              <SelectItem key={m.id} value={m.id} disabled={!isEnabled} className="py-2.5">
+                                <div className="flex items-center justify-between gap-4 w-full">
+                                  <span className="font-semibold text-sm">{m.name}</span>
+                                  {!isEnabled ? (
+                                    <span className="text-[11px] text-amber-500 font-medium flex items-center gap-1">
+                                      <Lock size={12} /> Key Required
+                                    </span>
+                                  ) : m.requiresKey ? (
+                                    <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
+                                      <CheckCircle2 size={12} /> Key Ready
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
+                                      <Zap size={12} /> Free Included
+                                    </span>
+                                  )}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {selectedModel?.requiresKey && (
-                      <div className="pt-2">
-                        <label className="text-sm font-semibold mb-1.5 flex items-center gap-2 text-orange-500">
-                          <Key size={14} /> Custom API Key Required
-                        </label>
-                        <input
-                          type="password"
-                          value={formData.api_key || ""}
-                          onChange={(e) => updateField("api_key", e.target.value)}
-                          placeholder="Enter your API Key"
-                          className="w-full bg-background border border-orange-500/30 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none"
-                        />
+                    {/* API Key Status / Custom Key Input */}
+                    {selectedModel?.requiresKey ? (() => {
+                      const keyName = `${formData.provider}_api_key`;
+                      const savedKey = userSettings?.[keyName]?.trim();
+                      const hasSavedKey = Boolean(savedKey);
+
+                      if (hasSavedKey && !showCustomOverride && !formData.api_key?.trim()) {
+                        return (
+                          <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between gap-4 text-xs text-emerald-500 font-medium">
+                            <div className="flex items-center gap-3">
+                              <CheckCircle2 size={18} className="shrink-0" />
+                              <div>
+                                <div className="font-bold text-sm capitalize">{formData.provider} API Key Active</div>
+                                <div className="text-[11px] text-emerald-500/80 font-mono">
+                                  ••••••••••••{savedKey.slice(-4)} (Saved in Common Workspace Database)
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowCustomOverride(true)}
+                              className="text-xs font-semibold text-muted-foreground hover:text-foreground underline bg-transparent border-none cursor-pointer"
+                            >
+                              Custom Key Override
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-3 shadow-inner">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                              <Key size={16} /> {formData.provider.toUpperCase()} Provider API Key
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => navigate("/models")}
+                              className="text-xs text-amber-600 hover:underline font-medium flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+                            >
+                              Manage Credentials Hub
+                            </button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Key entered here will automatically be saved to the common workspace DB so all models & agents use it.
+                          </p>
+                          <input
+                            type="password"
+                            value={formData.api_key || ""}
+                            onChange={(e) => updateField("api_key", e.target.value)}
+                            placeholder="Paste your API key here..."
+                            className="w-full bg-background border border-input rounded-xl px-4 py-2.5 text-xs font-mono focus:ring-2 focus:ring-amber-500/30 transition-all outline-none"
+                          />
+                        </div>
+                      );
+                    })() : (
+                      <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center gap-3 text-xs text-emerald-500 font-medium">
+                        <Zap size={16} className="shrink-0" />
+                        <div>
+                          <div className="font-bold">Included in Workspace Plan</div>
+                          <div className="text-[11px] text-emerald-500/80">No API key required for this model. Direct inference enabled.</div>
+                        </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border mt-2">
-                      <div>
-                        <label className="block text-sm font-semibold mb-1.5 flex items-center gap-2">
-                          <FileText size={16} className="text-muted-foreground" />
-                          Embedding Model
-                        </label>
-                        <Select value={formData.embedding_model} onValueChange={(val) => updateField("embedding_model", val)}>
-                          <SelectTrigger className="w-full rounded-xl py-5">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {EMBEDDING_MODELS.map((em) => (
-                              <SelectItem key={em.id} value={em.id} disabled={em.disabled}>{em.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                    {/* Embedding Model Selection */}
+                    <div className="pt-4 border-t border-border/50 space-y-3">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <FileText size={16} className="text-primary" />
+                        3. Vector Embedding Model
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Used for document chunking, semantic indexing, and knowledge retrieval.
+                      </p>
+                      <Select value={formData.embedding_model} onValueChange={(val) => updateField("embedding_model", val)}>
+                        <SelectTrigger className="w-full rounded-2xl py-6 px-4 border-input bg-background font-medium">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EMBEDDING_MODELS.map((em) => (
+                            <SelectItem key={em.id} value={em.id} disabled={em.disabled} className="py-2.5">
+                              {em.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </div>

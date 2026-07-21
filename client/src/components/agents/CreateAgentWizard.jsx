@@ -13,13 +13,17 @@ import {
   ChevronDown,
   Globe,
   Code,
+  Zap,
+  Lock,
+  CheckCircle2,
 } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { toast } from "sonner";
 import { useAuth } from "../../context/AuthContext";
 import { useCreateAgent } from "../../hooks/useAgents";
 import { useUIStore } from "../../store/useUIStore";
-import { useWorkspacePermissions } from "../../hooks/useSettings";
+import { useWorkspacePermissions, useUserSettings } from "../../hooks/useSettings";
+import { useActiveModels } from "../../hooks/useModels";
 import { getAuthHeaders } from "../../lib/api";
 import {
   Select,
@@ -31,21 +35,12 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../ui/sheet";
 
 export const providers = [
-  {
-    id: "groq",
-    name: "Groq",
-    desc: "Free Models",
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    desc: "Premium Models",
-  },
-  {
-    id: "ollama",
-    name: "Local (Ollama)",
-    desc: "Free Offline",
-  },
+  { id: "groq", name: "Groq" },
+  { id: "openai", name: "OpenAI" },
+  { id: "openrouter", name: "OpenRouter" },
+  { id: "huggingface", name: "HuggingFace" },
+  { id: "anthropic", name: "Anthropic" },
+  { id: "gemini", name: "Gemini" },
 ];
 
 export const AVAILABLE_MODELS = {
@@ -171,9 +166,34 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     web_search_enabled: false,
   });
 
+  const { data: activeModelsData } = useActiveModels();
+  const { data: userSettings } = useUserSettings();
+
+  const isProviderKeyPresent = (provider) => {
+    if (formData.api_key?.trim()) return true;
+    const keyName = `${provider}_api_key`;
+    return Boolean(userSettings?.[keyName]?.trim());
+  };
+
+  const dynamicModels = useMemo(() => {
+    if (activeModelsData?.providers) {
+      const formatted = {};
+      Object.keys(activeModelsData.providers).forEach((prov) => {
+        formatted[prov] = activeModelsData.providers[prov].map((m) => ({
+          id: m.model_id,
+          name: m.name,
+          requiresKey: m.requires_key,
+          description: m.description,
+        }));
+      });
+      return formatted;
+    }
+    return AVAILABLE_MODELS;
+  }, [activeModelsData]);
+
   const currentModels = useMemo(
-    () => AVAILABLE_MODELS[formData.provider] || [],
-    [formData.provider],
+    () => dynamicModels[formData.provider] || AVAILABLE_MODELS[formData.provider] || [],
+    [formData.provider, dynamicModels],
   );
 
   const selectedModel =
@@ -190,7 +210,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
       ...(key === "provider"
         ? {
             model:
-              AVAILABLE_MODELS[value]?.find(
+              (dynamicModels[value] || AVAILABLE_MODELS[value])?.find(
                 (availableModel) => availableModel.id,
               )?.id || prev.model,
           }
@@ -584,17 +604,17 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                   </div>
                   <div>
                     <label className="font-medium block mb-2">Provider</label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {providers.map((p) => (
                         <button
                           key={p.id}
                           onClick={() => updateField("provider", p.id)}
                           className={`
-                          flex-1 px-4 py-3 rounded-2xl border text-sm font-medium transition-all
+                          px-4 py-2.5 rounded-xl border text-xs font-semibold capitalize transition-all
                           ${
                             formData.provider === p.id
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-background hover:bg-muted"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm"
+                              : "border-border bg-background hover:bg-muted text-muted-foreground"
                           }
                         `}
                         >
@@ -609,35 +629,57 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                   <div>
                     <label className="font-medium block mb-2">Model</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {currentModels.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => updateField("model", m.id)}
-                          className={`
-                          px-4 py-4 rounded-2xl border text-left transition-all
-                          ${
-                            formData.model === m.id
-                              ? "border-primary bg-primary/5 ring-1 ring-primary"
-                              : "border-border bg-background hover:bg-muted"
-                          }
-                        `}
-                        >
-                          <div className="font-medium">{m.name}</div>
-                          {m.requiresKey && (
-                            <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                              <Key size={12} /> Requires API Key
+                      {currentModels.map((m) => {
+                        const isEnabled = !m.requiresKey || isProviderKeyPresent(formData.provider);
+                        return (
+                          <button
+                            key={m.id}
+                            disabled={!isEnabled}
+                            onClick={() => isEnabled && updateField("model", m.id)}
+                            className={`
+                            px-4 py-4 rounded-2xl border text-left transition-all
+                            ${
+                              formData.model === m.id
+                                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                : isEnabled
+                                ? "border-border bg-background hover:bg-muted"
+                                : "border-border/40 bg-muted/20 opacity-50 cursor-not-allowed"
+                            }
+                          `}
+                          >
+                            <div className="font-medium flex items-center justify-between">
+                              <span>{m.name}</span>
+                              {!isEnabled && <Lock size={14} className="text-amber-500" />}
                             </div>
-                          )}
-                        </button>
-                      ))}
+                            {m.requiresKey ? (
+                              isEnabled ? (
+                                <div className="text-xs text-emerald-500 font-medium mt-1 flex items-center gap-1">
+                                  <CheckCircle2 size={12} /> Unlocked & Ready
+                                </div>
+                              ) : (
+                                <div className="text-xs text-amber-500 font-medium mt-1 flex items-center gap-1">
+                                  <Lock size={12} /> Requires API Key (Enter below)
+                                </div>
+                              )
+                            ) : (
+                              <div className="text-xs text-emerald-500 font-medium mt-1 flex items-center gap-1">
+                                <Zap size={12} /> Included in Plan (No Key Needed)
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {selectedModel?.requiresKey && (
-                    <div className="animate-in slide-in-from-top-2">
-                      <label className="font-medium block mb-2">
-                        Provider API Key
-                      </label>
+                  {selectedModel?.requiresKey ? (
+                    <div className="animate-in slide-in-from-top-2 p-5 rounded-2xl border border-amber-500/30 bg-amber-500/5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold text-sm flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                          <Key size={16} /> Provider API Key Required
+                        </label>
+                        <span className="text-[11px] text-muted-foreground">Optional override if configured in Models Page</span>
+                      </div>
                       <div className="relative">
                         <Key
                           className="
@@ -647,11 +689,12 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                         -translate-y-1/2
                         text-muted-foreground
                       "
+                          size={18}
                         />
 
                         <input
                           type="password"
-                          placeholder="API Key"
+                          placeholder="Leave blank to use default workspace key, or paste custom key..."
                           value={formData.api_key}
                           onChange={(event) =>
                             updateField("api_key", event.target.value)
@@ -659,14 +702,27 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                           className="
                         w-full
                         pl-12
-                        py-4
-                        rounded-2xl
+                        pr-4
+                        py-3
+                        rounded-xl
                         border
-                        border-border
+                        border-input
                         bg-background
                         text-foreground
+                        font-mono
+                        text-xs
                       "
                         />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center gap-3">
+                      <Zap className="text-emerald-500 shrink-0" size={20} />
+                      <div>
+                        <h4 className="font-semibold text-xs text-emerald-500">Free Model Selected</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          This model runs on platform infrastructure or free tiers. No API key is required from you!
+                        </p>
                       </div>
                     </div>
                   )}

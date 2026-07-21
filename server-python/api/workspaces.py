@@ -62,6 +62,17 @@ async def get_primary_workspace(current_user: dict = Depends(get_current_user)):
     user_id = current_user["sub"]
     return await handle_get_primary_workspace(user_id)
 
+@router.get("/api/workspaces/user")
+async def get_user_workspaces(current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to get all workspaces a user has access to.
+    Args:
+        user_id (str): The user's ID.
+    Returns: A list of workspaces.
+    """
+    user_id = current_user["sub"]
+    return await handle_get_user_workspaces(user_id)
+
 @router.put("/api/workspaces/{workspace_id}")
 async def update_workspace(workspace_id: str, payload: WorkspaceUpdate):
     """
@@ -73,16 +84,6 @@ async def update_workspace(workspace_id: str, payload: WorkspaceUpdate):
     """
     return await handle_update_workspace(workspace_id, payload.name)
 
-@router.get("/api/workspaces/user")
-async def get_user_workspaces(current_user: dict = Depends(get_current_user)):
-    """
-    What it does: HTTP endpoint to get all workspaces a user has access to.
-    Args:
-        user_id (str): The user's ID.
-    Returns: A list of workspaces.
-    """
-    user_id = current_user["sub"]
-    return await handle_get_user_workspaces(user_id)
 
 @router.get("/api/workspaces/{workspace_id}/members")
 async def get_workspace_members(workspace_id: str):

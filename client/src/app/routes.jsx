@@ -18,6 +18,7 @@ import ChatbotEditorPage from "../pages/ChatbotEditorPage";
 
 import AnalyticsPage from "../pages/AnalyticsPage";
 import SettingsPage from "../pages/SettingsPage";
+import ModelsPage from "../pages/ModelsPage";
 import TeamPage from "../pages/TeamPage";
 import BillingPage from "../pages/BillingPage";
 import LandingPage from "../pages/LandingPage";
@@ -91,6 +92,10 @@ export const router = createBrowserRouter([
       {
         path: "analytics",
         element: <AnalyticsPage />,
+      },
+      {
+        path: "models",
+        element: <ModelsPage />,
       },
       {
         path: "settings",

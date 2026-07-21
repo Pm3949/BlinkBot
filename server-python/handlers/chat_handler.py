@@ -23,6 +23,75 @@ from handlers.websocket_handlers import agent_connection_manager
 
 logger = logging.getLogger(__name__)
 
+def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    prov = (provider or "groq").lower()
+    
+    # 1. OpenRouter
+    if prov == "openrouter":
+        key = api_key or os.getenv("OPENROUTER_API_KEY")
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=key or "dummy-key",
+            base_url="https://openrouter.ai/api/v1"
+        )
+        
+    # 2. HuggingFace Serverless Inference / Endpoints
+    elif prov == "huggingface":
+        key = api_key or os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
+        target_base = base_url or "https://api-inference.huggingface.co/v1"
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=key or "dummy-key",
+            base_url=target_base
+        )
+        
+    # 3. Custom OpenAI-compatible server (vLLM, LMStudio, LocalAI)
+    elif prov == "custom_openai":
+        target_base = base_url or "http://localhost:8000/v1"
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=api_key or "dummy-key",
+            base_url=target_base
+        )
+        
+    # 4. Anthropic Claude
+    elif prov == "anthropic":
+        try:
+            from langchain_anthropic import ChatAnthropic
+            key = api_key or os.getenv("ANTHROPIC_API_KEY")
+            return ChatAnthropic(model_name=model_name, api_key=key)
+        except Exception as e:
+            logger.error(f"Failed to load Anthropic module, falling back to ChatOpenAI: {e}")
+            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"))
+
+    # 5. Google Gemini
+    elif prov == "gemini":
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            target_model = model_name
+            if target_model.startswith("models/"):
+                target_model = target_model.replace("models/", "")
+            return ChatGoogleGenerativeAI(model=target_model, google_api_key=key)
+        except Exception as e:
+            logger.error(f"Failed to load Gemini module, falling back to ChatOpenAI: {e}")
+            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"))
+
+    # 6. OpenAI
+    elif prov == "openai":
+        key = api_key or os.getenv("OPENAI_API_KEY")
+        return ChatOpenAI(model_name=model_name, api_key=key)
+
+    # 7. Ollama
+    elif prov == "ollama":
+        target_base = base_url or "http://localhost:11434"
+        return ChatOllama(model=model_name, base_url=target_base)
+
+    # 8. Default: Groq
+    else:
+        key = api_key or os.getenv("GROQ_API_KEY")
+        return ChatGroq(model_name=model_name, api_key=key)
+
 def create_webhook_tool(endpoint, project_tools_dict):
     from langchain_core.tools import tool
     import json as json_lib
@@ -360,13 +429,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             lang_name = lang_map.get(language.lower(), language)
                             formatted_prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-                        if prov == "openai":
-                            llm_inst = ChatOpenAI(model_name=mod, api_key=c_key or os.getenv("OPENAI_API_KEY"))
-                        elif prov == "ollama":
-                            llm_inst = ChatOllama(model=mod)
-                        else:
-                            llm_inst = ChatGroq(model_name=mod, api_key=c_key or os.getenv("GROQ_API_KEY"))
-
+                        llm_inst = create_llm_instance(prov, mod, c_key)
                         return llm_inst, formatted_prompt, emb_model, web_enabled
 
                     def tools_factory(aid: str, emb_model: str, web_enabled: bool, llm_inst):
@@ -638,14 +701,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         )
                         continue
 
-                    if provider == "openai":
-                        key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-                        llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-                    elif provider == "ollama":
-                        llm = ChatOllama(model=model)
-                    else:
-                        key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-                        llm = ChatGroq(model_name=model, api_key=key_to_use)
+                    llm = create_llm_instance(provider, model, custom_api_key)
 
                     hyde_query = rag_engine.generate_hyde_query(message, llm)
                     query_vector = rag_engine.vectorize(

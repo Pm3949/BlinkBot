@@ -116,46 +116,26 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* API Keys */}
-        <div className="glass-card p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <Key className="text-primary" />
-            <h2 className="text-xl font-semibold text-foreground">
-              API Keys
-            </h2>
+        {/* AI Model Credentials Link Banner */}
+        <div className="glass-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0">
+              <Key size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-foreground">AI Model & Provider API Credentials</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Manage AES-256 encrypted API keys for OpenAI, Groq, OpenRouter, Anthropic, Gemini & HuggingFace in your Models Hub.
+              </p>
+            </div>
           </div>
-
-          <div className="space-y-4">
-            <input
-              type="password"
-              placeholder="OpenAI API Key"
-              value={apiKeys.openai_api_key}
-              onChange={(e) => handleApiKeyChange("openai_api_key", e.target.value)}
-              className="w-full border border-border rounded-2xl p-4 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <input
-              type="password"
-              placeholder="Groq API Key"
-              value={apiKeys.groq_api_key}
-              onChange={(e) => handleApiKeyChange("groq_api_key", e.target.value)}
-              className="w-full border border-border rounded-2xl p-4 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <input
-              type="password"
-              placeholder="Gemini API Key"
-              value={apiKeys.gemini_api_key}
-              onChange={(e) => handleApiKeyChange("gemini_api_key", e.target.value)}
-              className="w-full border border-border rounded-2xl p-4 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <button 
-              onClick={handleSaveApiKeys}
-              disabled={updateSettingsMutation.isPending}
-              className="px-5 py-3 btn-primary rounded-2xl flex items-center gap-2 disabled:opacity-50"
-            >
-              <Save size={16} />
-              {updateSettingsMutation.isPending ? "Saving..." : "Save API Keys"}
-            </button>
-          </div>
+          <button 
+            type="button"
+            onClick={() => navigate("/models")}
+            className="px-4 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-xl text-xs font-semibold shrink-0"
+          >
+            Manage Credentials in Models Hub
+          </button>
         </div>
 
         {/* Appearance */}

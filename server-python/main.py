@@ -102,7 +102,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from api import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth, oauth
+from api import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth, oauth, models
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
@@ -126,6 +126,7 @@ app.include_router(meta_agent.router)
 app.include_router(demo.router)
 app.include_router(auth.router)
 app.include_router(connectors.router)
+app.include_router(models.router)
 app.include_router(oauth.router, prefix="/api/auth", tags=["OAuth Native Integrations"])
 
 # ==========================================
@@ -234,6 +235,12 @@ scheduler.add_job(cleanup_old_chat_data, 'cron', hour=0, minute=0)
 async def startup_event():
     scheduler.start()
     
+    try:
+        from db.model_repository import init_ai_models_table
+        await init_ai_models_table()
+    except Exception as e:
+        logger.error(f"Failed to initialize ai_models table: {e}")
+        
     # Auto-resume any interrupted document ingestion tasks on startup
     try:
         from handlers.document_processor import resume_interrupted_uploads

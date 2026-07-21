@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Globe,
   ShieldCheck,
-  Plus
+  Plus,
+  Cpu
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useUserWorkspaces, useWorkspacePermissions } from "../../hooks/useSettings";
@@ -71,6 +72,11 @@ const groups = [
   {
     label: "System",
     items: [
+      {
+        label: "Models",
+        icon: Cpu,
+        path: "/models",
+      },
       {
         label: "Team",
         icon: Users,
