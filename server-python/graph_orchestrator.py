@@ -12,14 +12,15 @@ class GraphState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     active_agent_id: Optional[str]
     routed_agent_name: Optional[str]
+    next_agent: Optional[str]
 
 def build_multi_agent_graph(
     master_agent_id: str,
     gateway_name: str,
     sub_agents: List[tuple],
     router_llm: BaseChatModel,
-    llm_factory: Callable[[str, str], BaseChatModel], # get_llm(active_agent_id, memory_patch) -> (llm, system_prompt, embed_model, web_search_enabled)
-    tools_factory: Callable[[str, str], List[Callable]], # get_tools(active_agent_id, embed_model, web_search_enabled) -> [tools]
+    llm_factory: Callable[[str], BaseChatModel], # get_llm(active_agent_id) -> (llm, system_prompt, embed_model, web_search_enabled)
+    tools_factory: Callable[[str, str, bool, BaseChatModel], List[Callable]], # get_tools(active_agent_id, embed_model, web_search_enabled, llm) -> [tools]
 ):
     """
     Builds a LangGraph state machine representing a Supervisor Agent that routes to specialized Sub-Agents.
@@ -28,8 +29,23 @@ def build_multi_agent_graph(
     
     # 1. Supervisor Node
     async def supervisor_node(state: GraphState):
+        # Enforce loop termination: if the last message in state history is an AIMessage,
+        # it means a specialist agent has generated a response. We must yield control to the user.
+        if state["messages"]:
+            last_msg = state["messages"][-1]
+            if getattr(last_msg, "type", None) == "ai" or isinstance(last_msg, AIMessage):
+                return {
+                    "active_agent_id": master_agent_id,
+                    "routed_agent_name": gateway_name,
+                    "next_agent": "FINISH"
+                }
+                
         if not sub_agents or len(sub_agents) <= 1:
-            return {"active_agent_id": master_agent_id, "routed_agent_name": gateway_name}
+            return {
+                "active_agent_id": master_agent_id, 
+                "routed_agent_name": gateway_name,
+                "next_agent": master_agent_id
+            }
             
         agent_descriptions_list = []
         for sa in sub_agents:
@@ -44,43 +60,52 @@ def build_multi_agent_graph(
             )
         agent_descriptions = "\n".join(agent_descriptions_list)
         
-        from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
-        routing_prompt = ROUTING_SYSTEM_PROMPT.format(
-            agent_descriptions=agent_descriptions,
-            message=state['messages'][-1].content
-        )
-        
-        import re
+        from prompts.routing_prompts import SUPERVISOR_LOOP_PROMPT
+        supervisor_prompt = SUPERVISOR_LOOP_PROMPT.format(agent_descriptions=agent_descriptions)
         
         try:
             router_llm_json = router_llm.bind(response_format={"type": "json_object"})
-            routing_response = await router_llm_json.ainvoke(routing_prompt)
+            # Append history messages after System instruction prompt
+            messages = [SystemMessage(content=supervisor_prompt)] + list(state["messages"])
+            routing_response = await router_llm_json.ainvoke(messages)
             content = routing_response.content.strip()
             
-            # Clean markdown if any
+            # Clean markdown code fences
             if content.startswith("```json"):
                 content = content[7:]
             if content.endswith("```"):
                 content = content[:-3]
             content = content.strip()
             
-            try:
-                parsed = json.loads(content)
-                chosen_uuid = parsed.get("agent_id", "").strip().lower()
-            except json.JSONDecodeError:
-                # Fallback to regex
-                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', content, re.IGNORECASE)
-                chosen_uuid = uuid_match.group(0).lower() if uuid_match else content
-            
-            
-            chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
-            
-            if chosen_agent and str(chosen_agent[0]) != str(master_agent_id):
-                return {"active_agent_id": chosen_agent[0], "routed_agent_name": chosen_agent[1]}
+            parsed = json.loads(content)
+            next_step = parsed.get("next", "FINISH").strip()
         except Exception as e:
             print(f"Routing failed: {e}")
+            next_step = "FINISH"
             
-        return {"active_agent_id": master_agent_id, "routed_agent_name": gateway_name}
+        chosen_agent = next((sa for sa in sub_agents if str(sa[0]).lower() == next_step.lower()), None)
+        
+        if chosen_agent:
+            # If the chosen agent is the master agent, we still run it, but label it with gateway_name
+            name = gateway_name if str(chosen_agent[0]).lower() == master_agent_id.lower() else chosen_agent[1]
+            return {
+                "active_agent_id": chosen_agent[0], 
+                "routed_agent_name": name,
+                "next_agent": chosen_agent[0]
+            }
+            
+        if next_step.lower() == master_agent_id.lower():
+            return {
+                "active_agent_id": master_agent_id,
+                "routed_agent_name": gateway_name,
+                "next_agent": master_agent_id
+            }
+            
+        return {
+            "active_agent_id": master_agent_id, 
+            "routed_agent_name": gateway_name,
+            "next_agent": "FINISH"
+        }
 
     # 2. Agent Execution Node
     async def agent_node(state: GraphState):
@@ -95,20 +120,27 @@ def build_multi_agent_graph(
         else:
             llm_with_tools = llm
             
-        # We need to construct the prompt with history and system prompt
-        # Actually, standard LangGraph passes state["messages"] directly to the LLM.
-        # So we just inject the system prompt at the beginning of the messages if it's not there.
         msgs = list(state["messages"])
         if not any(isinstance(m, SystemMessage) for m in msgs):
             msgs.insert(0, SystemMessage(content=sys_prompt))
             
         try:
-            response = await llm_with_tools.ainvoke(msgs)
+            response = None
+            async for chunk in llm_with_tools.astream(msgs):
+                if response is None:
+                    response = chunk
+                else:
+                    response += chunk
             print("AGENT RESPONSE:", response)
         except Exception as e:
             if "Failed to call a function" in str(e) or "tool" in str(e).lower() or "400" in str(e):
                 print(f"Groq API Error caught: {e}. Falling back to standard LLM without tools.")
-                response = await llm.ainvoke(msgs)
+                response = None
+                async for chunk in llm.astream(msgs):
+                    if response is None:
+                        response = chunk
+                    else:
+                        response += chunk
             else:
                 raise e
                 
@@ -116,7 +148,6 @@ def build_multi_agent_graph(
 
     # 3. Tool Execution Node
     async def tool_node(state: GraphState):
-        # We use a custom tool node to dynamically fetch the correct tools for the active agent
         active_agent_id = state.get("active_agent_id") or master_agent_id
         llm, _, embed_model, web_search_enabled = await llm_factory(active_agent_id)
         tools = tools_factory(active_agent_id, embed_model, web_search_enabled, llm)
@@ -124,19 +155,25 @@ def build_multi_agent_graph(
         tool_executor = ToolNode(tools)
         return await tool_executor.ainvoke(state)
         
-    def should_continue(state: GraphState):
+    def router_edge(state: GraphState):
+        next_agent = state.get("next_agent")
+        if not next_agent or next_agent == "FINISH":
+            return END
+        return "agent"
+
+    def agent_edge(state: GraphState):
         last_message = state["messages"][-1]
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             return "tools"
-        return END
+        return "supervisor"
 
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", tool_node)
     
     workflow.set_entry_point("supervisor")
-    workflow.add_edge("supervisor", "agent")
-    workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+    workflow.add_conditional_edges("supervisor", router_edge, {"agent": "agent", END: END})
+    workflow.add_conditional_edges("agent", agent_edge, {"tools": "tools", "supervisor": "supervisor"})
     workflow.add_edge("tools", "agent")
     
     return workflow.compile()

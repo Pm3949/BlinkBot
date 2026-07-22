@@ -23,7 +23,8 @@ import {
   AlertCircle,
   Pencil,
   Eye,
-  EyeOff
+  EyeOff,
+  Network
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
@@ -85,7 +86,8 @@ export default function ModelsPage() {
     openrouter_api_key: "",
     huggingface_api_key: "",
     anthropic_api_key: "",
-    gemini_api_key: ""
+    gemini_api_key: "",
+    share_keys: false
   });
 
   const [showKeys, setShowKeys] = useState({
@@ -109,7 +111,8 @@ export default function ModelsPage() {
         openrouter_api_key: userSettings.openrouter_api_key || "",
         huggingface_api_key: userSettings.huggingface_api_key || "",
         anthropic_api_key: userSettings.anthropic_api_key || "",
-        gemini_api_key: userSettings.gemini_api_key || ""
+        gemini_api_key: userSettings.gemini_api_key || "",
+        share_keys: userSettings.share_keys || false
       });
     }
   }, [userSettings]);
@@ -495,11 +498,11 @@ export default function ModelsPage() {
                             <XCircle size={12} /> Failed
                           </span>
                           {modelTestState[m.model_id]?.error && (
-                            <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-72 p-3 bg-popover border border-red-500/40 text-popover-foreground rounded-xl shadow-2xl z-50 text-xs transition-all animate-in fade-in zoom-in-95">
+                            <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-72 p-3 bg-zinc-950 border border-red-500/50 text-zinc-100 rounded-xl shadow-2xl z-50 text-xs transition-all animate-in fade-in zoom-in-95">
                               <div className="font-bold text-red-500 mb-1 flex items-center gap-1.5">
                                 <AlertCircle size={14} /> Execution Error:
                               </div>
-                              <div className="text-muted-foreground text-[11px] leading-relaxed break-words font-mono">
+                              <div className="text-zinc-300 text-[11px] leading-relaxed break-words font-mono">
                                 {modelTestState[m.model_id].error}
                               </div>
                             </div>
@@ -591,11 +594,11 @@ export default function ModelsPage() {
                                   <XCircle size={12} /> Failed
                                 </span>
                                 {modelTestState[m.model_id]?.error && (
-                                  <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-72 p-3 bg-popover border border-red-500/40 text-popover-foreground rounded-xl shadow-2xl z-50 text-xs transition-all animate-in fade-in zoom-in-95">
+                                  <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-72 p-3 bg-zinc-950 border border-red-500/50 text-zinc-100 rounded-xl shadow-2xl z-50 text-xs transition-all animate-in fade-in zoom-in-95">
                                     <div className="font-bold text-red-500 mb-1 flex items-center gap-1.5">
                                       <AlertCircle size={14} /> Execution Error:
                                     </div>
-                                    <div className="text-muted-foreground text-[11px] leading-relaxed break-words font-mono">
+                                    <div className="text-zinc-300 text-[11px] leading-relaxed break-words font-mono">
                                       {modelTestState[m.model_id].error}
                                     </div>
                                   </div>
@@ -661,6 +664,22 @@ export default function ModelsPage() {
                 All provider keys are encrypted at rest using enterprise-grade AES-256-GCM. Keys are decrypted strictly in ephemeral server memory during inference requests and are never logged or exposed.
               </p>
             </div>
+          </div>
+
+          {/* Workspace API Key Sharing Toggle */}
+          <div className="p-5 rounded-2xl bg-card border border-border/60 shadow-sm flex items-center justify-between">
+            <div className="space-y-1 pr-4">
+              <h4 className="font-bold text-sm flex items-center gap-2">
+                <Network size={16} className="text-primary animate-pulse" /> Share API Credentials Workspace-wide
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Allow team members in this workspace to run models using your encrypted credentials securely without entering their own keys.
+              </p>
+            </div>
+            <Switch
+              checked={apiKeys.share_keys}
+              onCheckedChange={(val) => setApiKeys((prev) => ({ ...prev, share_keys: val }))}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

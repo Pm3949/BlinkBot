@@ -1,4 +1,3 @@
-import logging
 import smtplib
 import os
 from email.mime.text import MIMEText
@@ -7,9 +6,12 @@ from fastapi import HTTPException
 from handlers.admin_handler import check_super_admin, check_action_password
 from db import demo_repository
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
+
+logger = get_department_logger("system")
 
 def _send_demo_email(req: dict, request_id: int, created_at):
+    logger.debug(f"Compiling demo request notification email for: {req.get('email')}")
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -17,7 +19,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     notify_email = os.getenv("NOTIFY_EMAIL") or "techmate.ed@gmail.com"
  
     if not smtp_user or not smtp_pass or not notify_email:
-        logger.warning("SMTP or destination email not configured, skipping demo email notification")
+        logger.warning("SMTP or destination email not configured in environment, skipping demo email notification.")
         return
 
     msg = MIMEMultipart("alternative")
@@ -61,20 +63,26 @@ def _send_demo_email(req: dict, request_id: int, created_at):
 
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, notify_email, msg.as_string())
+    try:
+        logger.debug(f"Connecting to SMTP server at {smtp_host}:{smtp_port}...")
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, notify_email, msg.as_string())
+        logger.info(f"Demo request notification email successfully sent to {notify_email}")
+    except Exception as smtp_err:
+        logger.error(f"Failed to send demo notification email: {str(smtp_err)}", exc_info=True)
 
-    logger.info(f"Demo request email sent to {notify_email}")
 
 def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link: str):
+    logger.debug(f"Compiling demo meeting invite email for: {email}")
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
  
     if not smtp_user or not smtp_pass:
+        logger.warning("SMTP not configured in environment, skipping demo meeting invite email.")
         return
 
     msg = MIMEMultipart("alternative")
@@ -102,18 +110,26 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, email, msg.as_string())
+    try:
+        logger.debug(f"Connecting to SMTP server to send meeting invite...")
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, email, msg.as_string())
+        logger.info(f"Demo meeting scheduled invitation successfully sent to {email}")
+    except Exception as smtp_err:
+        logger.error(f"Failed to send demo meeting invitation email: {str(smtp_err)}", exc_info=True)
+
 
 def _send_feedback_email(name: str, email: str):
+    logger.debug(f"Compiling demo feedback email for: {email}")
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
  
     if not smtp_user or not smtp_pass:
+        logger.warning("SMTP not configured in environment, skipping demo feedback follow-up email.")
         return
 
     msg = MIMEMultipart("alternative")
@@ -139,17 +155,25 @@ def _send_feedback_email(name: str, email: str):
     """
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, email, msg.as_string())
+    try:
+        logger.debug("Connecting to SMTP server to send feedback follow-up...")
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, email, msg.as_string())
+        logger.info(f"Demo feedback follow-up email successfully sent to {email}")
+    except Exception as smtp_err:
+        logger.error(f"Failed to send demo feedback email: {str(smtp_err)}", exc_info=True)
 
 
 async def handle_submit_demo_request(req: dict):
+    logger.info(f"Submitting a new demo request from '{req.get('name')}' (Email: {req.get('email')})")
     try:
+        logger.debug("Executing demo request database insert query...")
         row = await demo_repository.submit_demo_request(
             req.get('name'), req.get('email'), req.get('company'), req.get('message')
         )
+        logger.info(f"Demo request recorded in database. ID: {row[0]}")
         try:
             _send_demo_email(req, row[0], row[1])
         except Exception as email_err:
@@ -157,14 +181,19 @@ async def handle_submit_demo_request(req: dict):
 
         return {"success": True, "message": "Demo request submitted successfully!", "id": row[0]}
     except Exception as e:
-        logger.error(f"Demo request failed: {e}")
+        logger.error(f"Demo request submission failed for {req.get('email')}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def handle_get_admin_demo_requests(user_id: str):
+    logger.info(f"Admin request: Fetching all demo requests list. Requested by user ID: {user_id}")
     try:
         await check_super_admin(user_id)
+        
+        logger.debug("Querying demo requests list from database...")
         rows = await demo_repository.get_admin_demo_requests()
+        logger.debug(f"Retrieved {len(rows)} demo request records.")
+        
         requests = []
         for r in rows:
             requests.append({
@@ -179,57 +208,69 @@ async def handle_get_admin_demo_requests(user_id: str):
                 "scheduled_time": r[8],
                 "meeting_link": r[9],
             })
+        logger.info(f"Successfully processed {len(requests)} demo requests.")
         return {"requests": requests}
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Failed to fetch admin demo requests")
+        logger.error(f"Failed to fetch admin demo requests: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def handle_update_demo_request_status(request_id: int, req: dict):
+    logger.info(f"Admin request: Updating status for demo request ID: {request_id}")
     try:
         check_action_password(req.get('admin_action_password'))
         await check_super_admin(req.get('admin_user_id'))
 
-        row = await demo_repository.update_demo_request_status(request_id, req.get('status'))
+        status = req.get('status')
+        logger.debug(f"Updating status for demo request ID {request_id} to '{status}'...")
+        row = await demo_repository.update_demo_request_status(request_id, status)
         if not row:
+            logger.warning(f"Update status rejected: Demo request ID {request_id} not found.")
             raise HTTPException(status_code=404, detail="Demo request not found")
         
         name, email = row[0], row[1]
 
-        if req.get('status') == 'completed':
+        if status == 'completed':
+            logger.info(f"Demo request ID {request_id} marked as completed. Triggering demo feedback email...")
             try:
                 _send_feedback_email(name, email)
             except Exception as email_err:
                 logger.warning(f"Failed to send feedback email: {email_err}")
 
-        return {"message": "Status updated successfully", "status": req.get('status')}
+        logger.info(f"Demo request ID {request_id} status updated successfully to '{status}'.")
+        return {"message": "Status updated successfully", "status": status}
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Failed to update demo request status")
+        logger.error(f"Failed to update status for demo request ID {request_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def handle_schedule_demo_meeting(request_id: int, req: dict):
+    logger.info(f"Admin request: Scheduling demo meeting for request ID: {request_id}")
     try:
         check_action_password(req.get('admin_action_password'))
         await check_super_admin(req.get('admin_user_id'))
 
+        logger.debug("Retrieving demo request details from database...")
         row = await demo_repository.get_demo_request_contact(request_id)
         if not row:
+            logger.warning(f"Meeting schedule rejected: Demo request ID {request_id} not found.")
             raise HTTPException(status_code=404, detail="Demo request not found")
         
         name, email = row[0], row[1]
         meet_link = req.get('meeting_link')
+        date_str = req.get('date')
+        time_str = req.get('time')
 
-        await demo_repository.schedule_demo_meeting(
-            request_id, req.get('date'), req.get('time'), meet_link
-        )
+        logger.debug(f"Updating meeting scheduling parameters for request ID {request_id} in database...")
+        await demo_repository.schedule_demo_meeting(request_id, date_str, time_str, meet_link)
 
+        logger.info(f"Demo meeting successfully scheduled in database for request ID: {request_id}. Triggering invitation email...")
         try:
-            _send_meeting_invite_email(name, email, req.get('date'), req.get('time'), meet_link)
+            _send_meeting_invite_email(name, email, date_str, time_str, meet_link)
         except Exception as email_err:
             logger.warning(f"Failed to send meeting invite email: {email_err}")
 
@@ -237,14 +278,19 @@ async def handle_schedule_demo_meeting(request_id: int, req: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Failed to schedule demo meeting")
+        logger.error(f"Failed to schedule meeting for request ID {request_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def handle_get_scheduled_demo_requests(user_id: str):
+    logger.info(f"Admin request: Fetching all scheduled demo requests. Requested by user ID: {user_id}")
     try:
         await check_super_admin(user_id)
+        
+        logger.debug("Querying database scheduled demo requests...")
         rows = await demo_repository.get_scheduled_demo_requests()
+        logger.debug(f"Retrieved {len(rows)} scheduled demo requests.")
+        
         requests = []
         for r in rows:
             requests.append({
@@ -257,9 +303,10 @@ async def handle_get_scheduled_demo_requests(user_id: str):
                 "scheduled_time": r[6],
                 "meeting_link": r[7],
             })
+        logger.info(f"Successfully processed {len(requests)} scheduled demo requests.")
         return {"requests": requests}
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Failed to fetch scheduled demo requests")
+        logger.error(f"Failed to fetch scheduled admin requests: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

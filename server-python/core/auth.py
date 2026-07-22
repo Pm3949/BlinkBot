@@ -204,6 +204,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+        from utils.logger import user_id_var
+        user_id_var.set(payload.get("sub", "-"))
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")

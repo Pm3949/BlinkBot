@@ -21,6 +21,7 @@ class UserSettingsUpdate(BaseModel):
     anthropic_api_key: Optional[str] = None
     huggingface_api_key: Optional[str] = None
     two_factor_enabled: Optional[bool] = None
+    share_keys: Optional[bool] = None
 
 @router.get("/api/settings")
 async def get_user_settings(current_user: dict = Depends(get_current_user)):
@@ -51,5 +52,6 @@ async def update_user_settings(payload: UserSettingsUpdate, current_user: dict =
         payload.openrouter_api_key,
         payload.anthropic_api_key,
         payload.huggingface_api_key,
-        payload.two_factor_enabled
+        payload.two_factor_enabled,
+        payload.share_keys
     )

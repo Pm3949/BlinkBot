@@ -191,6 +191,27 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     return AVAILABLE_MODELS;
   }, [activeModelsData]);
 
+  const dynamicProviders = useMemo(() => {
+    if (activeModelsData?.providers) {
+      const activeProviders = Object.keys(activeModelsData.providers);
+      const displayNames = {
+        groq: "Groq",
+        openai: "OpenAI",
+        openrouter: "OpenRouter",
+        huggingface: "HuggingFace",
+        anthropic: "Anthropic",
+        gemini: "Gemini",
+        ollama: "Ollama",
+        custom_openai: "Custom Server"
+      };
+      return activeProviders.map(p => ({
+        id: p,
+        name: displayNames[p] || p.toUpperCase()
+      }));
+    }
+    return providers;
+  }, [activeModelsData]);
+
   const currentModels = useMemo(
     () => dynamicModels[formData.provider] || AVAILABLE_MODELS[formData.provider] || [],
     [formData.provider, dynamicModels],
@@ -605,7 +626,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                   <div>
                     <label className="font-medium block mb-2">Provider</label>
                     <div className="flex flex-wrap gap-2">
-                      {providers.map((p) => (
+                      {dynamicProviders.map((p) => (
                         <button
                           key={p.id}
                           onClick={() => updateField("provider", p.id)}

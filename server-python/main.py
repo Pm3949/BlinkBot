@@ -7,6 +7,9 @@ and manages background tasks (like data cleanup).
 import os
 import tempfile
 import logging
+import shutil
+from contextlib import asynccontextmanager
+from utils.logger import cleanup_department_loggers
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -91,7 +94,43 @@ class PublicCORSMiddleware(BaseHTTPMiddleware):
         # If it's a normal API request, just pass it through to the standard CORSMiddleware
         return await call_next(request)
 
+class LoggingContextMiddleware(BaseHTTPMiddleware):
+    """
+    Custom Middleware to inject Client IP and authenticated User ID into logging context variables.
+    """
+    async def dispatch(self, request: Request, call_next):
+        # 1. Extract client IP
+        client_ip = request.client.host if request.client else "-"
+        if "x-forwarded-for" in request.headers:
+            client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
+            
+        # 2. Try to extract User ID from authorization header
+        user_id = "-"
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            try:
+                from core.auth import JWT_SECRET, ALGORITHM
+                import jwt
+                payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+                user_id = payload.get("sub", "-")
+            except Exception:
+                pass
+
+        # Set context variables
+        from utils.logger import user_id_var, client_ip_var
+        token_user = user_id_var.set(user_id)
+        token_ip = client_ip_var.set(client_ip)
+        
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            user_id_var.reset(token_user)
+            client_ip_var.reset(token_ip)
+
 app.add_middleware(PublicCORSMiddleware)
+app.add_middleware(LoggingContextMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -230,9 +269,11 @@ scheduler = BackgroundScheduler()
 # Run daily at midnight
 scheduler.add_job(cleanup_old_chat_data, 'cron', hour=0, minute=0)
 
-# Hook the scheduler into FastAPI's lifecycle events
-@app.on_event("startup")
-async def startup_event():
+# Modern FastAPI lifespan context manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # On startup: Automatically create the logs/ directory if it doesn't exist
+    os.makedirs("logs", exist_ok=True)
     scheduler.start()
     
     try:
@@ -244,14 +285,20 @@ async def startup_event():
     # Auto-resume any interrupted document ingestion tasks on startup
     try:
         from handlers.document_processor import resume_interrupted_uploads
-        resume_interrupted_uploads()
+        await resume_interrupted_uploads()
     except Exception as e:
         logger.error(f"Failed to resume interrupted uploads on startup: {e}")
 
+    yield
 
-@app.on_event("shutdown")
-def shutdown_event():
+    # On shutdown: Explicitly close all active file handlers and completely purge logs directory
     scheduler.shutdown()
+    cleanup_department_loggers()
+    if os.path.exists("logs"):
+        shutil.rmtree("logs", ignore_errors=True)
+
+# Register the lifespan context manager
+app.router.lifespan_context = lifespan
 
 if __name__ == "__main__":
     import uvicorn

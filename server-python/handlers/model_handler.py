@@ -3,7 +3,9 @@ import aiohttp
 from fastapi import HTTPException
 from db import model_repository
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
+
+logger = get_department_logger("system")
 
 async def handle_get_active_models():
     """Returns active models grouped by provider for frontend dropdowns."""
@@ -175,7 +177,7 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
         try:
             from db import settings_repository
             from core.security import decrypt_key
-            settings = await settings_repository.get_user_settings(user_id) if user_id else None
+            settings = await settings_repository.get_effective_user_settings(user_id) if user_id else None
             if settings:
                 provider_index_map = {
                     "openai": 0,
@@ -193,16 +195,21 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
 
     try:
         from handlers.chat_handler import create_llm_instance
-        llm = create_llm_instance(provider, model_id, api_key=api_key, base_url=base_url)
+        llm = create_llm_instance(provider, model_id, api_key=api_key, base_url=base_url, max_retries=0)
         
-        # Lightweight ping test with low max_tokens to preserve credits
+        # Lightweight ping test with low max_tokens/max_output_tokens to preserve credits
         from langchain_core.messages import HumanMessage
+        response = None
         try:
-            llm_to_test = llm.bind(max_tokens=5)
-        except Exception:
-            llm_to_test = llm
+            if provider == "google":
+                llm_to_test = llm.bind(max_output_tokens=5)
+            else:
+                llm_to_test = llm.bind(max_tokens=5)
+            response = await llm_to_test.ainvoke([HumanMessage(content="Respond with: OK")])
+        except Exception as e:
+            logger.warning(f"Binding limit/test invoke failed, attempting fallback invocation: {e}")
+            response = await llm.ainvoke([HumanMessage(content="Respond with: OK")])
             
-        response = await llm_to_test.ainvoke([HumanMessage(content="Respond with: OK")])
         text_out = getattr(response, "content", str(response)).strip()
         
         return {

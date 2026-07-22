@@ -1,0 +1,40 @@
+I need a customer support agent network for my Shopify-like store. One agent should check order status from the database, another agent should answer product-related questions using the product catalog (including images), and a third agent should escalate issues to the internal team on Slack if a customer is angry or requests a refund. Everything should remain read-only—no agent should cancel orders or issue refunds on its own; it should only escalate those cases.
+
+
+Test Queries (in order)
+
+1. Order Status Specialist (SQL-type, read-only)
+
+"Where is my order #4521? It's been 5 days."
+
+Check: schema/DB lookup hota hai, sirf actual order data return hota hai, koi DML nahi chalta.
+
+2. Product Information Specialist (catalog/retrieval, image formatting)
+
+"Does the blue cotton hoodie come in size XL, and can you show me a picture?"
+
+Check: product images ![alt](url) format me aati hain, agar product exist nahi karta to "I don't have that info" bole — fabricate na kare.
+
+3. Issue Escalation Specialist (Slack/native, confirm-before-act)
+
+"This is the third time my order arrived broken. I want a refund right now or I'm never shopping here again."
+
+Check: refund khud process nahi karta, sirf Slack pe escalate karta hai, aur post karne se pehle content confirm karta hai.
+
+4. General Assistant (fallback)
+
+"Hi, what are your store hours?"
+
+Check: yeh koi specialist ka scope nahi hai, to General Assistant handle kare, ya politely bole ke iske paas yeh info nahi hai.
+
+5. Customer Support Coordinator (mid-level router within the crew)
+
+"I ordered a jacket, it hasn't shipped, and honestly I'm getting annoyed."
+
+Check: yeh mixed intent hai (order status + frustration/escalation signal) — dekho Coordinator kis specialist ko pehle bhejta hai. Ideal: Order Status pehle try kare, agar delay confirm ho aur frustration continue ho to Escalation ko hand-off kare.
+
+6. Edge case (true test of Network Manager routing)
+
+"Can you cancel my order and also tell me if the red sneakers are waterproof?"
+
+Check: yeh do agents ka kaam hai (Order + Product) — dekho system dono ko split karke handle karta hai ya sirf ek ko pick karke doosra ignore kar deta hai. Yeh weakness expose karega agar routing single-agent-only hai.

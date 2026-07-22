@@ -14,7 +14,12 @@ from handlers.document_handler import (
     handle_process_url,
     handle_process_connector,
     handle_get_documents,
-    handle_delete_document
+    handle_delete_document,
+    handle_update_url,
+    handle_process_text,
+    handle_update_text,
+    handle_update_file,
+    handle_sync_connector
 )
 from pydantic import BaseModel
 from core.auth import get_current_user
@@ -31,6 +36,18 @@ class CompleteUploadRequest(BaseModel):
     upload_id: str
     agent_id: str
     filename: str
+
+class TextRequest(BaseModel):
+    agent_id: str
+    filename: str
+    text: str
+
+class TextUpdateRequest(BaseModel):
+    filename: str
+    text: str
+
+class URLUpdateRequest(BaseModel):
+    url: str
 
 
 @router.websocket("/ws/documents/upload/status/{session_key}")
@@ -184,3 +201,23 @@ async def delete_document(doc_id: str, current_user: dict = Depends(get_current_
     Returns: A confirmation message.
     """
     return await handle_delete_document(doc_id)
+
+@router.post("/api/documents/{doc_id}/update-url")
+async def update_url(doc_id: str, req: URLUpdateRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    return await handle_update_url(doc_id, req.url, background_tasks)
+
+@router.post("/api/documents/process-text")
+async def process_text(req: TextRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    return await handle_process_text(req.agent_id, req.filename, req.text, background_tasks)
+
+@router.post("/api/documents/{doc_id}/update-text")
+async def update_text(doc_id: str, req: TextUpdateRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    return await handle_update_text(doc_id, req.filename, req.text, background_tasks)
+
+@router.put("/api/documents/{doc_id}/update-file")
+async def update_file(doc_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    return await handle_update_file(doc_id, file, background_tasks)
+
+@router.post("/api/documents/{doc_id}/sync")
+async def sync_connector(doc_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    return await handle_sync_connector(doc_id, background_tasks)

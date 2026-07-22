@@ -1,9 +1,8 @@
 import os
 import uuid
-import logging
 from typing import Optional, List, Dict
 import asyncio
-from fastapi import WebSocket, HTTPException
+from fastapi import WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 import aiohttp
 import json
@@ -21,37 +20,46 @@ from core.security import decrypt_key
 from core.scrubber import scrub_pii
 from handlers.websocket_handlers import agent_connection_manager
 
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
 
-def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None):
+logger = get_department_logger("agent")
+
+def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs):
+    logger.debug(f"Creating LLM instance: provider={provider}, model_name={model_name}, has_api_key={bool(api_key)}, base_url={base_url}")
     prov = (provider or "groq").lower()
     
     # 1. OpenRouter
     if prov == "openrouter":
         key = api_key or os.getenv("OPENROUTER_API_KEY")
+        logger.debug("Configuring ChatOpenAI for OpenRouter endpoint...")
         return ChatOpenAI(
             model_name=model_name,
             api_key=key or "dummy-key",
-            base_url="https://openrouter.ai/api/v1"
+            base_url="https://openrouter.ai/api/v1",
+            **kwargs
         )
         
     # 2. HuggingFace Serverless Inference / Endpoints
     elif prov == "huggingface":
         key = api_key or os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
         target_base = base_url or "https://api-inference.huggingface.co/v1"
+        logger.debug(f"Configuring ChatOpenAI for HuggingFace endpoint at: {target_base}")
         return ChatOpenAI(
             model_name=model_name,
             api_key=key or "dummy-key",
-            base_url=target_base
+            base_url=target_base,
+            **kwargs
         )
         
     # 3. Custom OpenAI-compatible server (vLLM, LMStudio, LocalAI)
     elif prov == "custom_openai":
         target_base = base_url or "http://localhost:8000/v1"
+        logger.debug(f"Configuring ChatOpenAI for custom OpenAI-compatible server at: {target_base}")
         return ChatOpenAI(
             model_name=model_name,
             api_key=api_key or "dummy-key",
-            base_url=target_base
+            base_url=target_base,
+            **kwargs
         )
         
     # 4. Anthropic Claude
@@ -59,10 +67,11 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
         try:
             from langchain_anthropic import ChatAnthropic
             key = api_key or os.getenv("ANTHROPIC_API_KEY")
-            return ChatAnthropic(model_name=model_name, api_key=key)
+            logger.debug("Configuring ChatAnthropic for Anthropic Claude...")
+            return ChatAnthropic(model_name=model_name, api_key=key, **kwargs)
         except Exception as e:
-            logger.error(f"Failed to load Anthropic module, falling back to ChatOpenAI: {e}")
-            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"))
+            logger.error(f"Failed to load Anthropic module, falling back to ChatOpenAI: {e}", exc_info=True)
+            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"), **kwargs)
 
     # 5. Google Gemini
     elif prov == "gemini":
@@ -72,25 +81,88 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             target_model = model_name
             if target_model.startswith("models/"):
                 target_model = target_model.replace("models/", "")
-            return ChatGoogleGenerativeAI(model=target_model, google_api_key=key)
+            logger.debug(f"Configuring ChatGoogleGenerativeAI for Google Gemini: {target_model}")
+            return ChatGoogleGenerativeAI(model=target_model, google_api_key=key, **kwargs)
         except Exception as e:
-            logger.error(f"Failed to load Gemini module, falling back to ChatOpenAI: {e}")
-            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"))
+            logger.error(f"Failed to load Gemini module, falling back to ChatOpenAI: {e}", exc_info=True)
+            return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"), **kwargs)
 
     # 6. OpenAI
     elif prov == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY")
-        return ChatOpenAI(model_name=model_name, api_key=key)
+        logger.debug("Configuring ChatOpenAI for OpenAI...")
+        return ChatOpenAI(model_name=model_name, api_key=key, **kwargs)
 
     # 7. Ollama
     elif prov == "ollama":
         target_base = base_url or "http://localhost:11434"
-        return ChatOllama(model=model_name, base_url=target_base)
+        logger.debug(f"Configuring ChatOllama for local Ollama server at: {target_base}")
+        return ChatOllama(model=model_name, base_url=target_base, **kwargs)
 
     # 8. Default: Groq
     else:
         key = api_key or os.getenv("GROQ_API_KEY")
+        logger.debug("Configuring ChatGroq for Groq...")
         return ChatGroq(model_name=model_name, api_key=key)
+
+async def create_resilient_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, user_id: Optional[str] = None):
+    logger.info(f"Creating resilient LLM instance for model: {model_name} (provider: {provider})")
+    try:
+        from db import model_repository, settings_repository
+        user_keys = None
+        if user_id:
+            logger.debug(f"Retrieving user settings keys for user ID: {user_id}")
+            user_keys = await settings_repository.get_effective_user_settings(user_id)
+            
+        # If no explicit api_key passed, try loading from user/shared keys
+        if not api_key and user_keys:
+            provider_index_map = {
+                "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5
+            }
+            idx = provider_index_map.get(provider.lower())
+            if idx is not None and user_keys[idx]:
+                api_key = decrypt_key(user_keys[idx])
+                logger.debug(f"Loaded API key dynamically from settings for provider: {provider}")
+                
+        primary_llm = create_llm_instance(provider, model_name, api_key, base_url)
+        
+        logger.debug("Fetching active model alternatives from model repository...")
+        all_active = await model_repository.get_active_models()
+        primary_info = next((m for m in all_active if m["model_id"] == model_name), None)
+        
+        if primary_info:
+            category = primary_info.get("category", "General")
+            alternatives = [m for m in all_active if m["category"] == category and m["model_id"] != model_name]
+            
+            if alternatives:
+                fallbacks = []
+                for alt in alternatives[:2]:
+                    alt_prov = alt["provider"]
+                    alt_mod = alt["model_id"]
+                    alt_base = alt.get("base_url")
+                    
+                    alt_key = None
+                    if alt.get("requires_key") and user_keys:
+                        provider_index_map = {
+                            "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5
+                        }
+                        idx = provider_index_map.get(alt_prov.lower())
+                        if idx is not None and user_keys[idx]:
+                            alt_key = decrypt_key(user_keys[idx])
+                    
+                    try:
+                        fallback_llm = create_llm_instance(alt_prov, alt_mod, alt_key, alt_base)
+                        fallbacks.append(fallback_llm)
+                    except Exception as fe:
+                        logger.warning(f"Failed to instantiate fallback model {alt_mod}: {fe}")
+                
+                if fallbacks:
+                    logger.info(f"Wrapping model {model_name} with fallbacks: {[f.model_name for f in fallbacks if hasattr(f, 'model_name')] or [alt['model_id'] for alt in alternatives[:2]]}")
+                    return primary_llm.with_fallbacks(fallbacks)
+    except Exception as e:
+        logger.error(f"Failed to configure fallbacks for {model_name}: {e}", exc_info=True)
+        
+    return create_llm_instance(provider, model_name, api_key, base_url)
 
 def create_webhook_tool(endpoint, project_tools_dict):
     from langchain_core.tools import tool
@@ -110,7 +182,7 @@ def create_webhook_tool(endpoint, project_tools_dict):
                 custom_headers = json_lib.loads(config.get("headers")) if isinstance(config.get("headers"), str) else config.get("headers")
                 headers.update(custom_headers)
         except Exception as e:
-            logger.error(f"Error parsing config: {e}")
+            logger.error(f"Error parsing connection config for conn_id {conn_id}: {e}", exc_info=True)
     else:
         base_url = endpoint.get("base_url", "")
         if endpoint.get("api_key"):
@@ -139,18 +211,22 @@ def create_webhook_tool(endpoint, project_tools_dict):
     async def execute_webhook(**kwargs) -> str:
         """Execute the webhook with the provided arguments."""
         try:
-            # If Langchain passes kwargs dynamically, or if it passes it under a single 'kwargs' key
             payload_dict = kwargs.get("kwargs", kwargs)
             if "payload" in payload_dict and len(payload_dict) == 1:
                 payload_dict = payload_dict["payload"]
 
             logger.info(f"🔨 TOOL TRIGGERED: Executing webhook '{name}' to {full_url}")
-            logger.info(f"📦 PAYLOAD: {json_lib.dumps(payload_dict)}")
+            # Sanitize authorization headers in debug log
+            sanitized_headers = headers.copy()
+            if "Authorization" in sanitized_headers:
+                sanitized_headers["Authorization"] = "[MASKED]"
+            logger.debug(f"Webhook request: method={method}, headers={sanitized_headers}, payload={payload_dict}")
+            
             async with aiohttp.ClientSession() as session:
-                kwargs = {"headers": headers}
+                kwargs_request = {"headers": headers}
                 if method.upper() in ["POST", "PUT", "PATCH"]:
-                    kwargs["json"] = payload_dict
-                async with session.request(method, full_url, **kwargs) as response:
+                    kwargs_request["json"] = payload_dict
+                async with session.request(method, full_url, **kwargs_request) as response:
                     logger.info(f"✅ WEBHOOK RESPONSE STATUS: {response.status}")
                     try:
                         resp = await response.json()
@@ -161,7 +237,7 @@ def create_webhook_tool(endpoint, project_tools_dict):
                         logger.info(f"📄 WEBHOOK RESPONSE TEXT: {text_resp}")
                         return text_resp
         except Exception as e:
-            logger.error(f"❌ Error executing webhook {name}: {str(e)}")
+            logger.error(f"❌ Error executing webhook {name}: {str(e)}", exc_info=True)
             return f"Error executing {name}: {str(e)}"
             
     execute_webhook.name = name
@@ -170,10 +246,32 @@ def create_webhook_tool(endpoint, project_tools_dict):
 
 
 async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
+    from utils.logger import client_ip_var, user_id_var
+    client_ip = websocket.client.host if websocket.client else "-"
+    if "x-forwarded-for" in websocket.headers:
+        client_ip = websocket.headers["x-forwarded-for"].split(",")[0].strip()
+    client_ip_var.set(client_ip)
+
+    user_id = "-"
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        try:
+            from core.auth import JWT_SECRET, ALGORITHM
+            import jwt
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+            user_id = payload.get("sub", "-")
+        except Exception:
+            pass
+    user_id_var.set(user_id)
+
+    logger.info(f"WebSocket client connected to agent chat. Client ID: {client_id}")
     await agent_connection_manager.connect(websocket, client_id)
     try:
         while True:
             data = await websocket.receive_json()
+            logger.debug(f"Received WebSocket data payload from client {client_id}")
+            
             if data.get("type") == "chat_request":
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
@@ -181,7 +279,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 history = req_data.get("history", [])
                 language = req_data.get("language")
 
+                logger.info(f"Received chat request for agent ID: {agent_id}. Message length: {len(message) if message else 0}")
+                
                 if not agent_id or not message:
+                    logger.warning("Rejecting chat request: agent_id and message are required.")
                     await agent_connection_manager.send_json(
                         {
                             "type": "error",
@@ -193,8 +294,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
                 message = scrub_pii(message)
                 try:
+                    logger.debug(f"Fetching agent routing credentials for agent: {agent_id}")
                     agent_data = await chat_repository.get_agent_for_chat(agent_id)
                     if not agent_data:
+                        logger.warning(f"Agent {agent_id} not found in database.")
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Agent not found"}, client_id
                         )
@@ -220,6 +323,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     ) = agent_data
                     
                     if not is_active:
+                        logger.warning(f"Agent {agent_name} ({agent_id}) is offline.")
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Agent is inactive."}, client_id
                         )
@@ -241,60 +345,25 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         "enable_code_interpreter": code_interpreter_enabled
                     })
 
-                    if not is_active:
-                        await agent_connection_manager.send_json(
-                            {
-                                "type": "text_chunk",
-                                "content": "Sorry, our custom services department is currently offline. Please try again later.",
-                            },
-                            client_id,
-                        )
-                        await agent_connection_manager.send_json(
-                            {"type": "stream_end"}, client_id
-                        )
-                        continue
-
                     active_agent_id = agent_id
                     routed_agent_name = None
                     gateway_name = agent_name
 
                     if project_id and not parent_agent_id:
-                        sub_agents = await chat_repository.get_sub_agents_for_project(
-                            project_id
-                        )
+                        logger.info(f"Agent is a coordinator router for multi-agent project: {project_id}")
+                        sub_agents = await chat_repository.get_sub_agents_for_project(project_id)
 
                         if len(sub_agents) > 1:
+                            logger.debug(f"Analyzing {len(sub_agents)} sub-agents for routing decision...")
                             agent_descriptions_list = []
                             for sa in sub_agents:
                                 is_master = str(sa[0]) == str(agent_id)
-                                role_tag = (
-                                    " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]"
-                                    if is_master
-                                    else ""
-                                )
-                                agent_descriptions_list.append(
-                                    f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}"
-                                )
+                                role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                                agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
                             agent_descriptions = "\n".join(agent_descriptions_list)
 
-                            if provider == "openai":
-                                key_to_use = custom_api_key or os.getenv(
-                                    "OPENAI_API_KEY"
-                                )
-                                router_llm = ChatOpenAI(
-                                    model_name=model,
-                                    api_key=key_to_use,
-                                    temperature=0.0,
-                                )
-                            elif provider == "ollama":
-                                router_llm = ChatOllama(model=model, temperature=0.0)
-                            else:
-                                key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-                                router_llm = ChatGroq(
-                                    model_name=model,
-                                    api_key=key_to_use,
-                                    temperature=0.0,
-                                )
+                            logger.debug("Instantiating router LLM instance...")
+                            router_llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
                             from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
                             routing_prompt = ROUTING_SYSTEM_PROMPT.format(
@@ -302,12 +371,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 message=message
                             )
                             try:
-                                import re
+                                logger.info("Sending routing prompt to supervisor/router LLM...")
                                 router_llm_json = router_llm.bind(response_format={"type": "json_object"})
                                 routing_response = router_llm_json.invoke(routing_prompt)
                                 content = routing_response.content.strip()
                                 
-                                # Clean markdown if any
                                 if content.startswith("```json"):
                                     content = content[7:]
                                 if content.endswith("```"):
@@ -317,24 +385,17 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 try:
                                     parsed = json.loads(content)
                                     chosen_uuid = parsed.get("agent_id", "").strip().lower()
+                                    logger.info(f"Supervisor chose Agent ID: {chosen_uuid}")
                                 except json.JSONDecodeError:
-                                    # Fallback to regex
+                                    import re
                                     uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', content, re.IGNORECASE)
                                     chosen_uuid = uuid_match.group(0).lower() if uuid_match else content
                                 
-                                chosen_agent = next(
-                                    (
-                                        sa
-                                        for sa in sub_agents
-                                        if str(sa[0]) == chosen_uuid
-                                    ),
-                                    None,
-                                )
-                                if chosen_agent and str(chosen_agent[0]) != str(
-                                    agent_id
-                                ):
+                                chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
+                                if chosen_agent and str(chosen_agent[0]) != str(agent_id):
                                     active_agent_id = chosen_agent[0]
                                     routed_agent_name = chosen_agent[1]
+                                    logger.info(f"Routing request dynamically to: '{routed_agent_name}' ({active_agent_id})")
                                     await agent_connection_manager.send_json(
                                         {
                                             "type": "routing_decision",
@@ -357,32 +418,27 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         code_interpreter_enabled,
                                         databases_encrypted,
                                         native_integrations_encrypted
-                                    ) = await chat_repository.get_agent_routing_info(
-                                        active_agent_id
-                                    )
-                                    embed_model = (
-                                        embed_model or "text-embedding-3-small"
-                                    )
+                                    ) = await chat_repository.get_agent_routing_info(active_agent_id)
+                                    embed_model = embed_model or "text-embedding-3-small"
                                     custom_api_key = decrypt_key(custom_api_key)
                                     if not is_active:
+                                        logger.warning(f"Routed agent '{routed_agent_name}' is currently offline.")
                                         await agent_connection_manager.send_json(
                                             {
                                                 "type": "text_chunk",
-                                                "content": f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later.",
+                                                "content": f"🔄 *[Routed to: {routed_agent_name}]*\n\n⚠️ **{routed_agent_name} is currently offline**\n\nTo chat with this assistant, please make sure it is activated in your settings.",
                                             },
                                             client_id,
                                         )
-                                        await agent_connection_manager.send_json(
-                                            {"type": "stream_end"}, client_id
-                                        )
+                                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                                         continue
-                            except Exception as e:
-                                logger.error(f"Dynamic routing failed: {e}")
-
-                    current_msg_count, limits = (
-                        await chat_repository.get_user_chat_limits(user_id)
-                    )
+                            except Exception as re_err:
+                                logger.error(f"Dynamic routing decision failed: {re_err}", exc_info=True)
+ 
+                    logger.debug("Checking user chat limits before execution...")
+                    current_msg_count, limits = await chat_repository.get_user_chat_limits(user_id)
                     if current_msg_count >= limits["agent_messages"]:
+                        logger.warning(f"User {user_id} monthly agent message limits exceeded.")
                         await agent_connection_manager.send_json(
                             {
                                 "type": "error",
@@ -393,9 +449,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         continue
 
                     # LangGraph Multi-Agent Setup
+                    logger.debug("Setting up LangGraph multi-agent orchestrator...")
                     from graph_orchestrator import build_multi_agent_graph
 
                     async def llm_factory(aid: str):
+                        logger.debug(f"LLM Factory callback triggered for agent ID: {aid}")
                         (
                             a_name,
                             sys_prompt,
@@ -419,7 +477,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         formatted_prompt = sys_prompt
                         if out_fmt:
                             formatted_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{out_fmt}"
-                        formatted_prompt += f"{mem_patch}\n\nCRITICAL INSTRUCTIONS:\n1. Provide natural, conversational, and direct answers without robotic introductions.\n2. Do NOT mention that you are an AI, an agent, or what tools you are using. Do not narrate your actions.\n3. Use the available tools iteratively if needed. You have tools for searching knowledge AND tools for taking actions (like creating users or tracking orders). If a user asks you to perform an action, you MUST use the appropriate action tool immediately. Format your final response beautifully in Markdown.\n4. EXTREMELY STRICT GROUNDING RULE: If the user asks for factual information and you cannot find the answer using your tools, you MUST reply ONLY with a brief apology stating you do not have that information, and then YOU MUST STOP. Do NOT invent, hallucinate, or guess ANY products, pricing, or company details. Do NOT provide examples of what you might sell. If it's not in the knowledge base, it does not exist."
+                        formatted_prompt += f"{mem_patch}\n\nCRITICAL INSTRUCTIONS:\n1. Provide natural, conversational, and direct answers without robotic introductions.\n2. Do NOT mention that you are an AI, an agent, or what tools you are using. Do not narrate your actions.\n3. Use the available tools iteratively if needed. You have tools for searching knowledge AND tools for taking actions. Format your final response beautifully in Markdown.\n4. EXTREMELY STRICT GROUNDING RULE: If the user asks for factual information and you cannot find the answer using your tools, you MUST reply ONLY with a brief apology stating you do not have that information, and then YOU MUST STOP."
                         
                         lang_map = {
                             "en": "English", "es": "Spanish", "fr": "French", "de": "German",
@@ -429,20 +487,26 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             lang_name = lang_map.get(language.lower(), language)
                             formatted_prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-                        llm_inst = create_llm_instance(prov, mod, c_key)
+                        llm_inst = await create_resilient_llm_instance(prov, mod, c_key, user_id=user_id)
                         return llm_inst, formatted_prompt, emb_model, web_enabled
 
                     def tools_factory(aid: str, emb_model: str, web_enabled: bool, llm_inst):
+                        logger.debug(f"Tools Factory callback triggered for agent ID: {aid}")
                         from langchain_core.tools import tool
                         
                         @tool
                         async def search_knowledge_base(query: str) -> str:
-                            """Search the internal knowledge base for documents. Use this first for ANY company-specific or factual questions. If a search yields 'No related documents found', DO NOT retry with a different query. Instead, tell the user the information is not available."""
+                            """Search the internal knowledge base for documents."""
+                            logger.info(f"🔍 Knowledge base search triggered for query: '{query}'")
                             hyde_query = rag_engine.generate_hyde_query(query, llm_inst)
+                            logger.debug(f"Generated HyDE query: '{hyde_query}'")
                             q_vec = rag_engine.vectorize([hyde_query], model_name=emb_model)[0]
+                            
+                            logger.debug("Executing hybrid document vector search...")
                             best = await chat_repository.get_documents_hybrid(hyde_query, str(q_vec), aid, 15)
                             
                             if aid != agent_id:
+                                logger.debug("Sub-agent query: checking master agent documents...")
                                 master_b = await chat_repository.get_documents_hybrid(hyde_query, str(q_vec), agent_id, 15)
                                 combined = best + master_b
                                 seen = set()
@@ -452,19 +516,23 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         seen.add(item[0])
                                         best.append(item)
                                         
+                            logger.debug("Executing rerank & MMR filtering steps...")
                             best = rag_engine.rerank_documents(query, best, top_k=10)
                             best = rag_engine.apply_mmr(query, best, top_k=5)
+                            logger.info(f"Retrieved {len(best)} matching document passages.")
                             docs = "\n---\n".join([decrypt_key(m[0]) or m[0] for m in best]) if best else "No related documents found."
                             return docs
 
                         @tool
                         async def search_web(query: str) -> str:
-                            """Search the internet for current events, news, or general world knowledge. If a search yields no useful results, DO NOT retry with a different query. Tell the user the information is not available."""
+                            """Search the internet for general knowledge."""
+                            logger.info(f"🌐 Web search triggered for query: '{query}'")
                             try:
                                 from langchain_community.tools import DuckDuckGoSearchRun
                                 search = DuckDuckGoSearchRun()
                                 return search.run(query)
-                            except Exception:
+                            except Exception as se:
+                                logger.error(f"Web search failed: {se}", exc_info=True)
                                 return "Web search failed or blocked."
 
                         t_list = [search_knowledge_base]
@@ -488,16 +556,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             from tools.code_tools import create_code_tools
                             t_list.extend(create_code_tools())
                             
-                        # Also check if a sub-agent has code interpreter enabled
                         if str(aid) != str(agent_id) and code_interpreter_map.get(str(aid), False):
                             from tools.code_tools import create_code_tools
                             t_list.extend(create_code_tools())
 
-                        # Add native integrations
                         agent_native = native_integrations_map.get(str(aid), [])
                         if agent_native:
                             from tools.native_tools import create_native_tools
-                            # user_id is in the outer scope
                             n_tools = create_native_tools(user_id, agent_native)
                             t_list.extend(n_tools)
 
@@ -559,19 +624,17 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     msgs.append(HumanMessage(content=message))
                     
                     inputs = {"messages": msgs}
+                    logger.info("Executing LangGraph multi-agent stream events...")
                     
                     async for event in graph.astream_events(inputs, version="v2"):
                         kind = event["event"]
                         
                         if kind == "on_chat_model_stream":
-                            metadata = event.get("metadata", {})
-                            # Only stream chunks from the actual agent node, not the supervisor router!
-                            if metadata.get("langgraph_node") == "agent":
-                                chunk = event["data"]["chunk"]
-                                if chunk.content:
-                                    await agent_connection_manager.send_json(
-                                        {"type": "text_chunk", "content": chunk.content}, client_id
-                                    )
+                            chunk = event["data"]["chunk"]
+                            if chunk.content:
+                                await agent_connection_manager.send_json(
+                                    {"type": "text_chunk", "content": chunk.content}, client_id
+                                )
                                 
                         elif kind == "on_tool_start":
                             t_name = event["name"]
@@ -602,18 +665,43 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
                     await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
                     await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                    logger.info("LangGraph streaming generation complete.")
 
                 except Exception as exc:
-                    logger.exception("Chat generation failed")
+                    logger.error("Chat generation failed", exc_info=True)
                     await agent_connection_manager.send_json(
                         {"type": "error", "content": str(exc)}, client_id
                     )
 
-    except Exception:
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected normally. Client ID: {client_id}")
+        agent_connection_manager.disconnect(client_id)
+    except Exception as ws_err:
+        logger.warning(f"WebSocket client disconnected or encountered error: {ws_err}")
         agent_connection_manager.disconnect(client_id)
 
 
 async def handle_widget_chat(websocket: WebSocket, client_id: str):
+    from utils.logger import client_ip_var, user_id_var
+    client_ip = websocket.client.host if websocket.client else "-"
+    if "x-forwarded-for" in websocket.headers:
+        client_ip = websocket.headers["x-forwarded-for"].split(",")[0].strip()
+    client_ip_var.set(client_ip)
+
+    user_id = "-"
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        try:
+            from core.auth import JWT_SECRET, ALGORITHM
+            import jwt
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+            user_id = payload.get("sub", "-")
+        except Exception:
+            pass
+    user_id_var.set(user_id)
+
+    logger.info(f"Widget WebSocket connection initialized for client: {client_id}")
     await agent_connection_manager.connect(websocket, client_id)
     try:
         while True:
@@ -625,7 +713,10 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                 history = req_data.get("history", [])
                 language = req_data.get("language")
 
+                logger.info(f"Widget chat request received. Chatbot ID: {chatbot_id}. Msg len: {len(message) if message else 0}")
+
                 if not chatbot_id or not message:
+                    logger.warning("Rejecting widget chat: chatbot_id and message are required.")
                     await agent_connection_manager.send_json(
                         {
                             "type": "error",
@@ -637,23 +728,21 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
 
                 message = scrub_pii(message)
                 try:
-                    chatbot_data = await chat_repository.get_chatbot_for_widget(
-                        chatbot_id
-                    )
+                    logger.debug(f"Fetching chatbot parameters for ID: {chatbot_id}")
+                    chatbot_data = await chat_repository.get_chatbot_for_widget(chatbot_id)
                     if not chatbot_data:
+                        logger.warning("Chatbot metadata not found.")
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Chatbot not found"}, client_id
                         )
                         continue
 
-                    agent_id, settings, message_count, user_id, allowed_domains = (
-                        chatbot_data
-                    )
+                    agent_id, settings_chatbot, message_count, user_id, allowed_domains = chatbot_data
 
-                    total_widget_msgs, limits = (
-                        await chat_repository.check_widget_limits(user_id)
-                    )
+                    logger.debug("Checking widget plan limits...")
+                    total_widget_msgs, limits = await chat_repository.check_widget_limits(user_id)
                     if total_widget_msgs >= limits["chatbot_messages"]:
+                        logger.warning(f"Widget messages quota exceeded for user: {user_id}")
                         await agent_connection_manager.send_json(
                             {
                                 "type": "error",
@@ -663,10 +752,13 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         )
                         continue
 
+                    logger.debug(f"Logging widget message count increment in database for chatbot ID: {chatbot_id}")
                     await chat_repository.log_widget_message(chatbot_id)
 
+                    logger.debug("Fetching routing information for underlying agent...")
                     agent_data = await chat_repository.get_agent_routing_info(agent_id)
                     if not agent_data:
+                        logger.error(f"Underlying Agent ID {agent_id} missing in settings.")
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Underlying Agent not found"},
                             client_id,
@@ -689,41 +781,34 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     custom_api_key = decrypt_key(custom_api_key)
 
                     if not is_active:
+                        logger.warning(f"Underlying agent '{agent_name}' is offline.")
                         await agent_connection_manager.send_json(
                             {
                                 "type": "text_chunk",
-                                "content": "Sorry, our custom services department is currently offline. Please try again later.",
+                                "content": f"⚠️ **{agent_name} is currently offline**\n\nTo chat with this assistant, please make sure it is activated in your settings.",
                             },
                             client_id,
                         )
-                        await agent_connection_manager.send_json(
-                            {"type": "stream_end"}, client_id
-                        )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
-                    llm = create_llm_instance(provider, model, custom_api_key)
+                    logger.debug("Creating resilient LLM instance...")
+                    llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
+                    logger.info("Generating HyDE vector search query...")
                     hyde_query = rag_engine.generate_hyde_query(message, llm)
-                    query_vector = rag_engine.vectorize(
-                        [hyde_query], model_name=embed_model
-                    )[0]
+                    query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
 
-                    best_matches = await chat_repository.get_documents_hybrid(
-                        hyde_query, str(query_vector), agent_id, 15
-                    )
-                    best_matches = rag_engine.rerank_documents(
-                        message, best_matches, top_k=10
-                    )
+                    logger.debug("Executing vector search in database...")
+                    best_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), agent_id, 15)
+                    logger.debug("Applying reranking and MMR filters...")
+                    best_matches = rag_engine.rerank_documents(message, best_matches, top_k=10)
                     best_matches = rag_engine.apply_mmr(message, best_matches, top_k=5)
 
                     context = "No specific documents found."
                     if best_matches:
-                        context = "\n\n---\n\n".join(
-                            [
-                                decrypt_key(match[0]) or match[0]
-                                for match in best_matches
-                            ]
-                        )
+                        context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
+                    logger.info(f"Context retrieval finished. Matching count: {len(best_matches) if best_matches else 0}")
 
                     history_items = history or []
                     history_text = ""
@@ -733,15 +818,11 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     if not history_text:
                         history_text = "No previous conversation."
 
-                    memory_patch = await chat_repository.fetch_temporary_memory_patch(
-                        agent_id
-                    )
+                    memory_patch = await chat_repository.fetch_temporary_memory_patch(agent_id)
 
                     formatted_system_prompt = system_prompt
                     if output_format:
-                        formatted_system_prompt += (
-                            f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
-                        )
+                        formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
 
                     if not best_matches:
                         grounding_rules = """
@@ -775,19 +856,14 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     """
 
                     lang_map = {
-                        "en": "English",
-                        "es": "Spanish",
-                        "fr": "French",
-                        "de": "German",
-                        "hi": "Hindi",
-                        "zh-cn": "Chinese",
-                        "ja": "Japanese",
-                        "ko": "Korean",
+                        "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+                        "hi": "Hindi", "zh-cn": "Chinese", "ja": "Japanese", "ko": "Korean",
                     }
                     if language and language.lower() != "en":
                         lang_name = lang_map.get(language.lower(), language)
                         prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
+                    logger.info("Initiating model response stream...")
                     for chunk in llm.stream(prompt):
                         if chunk.content:
                             await agent_connection_manager.send_json(
@@ -795,53 +871,54 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                                 client_id,
                             )
 
-                    await agent_connection_manager.send_json(
-                        {"type": "stream_end"}, client_id
-                    )
+                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                    logger.info("Widget stream generation complete.")
 
                 except Exception as e:
-                    logger.error(f"Widget Chat endpoint failed", exc_info=True)
+                    logger.error("Widget Chat endpoint failed", exc_info=True)
                     await agent_connection_manager.send_json(
                         {"type": "error", "content": str(e)}, client_id
                     )
 
-    except Exception:
+    except WebSocketDisconnect:
+        logger.info(f"Widget WebSocket connection disconnected normally. Client ID: {client_id}")
+        agent_connection_manager.disconnect(client_id)
+    except Exception as ws_err:
+        logger.warning(f"Widget WebSocket connection disconnected: {ws_err}")
         agent_connection_manager.disconnect(client_id)
 
 
-async def handle_api_v1_chat(
-    message: str, session_id: Optional[str], language: Optional[str], x_api_key: str
-):
+async def handle_api_v1_chat(message: str, session_id: Optional[str], language: Optional[str], x_api_key: str):
+    logger.info(f"API v1 chat request received (Session ID: {session_id}, key: {x_api_key[:5] if x_api_key else None}...)")
     if not x_api_key:
+        logger.warning("Rejected API request: Missing x-api-key header.")
         raise HTTPException(status_code=401, detail="Missing x-api-key header")
 
     try:
+        logger.debug("Validating API key in database...")
         chatbot_data = await chat_repository.get_chatbot_by_api_key(x_api_key)
         if not chatbot_data:
+            logger.warning("Rejected API request: Invalid API Key.")
             raise HTTPException(status_code=401, detail="Invalid API Key")
 
         chatbot_id, master_agent_id, user_id = chatbot_data
-
         message = scrub_pii(message)
 
         if not session_id:
             session_id = str(uuid.uuid4())
-            await chat_repository.create_chat_session(
-                session_id, message[:50], master_agent_id
-            )
+            logger.debug(f"No Session ID provided. Generated session: {session_id}")
+            await chat_repository.create_chat_session(session_id, message[:50], master_agent_id)
 
         user_msg_id = str(uuid.uuid4())
-        await chat_repository.insert_chat_message(
-            user_msg_id, session_id, "user", message
-        )
+        await chat_repository.insert_chat_message(user_msg_id, session_id, "user", message)
 
         history_rows = await chat_repository.get_session_history(session_id)
-        history_items = [
-            {"role": row[0], "content": row[1]} for row in history_rows[:-1]
-        ]
+        history_items = [{"role": row[0], "content": row[1]} for row in history_rows[:-1]]
 
+        logger.debug("Fetching agent details for chat...")
         agent_data = await chat_repository.get_agent_for_chat(master_agent_id)
         if not agent_data:
+            logger.error("Agent missing in database.")
             raise HTTPException(status_code=404, detail="Agent not found")
 
         (
@@ -864,10 +941,9 @@ async def handle_api_v1_chat(
         endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
 
         if not is_active:
-
+            logger.warning(f"Agent '{agent_name}' is offline. Returning offline streaming response.")
             async def offline_stream():
-                yield "Sorry, our custom services department is currently offline. Please try again later."
-
+                yield f"⚠️ **{agent_name} is currently offline**\n\nTo chat with this assistant, please make sure it is activated in your settings."
             return (
                 StreamingResponse(offline_stream(), media_type="text/plain"),
                 session_id,
@@ -878,34 +954,19 @@ async def handle_api_v1_chat(
         gateway_name = agent_name
 
         if project_id and not parent_agent_id:
+            logger.info("Project workspace routing enabled.")
             sub_agents = await chat_repository.get_sub_agents_for_project(project_id)
 
             if len(sub_agents) > 1:
+                logger.debug("Calculating dynamic routing path...")
                 agent_descriptions_list = []
                 for sa in sub_agents:
                     is_master = str(sa[0]) == str(master_agent_id)
-                    role_tag = (
-                        " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]"
-                        if is_master
-                        else ""
-                    )
-                    agent_descriptions_list.append(
-                        f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}"
-                    )
+                    role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                    agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
                 agent_descriptions = "\n".join(agent_descriptions_list)
 
-                if provider == "openai":
-                    key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-                    router_llm = ChatOpenAI(
-                        model_name=model, api_key=key_to_use, temperature=0.0
-                    )
-                elif provider == "ollama":
-                    router_llm = ChatOllama(model=model, temperature=0.0)
-                else:
-                    key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-                    router_llm = ChatGroq(
-                        model_name=model, api_key=key_to_use, temperature=0.0
-                    )
+                router_llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
                 from prompts.routing_prompts import ROUTING_SYSTEM_PROMPT
                 routing_prompt = ROUTING_SYSTEM_PROMPT.format(
@@ -916,17 +977,14 @@ async def handle_api_v1_chat(
                 try:
                     routing_response = router_llm.invoke(routing_prompt)
                     chosen_uuid = routing_response.content.strip()
+                    logger.info(f"Supervisor routed request to Agent ID: {chosen_uuid}")
 
-                    chosen_agent = next(
-                        (sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None
-                    )
+                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
                     if chosen_agent and str(chosen_agent[0]) != str(master_agent_id):
                         active_agent_id = chosen_agent[0]
                         routed_agent_name = chosen_agent[1]
 
-                        agent_data = await chat_repository.get_agent_routing_info(
-                            active_agent_id
-                        )
+                        agent_data = await chat_repository.get_agent_routing_info(active_agent_id)
                         (
                             agent_name,
                             system_prompt,
@@ -943,42 +1001,28 @@ async def handle_api_v1_chat(
                         custom_api_key = decrypt_key(custom_api_key)
 
                         if not is_active:
-
+                            logger.warning(f"Routed agent '{routed_agent_name}' is offline.")
                             async def offline_stream():
-                                yield f"🤖 *[Routed to: {routed_agent_name}]*\n\nSorry, our custom services department is currently offline. Please try again later."
-
+                                yield f"🔄 *[Routed to: {routed_agent_name}]*\n\n⚠️ **{routed_agent_name} is currently offline**\n\nTo chat with this assistant, please make sure it is activated in your settings."
                             return (
-                                StreamingResponse(
-                                    offline_stream(), media_type="text/plain"
-                                ),
+                                StreamingResponse(offline_stream(), media_type="text/plain"),
                                 session_id,
                             )
-                except Exception as e:
-                    logger.error(f"Dynamic routing failed: {e}")
+                except Exception as routing_err:
+                    logger.error(f"Dynamic routing failed: {routing_err}", exc_info=True)
 
-        if provider == "openai":
-            key_to_use = custom_api_key or os.getenv("OPENAI_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="OpenAI API Key missing.")
-            llm = ChatOpenAI(model_name=model, api_key=key_to_use)
-        elif provider == "ollama":
-            llm = ChatOllama(model=model)
-        else:
-            key_to_use = custom_api_key or os.getenv("GROQ_API_KEY")
-            if not key_to_use:
-                raise HTTPException(status_code=400, detail="Groq API Key missing.")
-            llm = ChatGroq(model_name=model, api_key=key_to_use)
+        logger.debug("Creating resilient LLM instance...")
+        llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
+        logger.debug("Generating HyDE vector search query...")
         hyde_query = rag_engine.generate_hyde_query(message, llm)
         query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
-        best_matches = await chat_repository.get_documents_hybrid(
-            hyde_query, str(query_vector), active_agent_id, 15
-        )
+        
+        logger.debug("Executing database vector document matches search...")
+        best_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), active_agent_id, 15)
 
         if active_agent_id != master_agent_id:
-            master_matches = await chat_repository.get_documents_hybrid(
-                hyde_query, str(query_vector), master_agent_id, 15
-            )
+            master_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), master_agent_id, 15)
             combined = best_matches + master_matches
             seen = set()
             unique_combined = []
@@ -993,9 +1037,7 @@ async def handle_api_v1_chat(
 
         context = "No specific documents found."
         if best_matches:
-            context = "\n\n---\n\n".join(
-                [decrypt_key(match[0]) or match[0] for match in best_matches]
-            )
+            context = "\n\n---\n\n" .join([decrypt_key(match[0]) or match[0] for match in best_matches])
 
         history_text = ""
         for msg in history_items[-6:]:
@@ -1004,15 +1046,11 @@ async def handle_api_v1_chat(
         if not history_text:
             history_text = "No previous conversation."
 
-        memory_patch = await chat_repository.fetch_temporary_memory_patch(
-            active_agent_id
-        )
+        memory_patch = await chat_repository.fetch_temporary_memory_patch(active_agent_id)
 
         formatted_system_prompt = system_prompt
         if output_format:
-            formatted_system_prompt += (
-                f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
-            )
+            formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
 
         if not best_matches:
             grounding_rules = """
@@ -1046,19 +1084,14 @@ async def handle_api_v1_chat(
         """
 
         lang_map = {
-            "en": "English",
-            "es": "Spanish",
-            "fr": "French",
-            "de": "German",
-            "hi": "Hindi",
-            "zh-cn": "Chinese",
-            "ja": "Japanese",
-            "ko": "Korean",
+            "en": "English", "es": "Spanish", "fr": "French", "de": "German",
+            "hi": "Hindi", "zh-cn": "Chinese", "ja": "Japanese", "ko": "Korean",
         }
         if language and language.lower() != "en":
             lang_name = lang_map.get(language.lower(), language)
             prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
+        logger.debug(f"Logging widget message count increment in database for chatbot ID: {chatbot_id}")
         await chat_repository.log_widget_message(chatbot_id)
 
         async def stream_generator():
@@ -1069,23 +1102,24 @@ async def handle_api_v1_chat(
                     full_response += prefix
                     yield prefix
 
+                logger.info("Streaming model response...")
                 for chunk in llm.stream(prompt):
                     if chunk.content:
                         full_response += chunk.content
                         yield chunk.content
 
                 try:
+                    logger.debug("Saving generated response message in history repository...")
                     assist_msg_id = str(uuid.uuid4())
-                    await chat_repository.insert_chat_message(
-                        assist_msg_id, session_id, "assistant", full_response
-                    )
+                    await chat_repository.insert_chat_message(assist_msg_id, session_id, "assistant", full_response)
                 except Exception as db_e:
-                    logger.error(f"Failed to save assistant message: {db_e}")
+                    logger.error(f"Failed to save assistant message: {db_e}", exc_info=True)
 
             except Exception as exc:
-                logger.exception("Streaming generation failed")
+                logger.error("Streaming generation failed", exc_info=True)
                 yield f"\n\n⚠️ Error during generation: {str(exc)}"
 
+        logger.info("API chat streaming started successfully.")
         return (
             StreamingResponse(stream_generator(), media_type="text/plain"),
             session_id,
@@ -1094,39 +1128,50 @@ async def handle_api_v1_chat(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("API Chat endpoint failed")
+        logger.error("API Chat endpoint failed", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 async def handle_delete_agent(agent_id: str):
+    logger.info(f"Attempting to delete agent ID: {agent_id}")
     try:
+        logger.debug("Retrieving agent detail parameters...")
         agent_data = await chat_repository.get_agent_for_chat(agent_id)
         if not agent_data:
+            logger.warning(f"Delete aborted: Agent ID {agent_id} not found.")
             return {"message": "Agent not found or already deleted"}
             
         agent_name = agent_data[1]
         if agent_name in ["Network Manager", "General Assistant"]:
+            logger.warning(f"Delete rejected: Core permanent agent '{agent_name}' cannot be deleted.")
             raise HTTPException(
                 status_code=400, 
                 detail=f"The {agent_name} is a permanent core agent and cannot be deleted individually. You must delete the entire project."
             )
 
+        logger.debug("Executing database deletion script in chat_repository...")
         deleted_count = await chat_repository.delete_agent(agent_id)
         if deleted_count == 0:
+            logger.warning("Agent deletion returned zero deleted records.")
             return {"message": "Agent not found or already deleted"}
 
+        logger.info(f"Agent ID {agent_id} and all sub-agents successfully deleted ({deleted_count} records).")
         return {
             "message": f"Agent and {deleted_count - 1} sub-agents completely wiped!"
         }
     except HTTPException:
         raise
     except Exception as exc:
+        logger.error(f"Failed to delete agent ID {agent_id}: {str(exc)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 async def handle_delete_chatbot(chatbot_id: str):
+    logger.info(f"Attempting to delete chatbot ID: {chatbot_id}")
     try:
         await chat_repository.delete_chatbot(chatbot_id)
+        logger.info(f"Chatbot ID {chatbot_id} successfully deleted.")
         return {"message": "Chatbot deleted successfully!"}
     except Exception as exc:
+        logger.error(f"Failed to delete chatbot ID {chatbot_id}: {str(exc)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))

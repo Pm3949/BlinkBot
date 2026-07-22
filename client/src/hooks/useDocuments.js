@@ -75,3 +75,68 @@ export function useDeleteDocument(agentId) {
     },
   });
 }
+
+export function useUpdateUrl(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ docId, url }) => import("../services/documentService").then(m => m.updateUrl({ docId, url })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}
+
+export function useProcessText(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ filename, text }) => import("../services/documentService").then(m => m.processText({ agentId, filename, text })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}
+
+export function useUpdateText(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ docId, filename, text }) => import("../services/documentService").then(m => m.updateText({ docId, filename, text })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}
+
+export function useUpdateFile(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ docId, file }) => import("../services/documentService").then(m => m.updateFile({ docId, file })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}
+
+export function useSyncConnector(agentId) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ docId }) => import("../services/documentService").then(m => m.syncConnector({ docId })),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["documents", agentId],
+      });
+    },
+  });
+}

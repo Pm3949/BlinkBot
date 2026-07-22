@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, Database, Settings2 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
+import TracePanel from "../components/chat/TracePanel";
 import ChatComposer from "../components/chat/ChatComposer";
 import MessageBubble from "../components/chat/MessageBubble";
 import { usePrimaryWorkspace } from "../hooks/useSettings";
@@ -15,6 +16,7 @@ import { useUIStore } from "../store/useUIStore";
 
 
 export default function ChatPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { data: workspace } = usePrimaryWorkspace();
@@ -28,6 +30,7 @@ export default function ChatPage() {
   
   // UI Toggles
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isTraceOpen, setIsTraceOpen] = useState(false);
   
   const messagesEndRef = useRef(null);
 
@@ -165,13 +168,27 @@ export default function ChatPage() {
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-2xl">
           <span className="font-medium text-sm text-foreground">{activeAgent?.name || "Select an Agent"}</span>
           {activeAgent && activeAgent.id && (
-             <button 
-               onClick={() => navigate(`/agent/${activeAgent.id}/settings`, { state: { agent: activeAgent } })}
-               className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition"
-               title="Agent Settings"
-             >
-               <Settings2 size={16} />
-             </button>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => navigate(`/agent/${activeAgent.id}/settings`, { state: { agent: activeAgent } })}
+                className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition"
+                title="Agent Settings"
+              >
+                <Settings2 size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="absolute top-4 right-4 z-10">
+          {activeAgent && activeAgent.id && (
+            <button 
+              onClick={() => setIsTraceOpen(!isTraceOpen)}
+              className={`flex items-center gap-1.5 px-3 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted font-semibold text-xs transition-all ${isTraceOpen ? 'text-purple-400 bg-purple-500/10 border-purple-500/30' : 'text-muted-foreground hover:text-foreground'}`}
+              title="Toggle Execution Trace"
+            >
+              <Activity size={20}/> <span>Execution Trace</span>
+            </button>
           )}
         </div>
 
@@ -238,7 +255,9 @@ export default function ChatPage() {
         />
       </div>
 
-
+      {isTraceOpen && (
+        <TracePanel onClose={() => setIsTraceOpen(false)} />
+      )}
     </div>
   );
 }

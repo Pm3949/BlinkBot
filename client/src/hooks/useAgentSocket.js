@@ -11,6 +11,8 @@ export const useAgentSocket = (url) => {
   const pendingPayloadRef = useRef(null);
   // Ref to track accumulated text outside React state (avoids stale closure in stream_end)
   const textAccRef = useRef('');
+  // Ref to track active agent name during multi-agent routing cycles
+  const activeAgentNameRef = useRef('Execution Agent');
 
   const connect = useCallback(() => {
     // Prevent duplicate connections if already open or connecting
@@ -41,6 +43,7 @@ export const useAgentSocket = (url) => {
       if (typeof event.data === 'string') {
         try {
           const data = JSON.parse(event.data);
+          const { useTraceStore } = await import('../store/useTraceStore');
           
           if (data.type === 'text_chunk') {
             textAccRef.current += data.content;
@@ -48,18 +51,49 @@ export const useAgentSocket = (url) => {
             setAgentStatus('');
           } else if (data.type === 'status') {
             setAgentStatus(data.content);
+            if (data.content) {
+              useTraceStore.getState().addStep({
+                type: 'tool',
+                agentName: activeAgentNameRef.current,
+                action: 'Executing Tool Context',
+                logs: data.content,
+                payload: data
+              });
+            }
           } else if (data.type === 'routing_decision') {
             const routingEvent = new CustomEvent('agent_routing_decision', { detail: { agent_id: data.agent_id, agent_name: data.agent_name } });
             window.dispatchEvent(routingEvent);
+            activeAgentNameRef.current = data.agent_name || 'Execution Agent';
+            useTraceStore.getState().addStep({
+              type: 'routing',
+              agentName: 'Supervisor Router',
+              action: `Routed execution path to: ${data.agent_name}`,
+              // logs: `Selected Target Agent: ${data.agent_name} (ID: ${data.agent_id})`,
+              logs: `Selected Target Agent: ${data.agent_name}`,
+              payload: data
+            });
           } else if (data.type === 'error') {
             toast.error(data.content);
+            useTraceStore.getState().addStep({
+              type: 'error',
+              agentName: 'Execution Pipeline',
+              action: 'Operation Encountered Error',
+              logs: data.content,
+              payload: data
+            });
           } else if (data.type === 'stream_end') {
-            // Pass the accumulated text via the event so consumers don't rely on stale React state
             const fullContent = textAccRef.current;
             textAccRef.current = '';
             setAgentStatus('');
             const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent } });
             window.dispatchEvent(streamEndEvent);
+            useTraceStore.getState().addStep({
+              type: 'routing',
+              agentName: 'Execution Pipeline',
+              action: 'Stream generation completed successfully',
+              logs: fullContent,
+              payload: { response_content: fullContent }
+            });
           }
         } catch (err) {
           console.error('Failed to parse WebSocket text message:', err);
@@ -100,6 +134,9 @@ export const useAgentSocket = (url) => {
   }, [connect]);
 
   const sendChatRequest = useCallback((payload) => {
+    if (payload && payload.agent_name) {
+      activeAgentNameRef.current = payload.agent_name;
+    }
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       setAgentTextChunks(''); // clear on new send
       setAgentStatus('');

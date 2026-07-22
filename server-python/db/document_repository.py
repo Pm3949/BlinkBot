@@ -141,3 +141,25 @@ async def get_interrupted_uploads():
             """
         )
         return await run_in_threadpool(cursor.fetchall)
+
+async def get_document_by_id(doc_id: str):
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT id, agent_id, filename, status, file_size_bytes FROM documents WHERE id = %s",
+            (doc_id,)
+        )
+        return await run_in_threadpool(cursor.fetchone)
+
+async def prepare_document_for_reindexing(doc_id: str, new_filename: str, new_size: int):
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM document_embeddings WHERE document_id = %s",
+            (doc_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            "UPDATE documents SET filename = %s, status = 'processing', file_size_bytes = %s WHERE id = %s",
+            (new_filename, new_size, doc_id)
+        )

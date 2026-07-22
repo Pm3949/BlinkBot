@@ -207,3 +207,98 @@ export async function deleteDocument(id) {
 
   return response.json();
 }
+
+export async function updateUrl({ docId, url }) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${docId}/update-url`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ url }),
+    }
+  );
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(message || "Failed to update URL.");
+  }
+  return response.json();
+}
+
+export async function processText({ agentId, filename, text }) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/process-text`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ agent_id: agentId, filename, text }),
+    }
+  );
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(message || "Failed to create text snippet.");
+  }
+  return response.json();
+}
+
+export async function updateText({ docId, filename, text }) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${docId}/update-text`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ filename, text }),
+    }
+  );
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(message || "Failed to update text snippet.");
+  }
+  return response.json();
+}
+
+export async function updateFile({ docId, file }) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${docId}/update-file`,
+    {
+      method: "PUT",
+      headers: {
+        ...getAuthHeaders()
+      },
+      body: formData
+    }
+  );
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(message || "Failed to replace document file.");
+  }
+  return response.json();
+}
+
+export async function syncConnector({ docId }) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/documents/${docId}/sync`,
+    {
+      method: "POST",
+      headers: {
+        ...getAuthHeaders()
+      }
+    }
+  );
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(message || "Failed to sync connector.");
+  }
+  return response.json();
+}

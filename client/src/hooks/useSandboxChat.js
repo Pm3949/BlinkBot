@@ -60,6 +60,7 @@ export function useSandboxChat() {
     const history = localMessages.map(({ role, content }) => ({ role, content }));
     sendChatRequest({
         agent_id: agentId,
+        agent_name: agentName,
         message,
         history,
         language

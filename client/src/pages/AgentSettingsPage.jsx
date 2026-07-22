@@ -1,17 +1,18 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
-import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink } from "lucide-react";
+import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useEffect } from "react";
 import { useWorkspacePermissions, useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
 import { useActiveModels } from "../hooks/useModels";
 import { useAuth } from "../context/AuthContext";
 import { useProjectTools } from "../hooks/useAgents";
-import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector } from "../hooks/useDocuments";
+import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector, useUpdateUrl, useProcessText, useUpdateText, useUpdateFile, useSyncConnector } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 
 import { toast } from "sonner";
 import { getAuthHeaders } from "../lib/api";
@@ -31,6 +32,33 @@ import {
 } from "../components/agents/CreateAgentWizard";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+const formatBytes = (bytes, decimals = 2) => {
+  if (!bytes) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+};
+
+const getDocumentSource = (doc) => {
+  return doc.filename || doc.name || "Unknown Document";
+};
+
+const StatusBadge = ({ status }) => {
+  const styles = {
+    completed: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+    processing: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+    failed: "bg-red-500/10 text-red-500 border-red-500/20",
+  };
+  const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown";
+  return (
+    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${styles[status] || "bg-muted text-muted-foreground border-border"}`}>
+      {label}
+    </span>
+  );
+};
 
 export default function AgentSettingsPage() {
   const navigate = useNavigate();
@@ -61,6 +89,25 @@ export default function AgentSettingsPage() {
   const processUrlMutation = useProcessUrl(selectedAgentId);
   const deleteMutation = useDeleteDocument(selectedAgentId);
   const processConnectorMutation = useProcessConnector(selectedAgentId);
+  const updateUrlMutation = useUpdateUrl(selectedAgentId);
+  const processTextMutation = useProcessText(selectedAgentId);
+  const updateTextMutation = useUpdateText(selectedAgentId);
+  const updateFileMutation = useUpdateFile(selectedAgentId);
+  const syncConnectorMutation = useSyncConnector(selectedAgentId);
+
+  // Editing & creation state
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [isUrlEditOpen, setIsUrlEditOpen] = useState(false);
+  const [isTextEditOpen, setIsTextEditOpen] = useState(false);
+  const [textFilename, setTextFilename] = useState("");
+  const [textContent, setTextContent] = useState("");
+  const [editUrlValue, setEditUrlValue] = useState("");
+  const [newTextFilename, setNewTextFilename] = useState("");
+  const [newTextContent, setNewTextContent] = useState("");
+
+  // Re-upload target
+  const [replaceTargetDocId, setReplaceTargetDocId] = useState(null);
+  const replaceFileInputRef = useRef(null);
 
   const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -137,6 +184,86 @@ export default function AgentSettingsPage() {
     }
   };
 
+  const handleCreateText = async (filename, text) => {
+    if (!canManageDatabase) return toast.error("No permission.");
+    try {
+      await processTextMutation.mutateAsync({ filename, text });
+      toast.success("Text snippet queued for ingestion");
+    } catch (e) {
+      toast.error(e.message || "Failed to create text snippet.");
+    }
+  };
+
+  const handleEditClick = (doc) => {
+    setEditingDoc(doc);
+    if (doc.filename.startsWith("http://") || doc.filename.startsWith("https://")) {
+      setEditUrlValue(doc.filename);
+      setIsUrlEditOpen(true);
+    } else if (doc.filename.endsWith(".txt")) {
+      toast.loading("Loading text content...", { id: "load-text" });
+      const token = localStorage.getItem("access_token");
+      fetch(`${API_URL}/api/documents/${doc.id}/view`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      .then(r => r.text())
+      .then(t => {
+        toast.dismiss("load-text");
+        setTextContent(t);
+        setTextFilename(doc.filename);
+        setIsTextEditOpen(true);
+      })
+      .catch(() => {
+        toast.error("Failed to load text content", { id: "load-text" });
+        setTextContent("");
+        setTextFilename(doc.filename);
+        setIsTextEditOpen(true);
+      });
+    }
+  };
+
+  const handleUpdateUrl = async () => {
+    if (!editingDoc) return;
+    try {
+      await updateUrlMutation.mutateAsync({ docId: editingDoc.id, url: editUrlValue });
+      setIsUrlEditOpen(false);
+      toast.success("URL updated and queued for re-scraping");
+    } catch (e) {
+      toast.error(e.message || "Failed to update URL.");
+    }
+  };
+
+  const handleUpdateText = async () => {
+    if (!editingDoc) return;
+    try {
+      await updateTextMutation.mutateAsync({ docId: editingDoc.id, filename: textFilename, text: textContent });
+      setIsTextEditOpen(false);
+      toast.success("Text snippet updated and queued for re-embedding");
+    } catch (e) {
+      toast.error(e.message || "Failed to update text snippet.");
+    }
+  };
+
+  const handleReplaceFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !replaceTargetDocId) return;
+    try {
+      await updateFileMutation.mutateAsync({ docId: replaceTargetDocId, file });
+      toast.success("File replaced and queued for re-embedding");
+      setReplaceTargetDocId(null);
+    } catch (e) {
+      toast.error(e.message || "Failed to replace file.");
+    }
+  };
+
+  const handleSyncConnectorClick = async (docId) => {
+    try {
+      await syncConnectorMutation.mutateAsync({ docId });
+      toast.success("Connector sync triggered");
+    } catch (e) {
+      toast.error(e.message || "Failed to sync connector.");
+    }
+  };
+
   const handleConnect = async (connectorId, connectorName) => {
     if (!canManageDatabase) return toast.error("No permission.");
     if (connectorId === "gdrive") {
@@ -201,6 +328,27 @@ export default function AgentSettingsPage() {
       return formatted;
     }
     return AVAILABLE_MODELS;
+  }, [activeModelsData]);
+
+  const dynamicProviders = useMemo(() => {
+    if (activeModelsData?.providers) {
+      const activeProviders = Object.keys(activeModelsData.providers);
+      const displayNames = {
+        groq: "Groq",
+        openai: "OpenAI",
+        openrouter: "OpenRouter",
+        huggingface: "HuggingFace",
+        anthropic: "Anthropic",
+        gemini: "Gemini",
+        ollama: "Ollama",
+        custom_openai: "Custom Server"
+      };
+      return activeProviders.map(p => ({
+        id: p,
+        name: displayNames[p] || p.toUpperCase()
+      }));
+    }
+    return providers;
   }, [activeModelsData]);
 
   const currentModels = useMemo(
@@ -414,7 +562,7 @@ export default function AgentSettingsPage() {
                         1. Select AI Provider Platform
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {providers.map((p) => {
+                        {dynamicProviders.map((p) => {
                           const isSelected = formData.provider === p.id;
                           return (
                             <button
@@ -899,10 +1047,11 @@ export default function AgentSettingsPage() {
                       <div className="glass-card p-6 flex-1 rounded-2xl border border-border">
                         <h3 className="font-semibold text-lg mb-4">Add Knowledge</h3>
 
-                        <div className="flex bg-muted p-1 rounded-xl mb-6">
-                          <button onClick={() => setSourceTab("files")} className={`flex-1 py-2 text-xs font-medium rounded-lg ${sourceTab === "files" ? "bg-background shadow" : "text-muted-foreground"}`}>Files</button>
-                          <button onClick={() => setSourceTab("website")} className={`flex-1 py-2 text-xs font-medium rounded-lg ${sourceTab === "website" ? "bg-background shadow" : "text-muted-foreground"}`}>Website</button>
-                          <button onClick={() => setSourceTab("connectors")} className={`flex-1 py-2 text-xs font-medium rounded-lg ${sourceTab === "connectors" ? "bg-background shadow" : "text-muted-foreground"}`}>Apps</button>
+                        <div className="flex bg-muted p-1 rounded-xl mb-6 overflow-x-auto gap-1">
+                          <button onClick={() => setSourceTab("files")} className={`flex-1 py-2 text-xs font-medium rounded-lg whitespace-nowrap px-2 ${sourceTab === "files" ? "bg-background shadow" : "text-muted-foreground"}`}>Files</button>
+                          <button onClick={() => setSourceTab("website")} className={`flex-1 py-2 text-xs font-medium rounded-lg whitespace-nowrap px-2 ${sourceTab === "website" ? "bg-background shadow" : "text-muted-foreground"}`}>Website</button>
+                          <button onClick={() => setSourceTab("text")} className={`flex-1 py-2 text-xs font-medium rounded-lg whitespace-nowrap px-2 ${sourceTab === "text" ? "bg-background shadow" : "text-muted-foreground"}`}>Custom Text</button>
+                          <button onClick={() => setSourceTab("connectors")} className={`flex-1 py-2 text-xs font-medium rounded-lg whitespace-nowrap px-2 ${sourceTab === "connectors" ? "bg-background shadow" : "text-muted-foreground"}`}>Apps</button>
                         </div>
 
                         {sourceTab === "files" && (
@@ -911,6 +1060,7 @@ export default function AgentSettingsPage() {
                             <h4 className="font-semibold">Drop files here</h4>
                             <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, CSV</p>
                             <input ref={fileInputRef} type="file" multiple accept=".pdf,.docx,.txt,.csv" className="hidden" onChange={handleFileChange} />
+                            <input ref={replaceFileInputRef} type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg" className="hidden" onChange={handleReplaceFileChange} />
                             <button onClick={() => fileInputRef.current?.click()} disabled={!selectedAgentId || isMutating} className="mt-4 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm disabled:opacity-60">
                               {uploadMutation.isPending ? "Uploading..." : "Browse Files"}
                             </button>
@@ -926,6 +1076,42 @@ export default function AgentSettingsPage() {
                             </div>
                             <button onClick={handleProcessUrl} disabled={!selectedAgentId || isMutating} className="w-full mt-3 py-2 rounded-xl border border-border hover:bg-muted disabled:opacity-60 text-sm font-medium">
                               {processUrlMutation.isPending ? "Scraping..." : "Scrape Website"}
+                            </button>
+                          </div>
+                        )}
+
+                        {sourceTab === "text" && (
+                          <div className="space-y-3 mt-2">
+                            <div>
+                              <label className="text-xs font-medium block mb-1">Snippet Title / Filename</label>
+                              <input
+                                value={newTextFilename}
+                                onChange={(e) => setNewTextFilename(e.target.value)}
+                                placeholder="e.g. return_policy.txt"
+                                className="w-full border border-border bg-card rounded-xl px-3 py-2 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium block mb-1">Text Content</label>
+                              <textarea
+                                value={newTextContent}
+                                onChange={(e) => setNewTextContent(e.target.value)}
+                                placeholder="Paste custom text or knowledge here..."
+                                rows={5}
+                                className="w-full border border-border bg-card rounded-xl px-3 py-2 text-sm resize-none"
+                              />
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (!newTextFilename.trim() || !newTextContent.trim()) return toast.error("Please provide a title and text content");
+                                handleCreateText(newTextFilename.trim(), newTextContent.trim());
+                                setNewTextFilename("");
+                                setNewTextContent("");
+                              }}
+                              disabled={!selectedAgentId || isMutating}
+                              className="w-full py-2 rounded-xl bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60 text-sm font-medium"
+                            >
+                              {processTextMutation.isPending ? "Indexing..." : "Index Text Snippet"}
                             </button>
                           </div>
                         )}
@@ -958,9 +1144,21 @@ export default function AgentSettingsPage() {
                       <div className="glass-card rounded-2xl border border-border overflow-hidden flex-1">
                         <div className="p-4 border-b border-border flex items-center justify-between bg-muted/20">
                           <h4 className="font-semibold text-sm">Indexed Documents</h4>
-                          <div className="relative w-48">
-                            <Search size={14} className="absolute left-3 top-2.5 text-muted-foreground" />
-                            <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full bg-background border border-border rounded-lg pl-8 py-1.5 text-sm" />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                queryClient.invalidateQueries({ queryKey: ["documents", selectedAgentId] });
+                                toast.success("Knowledge sources refreshed");
+                              }}
+                              className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition"
+                              title="Refresh knowledge list"
+                            >
+                              <RefreshCw size={14} />
+                            </button>
+                            <div className="relative w-48">
+                              <Search size={14} className="absolute left-3 top-2.5 text-muted-foreground" />
+                              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full bg-background border border-border rounded-lg pl-8 py-1.5 text-sm" />
+                            </div>
                           </div>
                         </div>
 
@@ -977,18 +1175,40 @@ export default function AgentSettingsPage() {
                             <tbody>
                               {isLoading && <tr><td colSpan={4} className="p-4 text-center"><Loader2 size={16} className="animate-spin mx-auto" /></td></tr>}
                               {!isLoading && filteredDocuments.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-sm text-muted-foreground">No documents indexed yet.</td></tr>}
-                              {!isLoading && filteredDocuments.map((doc) => (
-                                <tr key={doc.id} className="border-b border-border hover:bg-muted/50">
-                                  <td className="px-4 py-3 text-sm flex items-center gap-2"><FileText size={14} className="text-primary" /> <span className="truncate max-w-[150px]">{getDocumentSource(doc)}</span></td>
-                                  <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
-                                  <td className="px-4 py-3 text-xs text-muted-foreground">{formatBytes(doc.file_size_bytes)}</td>
-                                  <td className="px-4 py-3 text-right">
-                                    <button onClick={() => handleDelete(doc.id)} disabled={deleteMutation.isPending} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500">
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
+                              {!isLoading && filteredDocuments.map((doc) => {
+                                const isUrl = doc.filename.startsWith("http://") || doc.filename.startsWith("https://");
+                                const isText = doc.filename.endsWith(".txt");
+                                const isConnector = doc.filename.includes("Sync");
+                                return (
+                                  <tr key={doc.id} className="border-b border-border hover:bg-muted/50">
+                                    <td className="px-4 py-3 text-sm flex items-center gap-2"><FileText size={14} className="text-primary" /> <span className="truncate max-w-[150px]">{getDocumentSource(doc)}</span></td>
+                                    <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
+                                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatBytes(doc.file_size_bytes)}</td>
+                                    <td className="px-4 py-3 text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        {(isUrl || isText) && (
+                                          <button onClick={() => handleEditClick(doc)} className="p-1.5 rounded-lg hover:bg-primary/10 text-primary" title="Edit source">
+                                            <Pencil size={14} />
+                                          </button>
+                                        )}
+                                        {(!isUrl && !isText && !isConnector) && (
+                                          <button onClick={() => { setReplaceTargetDocId(doc.id); setTimeout(() => replaceFileInputRef.current?.click(), 100); }} className="p-1.5 rounded-lg hover:bg-primary/10 text-primary" title="Upload new version">
+                                            <UploadCloud size={14} />
+                                          </button>
+                                        )}
+                                        {isConnector && (
+                                          <button onClick={() => handleSyncConnectorClick(doc.id)} disabled={syncConnectorMutation.isPending} className="p-1.5 rounded-lg hover:bg-emerald-500/10 text-emerald-500" title="Sync now">
+                                            <Zap size={14} className={syncConnectorMutation.isPending ? "animate-spin" : ""} />
+                                          </button>
+                                        )}
+                                        <button onClick={() => handleDelete(doc.id)} disabled={deleteMutation.isPending} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500" title="Delete document">
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -1181,6 +1401,69 @@ export default function AgentSettingsPage() {
           </div>
         </div>
       </div>
+      {/* ──────────────── MODAL: EDIT URL KNOWLEDGE ──────────────── */}
+      <Dialog open={isUrlEditOpen} onOpenChange={setIsUrlEditOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl p-6 space-y-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Edit Scraped URL</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold block mb-1">Target Link URL</label>
+              <input
+                value={editUrlValue}
+                onChange={(e) => setEditUrlValue(e.target.value)}
+                placeholder="https://example.com"
+                className="w-full border border-border bg-card rounded-xl px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              onClick={handleUpdateUrl}
+              disabled={updateUrlMutation.isPending}
+              className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+            >
+              {updateUrlMutation.isPending ? "Re-scraping..." : "Save and Re-scrape"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ──────────────── MODAL: EDIT TEXT KNOWLEDGE ──────────────── */}
+      <Dialog open={isTextEditOpen} onOpenChange={setIsTextEditOpen}>
+        <DialogContent className="sm:max-w-xl rounded-3xl p-6 space-y-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Edit Custom Text Snippet</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold block mb-1">Snippet Filename</label>
+              <input
+                value={textFilename}
+                onChange={(e) => setTextFilename(e.target.value)}
+                placeholder="filename.txt"
+                className="w-full border border-border bg-card rounded-xl px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1">Content</label>
+              <textarea
+                value={textContent}
+                onChange={(e) => setTextContent(e.target.value)}
+                placeholder="Content text..."
+                rows={10}
+                className="w-full border border-border bg-card rounded-xl px-3 py-2 text-sm resize-none"
+              />
+            </div>
+            <button
+              onClick={handleUpdateText}
+              disabled={updateTextMutation.isPending}
+              className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-60"
+            >
+              {updateTextMutation.isPending ? "Updating vectors..." : "Save and Update Snippet"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

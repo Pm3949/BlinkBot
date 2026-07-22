@@ -7,6 +7,7 @@ import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2, MessagesSqu
 import ApiToolsModal from '../components/agents/ApiToolsModal';
 import CreateAgentWizard from '../components/agents/CreateAgentWizard';
 import StudioSandboxChat from '../components/chat/StudioSandboxChat';
+import TracePanel from '../components/chat/TracePanel';
 import { Switch } from '../components/ui/switch';
 import { Button } from '../components/ui/button';
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Handle, Position } from '@xyflow/react';
@@ -87,6 +88,46 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   });
 
   return { nodes: newNodes, edges };
+};
+
+const getBoundaryTags = (agent) => {
+  const tags = [];
+  
+  const hasEndpoints = agent.endpoints && agent.endpoints.length > 0;
+  const hasDbs = agent.databases && agent.databases.length > 0;
+  const hasWebSearch = agent.web_search_enabled;
+  const hasCodeInterpreter = agent.code_interpreter_enabled;
+  const hasIntegrations = agent.native_integrations && agent.native_integrations.length > 0;
+  
+  if (hasEndpoints || hasDbs || hasWebSearch || hasCodeInterpreter || hasIntegrations) {
+    tags.push({
+      label: "🛠️ Tool Invoker",
+      class: "bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-300 border-green-200 dark:border-green-900"
+    });
+  }
+  
+  if (hasEndpoints || hasWebSearch || hasIntegrations) {
+    tags.push({
+      label: "⚠️ External API",
+      class: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-900"
+    });
+  }
+  
+  if (hasDbs) {
+    tags.push({
+      label: "💰 PII Access",
+      class: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border-red-200 dark:border-red-900"
+    });
+  }
+  
+  if (!hasEndpoints && !hasDbs && !hasWebSearch && !hasCodeInterpreter && !hasIntegrations) {
+    tags.push({
+      label: "🔒 Read-only",
+      class: "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-900"
+    });
+  }
+  
+  return tags;
 };
 
 export default function ProjectDetailsPage() {
@@ -216,6 +257,16 @@ export default function ProjectDetailsPage() {
                     onCheckedChange={() => handleToggleActive(agent, agent.is_active !== false)}
                   />
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {getBoundaryTags(agent).map((tag, idx) => (
+                  <span 
+                    key={idx} 
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${tag.class}`}
+                  >
+                    {tag.label}
+                  </span>
+                ))}
               </div>
               <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-auto flex items-center gap-1">
                 <Activity size={10} /> {agent.llm_model}
@@ -432,30 +483,36 @@ export default function ProjectDetailsPage() {
         </div>
         
         {isSandboxOpen && (
-          <StudioSandboxChat
-            messages={messages}
-            loading={loading}
-            onSend={(content) => {
-              const manager = subAgents.find(a => a.name === 'Network Manager');
-              if (manager) {
-                sendMessage({
-                  agentId: manager.id,
-                  agentName: manager.name,
-                  content,
-                  language: chatLanguage
-                });
-              } else {
-                toast.error("Network Manager not found!");
-              }
-            }}
-            agent={subAgents.find(a => a.name === 'Network Manager')}
-            chatLanguage={chatLanguage}
-            setChatLanguage={setChatLanguage}
-            onClose={() => {
+          <>
+            <StudioSandboxChat
+              messages={messages}
+              loading={loading}
+              onSend={(content) => {
+                const manager = subAgents.find(a => a.name === 'Network Manager');
+                if (manager) {
+                  sendMessage({
+                    agentId: manager.id,
+                    agentName: manager.name,
+                    content,
+                    language: chatLanguage
+                  });
+                } else {
+                  toast.error("Network Manager not found!");
+                }
+              }}
+              agent={subAgents.find(a => a.name === 'Network Manager')}
+              chatLanguage={chatLanguage}
+              setChatLanguage={setChatLanguage}
+              onClose={() => {
+                setIsSandboxOpen(false);
+                clearSandbox();
+              }}
+            />
+            <TracePanel onClose={() => {
               setIsSandboxOpen(false);
               clearSandbox();
-            }}
-          />
+            }} />
+          </>
         )}
       </div>
 

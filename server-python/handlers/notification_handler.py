@@ -1,7 +1,9 @@
 import logging
 from db import notification_repository
 from handlers.websocket_handlers import notification_manager
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
+
+logger = get_department_logger("system")
 
 async def create_notification(workspace_id: str, title: str, message: str, notification_type: str):
     """
