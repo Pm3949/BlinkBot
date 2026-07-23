@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { CreditCard, Check, Zap, Cpu, Database, MessageSquare, Globe, ArrowRight, Sparkles, Building2, ShieldCheck, Layers } from 'lucide-react';
+import { CreditCard, Check, Zap, Cpu, Database, MessageSquare, Globe, ArrowRight, Sparkles, Building2, Sliders, ShieldCheck, Download, FileText, Calendar } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import { useSubscription, useCreateRazorpayOrder } from '../hooks/useBilling';
 import { toast } from 'sonner';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 
-const PricingCard = ({ title, priceInr, priceUsd, description, features, icon: Icon, isPopular, currentPlan, onUpgrade, isUpgrading, annualBilling }) => (
+const PricingCard = ({ title, priceInr, priceUsd, description, features, icon: Icon, isPopular, currentPlan, onUpgrade, isUpgrading }) => (
   <div className={`relative flex flex-col p-8 glass-card transition-all duration-300 ${isPopular ? 'border-primary shadow-xl ring-2 ring-primary/30 bg-primary/5' : 'hover:border-border/80'}`}>
     {isPopular && (
       <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -64,9 +64,28 @@ export default function BillingPage() {
   const { data: subscription, isLoading } = useSubscription();
   const checkoutMutation = useCreateRazorpayOrder();
 
-  const handleCheckout = async (planTier = "Pro") => {
+  // Custom Plan Slider States
+  const [customWorkspaces, setCustomWorkspaces] = useState(1);
+  const [customAgents, setCustomAgents] = useState(3);
+  const [customMessages, setCustomMessages] = useState(15000);
+  const [customStorage, setCustomStorage] = useState(1000);
+  const [customChatbots, setCustomChatbots] = useState(2);
+
+  // Custom Pricing Formula in INR & USD
+  const basePrice = 499;
+  const workspacesPrice = (customWorkspaces - 1) * 299;
+  const agentsPrice = (customAgents - 1) * 199;
+  const messagesPrice = Math.floor(customMessages / 1000) * 49;
+  const storagePrice = Math.floor(customStorage / 100) * 19;
+  const chatbotsPrice = customChatbots * 299;
+
+  const monthlyTotal = basePrice + workspacesPrice + agentsPrice + messagesPrice + storagePrice + chatbotsPrice;
+  const finalTotal = annualBilling ? Math.round(monthlyTotal * 0.8) : monthlyTotal;
+  const usdEquivalent = Math.round(finalTotal / 83);
+
+  const handleCheckout = async (planTier = "Pro", customLimits = null) => {
     try {
-      let finalLimits = {
+      let finalLimits = customLimits || {
         workspaces: 3, agents: 5, agentMessages: 10000, storage: 1000, chatbots: 3, chatbotMessages: 5000
       };
       
@@ -153,7 +172,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Subscription & Billing</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Choose a plan tailored to your team. Scale AI Agents, storage, and message allowances seamlessly.
+            Choose a bundled plan or build a custom setup tailored to your workspace needs.
           </p>
         </div>
       </div>
@@ -234,12 +253,175 @@ export default function BillingPage() {
           <PricingCard 
             key={index} 
             {...plan} 
-            annualBilling={annualBilling}
             currentPlan={currentPlanTier === plan.title}
             onUpgrade={handleCheckout}
             isUpgrading={checkoutMutation.isPending}
           />
         ))}
+      </div>
+
+      {/* Divider */}
+      <div className="py-6 relative flex items-center justify-center">
+        <div className="absolute w-full h-px bg-border"></div>
+        <div className="relative px-4 bg-background text-xs font-bold text-muted-foreground uppercase tracking-widest border border-border rounded-full py-1">
+          OR BUILD A CUSTOM PLAN
+        </div>
+      </div>
+
+      {/* Interactive Custom Plan Builder */}
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* Sliders Column */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="glass-card p-8 space-y-6">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
+              <Sliders className="text-primary" size={20} /> Configure Custom Limits
+            </h3>
+
+            {/* Workspaces Slider */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Building2 size={16} /> Workspaces</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Isolated environments for different projects.</p>
+                </div>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customWorkspaces} Workspaces</span>
+              </div>
+              <input 
+                type="range" min="1" max="10" step="1" 
+                value={customWorkspaces} onChange={(e) => setCustomWorkspaces(parseInt(e.target.value))}
+                className="w-full accent-primary h-2 cursor-pointer"
+              />
+            </div>
+
+            {/* Agents per Workspace Slider */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Cpu size={16} /> Agents per Workspace</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">AI Agents deployed per workspace.</p>
+                </div>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customAgents} Agents/ws</span>
+              </div>
+              <input 
+                type="range" min="1" max="30" step="1" 
+                value={customAgents} onChange={(e) => setCustomAgents(parseInt(e.target.value))}
+                className="w-full accent-primary h-2 cursor-pointer"
+              />
+            </div>
+
+            {/* AI Messages Slider */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="text-sm font-semibold flex items-center gap-2"><MessageSquare size={16} /> AI Messages / Month</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Queries processed by your AI Agents & Chatbots.</p>
+                </div>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customMessages.toLocaleString()} Msgs</span>
+              </div>
+              <input 
+                type="range" min="5000" max="100000" step="5000" 
+                value={customMessages} onChange={(e) => setCustomMessages(parseInt(e.target.value))}
+                className="w-full accent-primary h-2 cursor-pointer"
+              />
+            </div>
+
+            {/* Storage Slider */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Database size={16} /> Vector Storage</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Storage for PDF, DOCX, and website embeddings.</p>
+                </div>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customStorage >= 1000 ? `${customStorage / 1000} GB` : `${customStorage} MB`}</span>
+              </div>
+              <input 
+                type="range" min="200" max="10000" step="200" 
+                value={customStorage} onChange={(e) => setCustomStorage(parseInt(e.target.value))}
+                className="w-full accent-primary h-2 cursor-pointer"
+              />
+            </div>
+
+            {/* Public Chatbots Slider */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Globe size={16} /> Public Website Chatbots</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Embeddable widgets for public website visitors.</p>
+                </div>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customChatbots} Chatbots</span>
+              </div>
+              <input 
+                type="range" min="1" max="20" step="1" 
+                value={customChatbots} onChange={(e) => setCustomChatbots(parseInt(e.target.value))}
+                className="w-full accent-primary h-2 cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Custom Price Summary Panel */}
+        <div className="lg:col-span-1">
+          <div className="glass-card p-6 sticky top-6 space-y-6 border-primary/30">
+            <h3 className="text-lg font-bold text-foreground">Custom Summary</h3>
+            
+            <div className="space-y-3 text-xs border-b border-border/50 pb-4">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Base Platform</span>
+                <span className="font-medium text-foreground">₹{basePrice}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Workspaces ({customWorkspaces})</span>
+                <span className="font-medium text-foreground">₹{workspacesPrice}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Agents ({customAgents}/ws)</span>
+                <span className="font-medium text-foreground">₹{agentsPrice}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>AI Messages ({customMessages.toLocaleString()})</span>
+                <span className="font-medium text-foreground">₹{messagesPrice}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Storage ({customStorage} MB)</span>
+                <span className="font-medium text-foreground">₹{storagePrice}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Public Chatbots ({customChatbots})</span>
+                <span className="font-medium text-foreground">₹{chatbotsPrice}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-extrabold text-foreground">₹{finalTotal}</span>
+                <span className="text-xs font-semibold text-muted-foreground">/month</span>
+                <span className="text-xs text-muted-foreground/60">(${usdEquivalent})</span>
+              </div>
+              {annualBilling && (
+                <p className="text-[10px] text-emerald-500 font-bold">20% Annual Discount Applied</p>
+              )}
+            </div>
+
+            <Button 
+              disabled={checkoutMutation.isPending}
+              onClick={() => handleCheckout("Custom", {
+                workspaces: customWorkspaces,
+                agents: customAgents,
+                agentMessages: customMessages,
+                storage: customStorage,
+                chatbots: customChatbots,
+                chatbotMessages: customMessages
+              })}
+              className="w-full btn-primary h-11 text-xs font-semibold rounded-xl shadow-lg shadow-primary/20"
+            >
+              {checkoutMutation.isPending ? 'Processing Order...' : 'Subscribe Custom Plan'} <ArrowRight size={16} className="ml-2" />
+            </Button>
+
+            <p className="text-[10px] text-center text-muted-foreground flex items-center justify-center gap-1">
+              <ShieldCheck size={12} className="text-emerald-500" /> Powered by Razorpay Secure Checkout
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Message Credit Top-Ups */}
@@ -290,6 +472,71 @@ export default function BillingPage() {
               Add Credits
             </Button>
           </div>
+        </div>
+      </div>
+
+      {/* Payment & Invoice History */}
+      <div className="glass-card p-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
+              <FileText className="text-primary" size={20} /> Payment & Invoice History
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Download GST tax invoices and view payment transaction receipts powered by Razorpay.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-border/50 text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
+                <th className="py-3 px-4">Invoice ID</th>
+                <th className="py-3 px-4">Date</th>
+                <th className="py-3 px-4">Plan / Description</th>
+                <th className="py-3 px-4">Amount</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Receipt</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              <tr className="hover:bg-muted/20">
+                <td className="py-3.5 px-4 font-mono font-medium">INV-2026-001</td>
+                <td className="py-3.5 px-4 text-muted-foreground">Jul 23, 2026</td>
+                <td className="py-3.5 px-4 font-semibold text-foreground">{currentPlanTier} Plan Subscription</td>
+                <td className="py-3.5 px-4 font-bold text-foreground">{currentPlanTier === "Pro" ? "₹999" : currentPlanTier === "Business" ? "₹3,999" : "₹0"}</td>
+                <td className="py-3.5 px-4">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                    Paid
+                  </span>
+                </td>
+                <td className="py-3.5 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => toast.info("Downloading Invoice PDF...")}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                  >
+                    <Download size={12} /> Receipt
+                  </button>
+                </td>
+              </tr>
+              <tr className="hover:bg-muted/20">
+                <td className="py-3.5 px-4 font-mono font-medium">INV-2026-000</td>
+                <td className="py-3.5 px-4 text-muted-foreground">Jun 23, 2026</td>
+                <td className="py-3.5 px-4 font-semibold text-foreground">Starter Free Plan</td>
+                <td className="py-3.5 px-4 font-bold text-foreground">₹0</td>
+                <td className="py-3.5 px-4">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+                    Included
+                  </span>
+                </td>
+                <td className="py-3.5 px-4 text-right">
+                  <span className="text-muted-foreground/50 text-[11px]">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

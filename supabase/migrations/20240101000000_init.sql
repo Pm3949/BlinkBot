@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS "public"."agents" (
     "system_prompt" "text",
     "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
     "llm_provider" "text" DEFAULT 'groq'::"text",
-    "llm_model" "text" DEFAULT 'llama-3.1-8b-instant'::"text",
+    "llm_model" "text" DEFAULT 'llama-3.3-70b-versatile'::"text",
     "api_key" "text",
     "description" "text",
     "embedding_model" "text" DEFAULT 'all-MiniLM-L6-v2'::"text",

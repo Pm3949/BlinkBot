@@ -158,7 +158,7 @@ export default function TracePanel({ onClose }) {
                   </pre>
                 ) : (
                   <div className="text-[11px] text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                    {highlightText(step.logs || 'No supplementary friendly logs.', searchQuery)}
+                    {highlightText(step.logs || 'Step completed cleanly.', searchQuery)}
                   </div>
                 )}
               </div>

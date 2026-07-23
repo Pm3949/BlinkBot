@@ -221,7 +221,10 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
         logger.error(f"Error testing model {model_id} ({provider}): {e}")
         err_msg = str(e)
         if "404" in err_msg or "not found" in err_msg.lower():
-            err_msg = f"Model ID '{model_id}' not found on {provider} API (HTTP 404)."
+            if provider == "openrouter" and not api_key:
+                err_msg = f"OpenRouter API Key required (HTTP 404). Please enter your OpenRouter API key in Provider Credentials & Keys tab to activate."
+            else:
+                err_msg = f"Model ID '{model_id}' not found on {provider} API (HTTP 404)."
         elif "402" in err_msg or "credits" in err_msg.lower() or "payment" in err_msg.lower():
             err_msg = f"Insufficient OpenRouter credits / account balance (HTTP 402). Please add credits to your OpenRouter account."
         elif "401" in err_msg or "unauthorized" in err_msg.lower() or "authentication header" in err_msg.lower() or "invalid api key" in err_msg.lower():

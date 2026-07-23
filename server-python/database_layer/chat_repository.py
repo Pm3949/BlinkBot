@@ -72,10 +72,35 @@ async def get_user_chat_limits(user_id: str):
 
 async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, limit: int = 5):
     async with get_db_cursor_async(commit=False) as cursor:
+        try:
+            await run_in_threadpool(
+                cursor.execute,
+                "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, %s, 0.05)",
+                (message, query_vector, agent_id, limit),
+            )
+            results = await run_in_threadpool(cursor.fetchall)
+            if results and len(results) > 0:
+                return results
+        except Exception:
+            pass
+
+        # Robust pgvector direct query fallback (supports project-wide document matching across sub-agents)
         await run_in_threadpool(
             cursor.execute,
-            "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, %s, 0.3)",
-            (message, query_vector, agent_id, limit),
+            """
+            SELECT e.content, (1 - (e.embedding <=> %s::vector)) AS similarity
+            FROM document_embeddings e
+            JOIN documents d ON e.document_id = d.id
+            JOIN agents a ON d.agent_id = a.id
+            WHERE (
+                a.id = %s 
+                OR a.project_id = (SELECT project_id FROM agents WHERE id = %s AND project_id IS NOT NULL)
+                OR a.id = (SELECT parent_agent_id FROM agents WHERE id = %s AND parent_agent_id IS NOT NULL)
+            )
+            ORDER BY e.embedding <=> %s::vector ASC
+            LIMIT %s
+            """,
+            (query_vector, agent_id, agent_id, agent_id, query_vector, limit),
         )
         return await run_in_threadpool(cursor.fetchall)
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, User, Copy, Share2, Volume2, Square, Clock, ThumbsUp, ThumbsDown, Globe } from "lucide-react";
+import { Bot, User, Copy, Volume2, Square, Clock, ThumbsUp, ThumbsDown, Globe, FileText, BookOpen } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -8,12 +8,10 @@ import { useFeedback } from "../../hooks/useFeedback";
 import FeedbackModal from "./FeedbackModal";
 import { getAuthHeaders } from "../../lib/api";
 
-
-
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-export default function MessageBubble({ id, role, content, agent, chatLanguage, latency, status }) {
+export default function MessageBubble({ id, role, content, agent, chatLanguage, latency, status, sources }) {
   const isUser = role === "user";
 
   const isWebSource = content?.startsWith("[WEB_SOURCE]");
@@ -22,16 +20,21 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioRef = useState(new Audio())[0];
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [isSourcesModalOpen, setIsSourcesModalOpen] = useState(false);
   const [vote, setVote] = useState(null);
   const { submitMutation } = useFeedback();
 
   const isMasterAgent = agent?.name?.toLowerCase().includes("master") && !content?.includes("[Routed to:");
 
+  const hasSources = Array.isArray(sources) && sources.length > 0;
+  const maxRelevance = hasSources
+    ? Math.max(...sources.map((s) => s.relevance_percent ?? Math.round((s.similarity || 0) * 100)))
+    : null;
+
   const handleUpvote = async () => {
     if (vote) return;
     setVote("upvote");
     toast.success("Thank you for your feedback!");
-    // We don't hit the API for upvotes anymore to save DB space
   };
 
   const handleDownvote = () => {
@@ -72,11 +75,10 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
 
     if (!content) return;
 
-    // Strip markdown characters to make speech natural
     const cleanText = displayContent
-      .replace(/!\[.*?\]\(.*?\)/g, '') // Remove images
-      .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Convert links to plain text
-      .replace(/[*_~`#>-]/g, ' ') // Replace formatting characters with spaces
+      .replace(/!\[.*?\]\(.*?\)/g, '')
+      .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+      .replace(/[*_~`#>-]/g, ' ')
       .trim();
 
     if (!cleanText) return;
@@ -216,63 +218,68 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
           )}
         </div>
         {!isUser && (
-          <div className="flex items-center justify-between mt-4 gap-8">
-            <div
-              className="
-              flex
-              gap-2
-              opacity-0
-              group-hover:opacity-100
-              transition-all
-            "
-            >
-              <button
-                onClick={handleCopy}
-                type="button"
-                className="p-2 rounded-xl hover:bg-muted"
-                title="Copy response"
+          <div className="flex items-center justify-between mt-4 gap-4">
+            <div className="flex items-center gap-2">
+              <div
+                className="
+                flex
+                gap-1
+                text-muted-foreground/80
+                hover:text-foreground
+                transition-all
+              "
               >
-                <Copy size={16} />
-              </button>
+                <button
+                  onClick={handleCopy}
+                  type="button"
+                  className="p-2 rounded-xl hover:bg-muted"
+                  title="Copy response"
+                >
+                  <Copy size={16} />
+                </button>
 
-              <button
-                onClick={handleUpvote}
-                disabled={!!vote}
-                type="button"
-                className={`p-2 rounded-xl hover:bg-muted ${vote === "upvote" ? "text-green-500" : ""}`}
-                title="Helpful response"
-              >
-                <ThumbsUp size={16} />
-              </button>
+                <button
+                  onClick={handleUpvote}
+                  disabled={!!vote}
+                  type="button"
+                  className={`p-2 rounded-xl hover:bg-muted ${vote === "upvote" ? "text-green-500" : ""}`}
+                  title="Helpful response"
+                >
+                  <ThumbsUp size={16} />
+                </button>
 
-              <button
-                onClick={handleDownvote}
-                disabled={!!vote}
-                type="button"
-                className={`p-2 rounded-xl hover:bg-muted ${vote === "downvote" ? "text-destructive" : ""}`}
-                title="Report issue"
-              >
-                <ThumbsDown size={16} />
-              </button>
+                <button
+                  onClick={handleDownvote}
+                  disabled={!!vote}
+                  type="button"
+                  className={`p-2 rounded-xl hover:bg-muted ${vote === "downvote" ? "text-destructive" : ""}`}
+                  title="Report issue"
+                >
+                  <ThumbsDown size={16} />
+                </button>
 
+                <button
+                  onClick={handleTTS}
+                  type="button"
+                  className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
+                  title={isSpeaking ? "Stop speaking" : "Read aloud"}
+                >
+                  {isSpeaking ? <Square size={16} fill="currentColor" /> : <Volume2 size={16} />}
+                </button>
+              </div>
 
-
-              <button
-                onClick={handleTTS}
-                type="button"
-                className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
-                title={isSpeaking ? "Stop speaking" : "Read aloud"}
-              >
-                {isSpeaking ? <Square size={16} fill="currentColor" /> : <Volume2 size={16} />}
-              </button>
-
-              <button
-                type="button"
-                className="p-2 rounded-xl hover:bg-muted"
-                title="Share response"
-              >
-                <Share2 size={16} />
-              </button>
+              {/* Dynamic RAG Source Citation Inspector Button */}
+              {hasSources && (
+                <button
+                  type="button"
+                  onClick={() => setIsSourcesModalOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs font-semibold transition"
+                  title="View retrieved RAG document sources"
+                >
+                  <BookOpen size={13} />
+                  <span>{maxRelevance}% Relevance ({sources.length} {sources.length === 1 ? 'Source' : 'Sources'})</span>
+                </button>
+              )}
             </div>
 
             {latency && (
@@ -308,6 +315,61 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
         onSubmit={handleFeedbackSubmit}
         isSubmitting={submitMutation.isPending}
       />
+
+      {/* Dynamic RAG Sources Citation Inspector Modal */}
+      {isSourcesModalOpen && hasSources && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-card border border-border p-6 rounded-3xl max-w-lg w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border/50 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="text-primary" size={20} />
+                <h3 className="font-bold text-base text-foreground">Retrieved RAG Sources (pgvector)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSourcesModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground text-sm font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+              {sources.map((src, idx) => {
+                const score = src.relevance_percent ?? Math.round((src.similarity || 0) * 100);
+                const title = src.name || src.filename || src.title || "Document Chunk";
+                return (
+                  <div key={idx} className="p-4 rounded-2xl border border-primary/20 bg-primary/5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-primary flex items-center gap-1.5">
+                        <FileText size={14} /> {title}
+                      </span>
+                      <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                        {score}% Match
+                      </span>
+                    </div>
+                    {src.content && (
+                      <p className="text-xs text-muted-foreground leading-relaxed font-mono bg-background/50 p-2.5 rounded-xl border border-border/40">
+                        "{src.content}"
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-2 text-right">
+              <button
+                type="button"
+                onClick={() => setIsSourcesModalOpen(false)}
+                className="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold rounded-xl"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -89,9 +89,9 @@ export const useAgentSocket = (url) => {
             window.dispatchEvent(streamEndEvent);
             useTraceStore.getState().addStep({
               type: 'routing',
-              agentName: 'Execution Pipeline',
+              agentName: activeAgentNameRef.current || 'Execution Pipeline',
               action: 'Stream generation completed successfully',
-              logs: fullContent,
+              logs: fullContent ? `Emitted ${fullContent.length} characters response` : 'Response generated successfully.',
               payload: { response_content: fullContent }
             });
           }

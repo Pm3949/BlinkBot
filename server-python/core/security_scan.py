@@ -99,8 +99,15 @@ def scan_malicious_content(file_bytes: bytes, filename: str) -> Tuple[bool, str]
 
         clean_bytes = b"".join(uncompressed_parts)
 
-        # Look for JavaScript or Launch actions in the clean object metadata/dictionaries
-        if b"/JS" in clean_bytes or b"/JavaScript" in clean_bytes or b"/AA" in clean_bytes or b"/Launch" in clean_bytes:
-            return False, "File rejected: PDF contains embedded JavaScript or automatic actions."
+        # Look for explicit executable JavaScript or Launch actions in object dictionaries
+        # Avoid matching font names (e.g. /AARAL) or standard metadata tags
+        has_js = (
+            re.search(rb"/S\s*/JavaScript\b", clean_bytes, re.IGNORECASE) or
+            re.search(rb"/JS\s*[\(<]", clean_bytes, re.IGNORECASE) or
+            re.search(rb"/S\s*/Launch\b", clean_bytes, re.IGNORECASE) or
+            re.search(rb"/Action\s*/S\s*/JavaScript\b", clean_bytes, re.IGNORECASE)
+        )
+        if has_js:
+            return False, "File rejected: PDF contains embedded executable JavaScript or automatic actions."
 
     return True, ""

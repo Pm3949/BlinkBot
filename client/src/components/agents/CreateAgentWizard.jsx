@@ -156,7 +156,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     name: "",
     description: "",
     provider: "groq",
-    model: "llama-3.1-8b-instant",
+    model: "llama-3.3-70b-versatile",
     embedding_model: "all-MiniLM-L6-v2",
     chunk_strategy: "sentence",
     system_prompt: "",

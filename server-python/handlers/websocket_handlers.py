@@ -26,11 +26,9 @@ class AgentConnectionManager:
             logger.warning(f"Disconnect requested for unregistered client ID: {client_id}")
 
     async def send_json(self, message: dict, client_id: str):
-        logger.debug(f"Attempting to send WebSocket JSON message to client {client_id}. Msg Type: {message.get('type')}")
         if client_id in self.active_connections:
             try:
                 await self.active_connections[client_id].send_json(message)
-                logger.debug(f"JSON message successfully dispatched to client {client_id}.")
             except Exception as e:
                 logger.error(f"Failed to send JSON message to client {client_id}: {str(e)}", exc_info=True)
                 self.disconnect(client_id)

@@ -2,6 +2,7 @@ import json
 from meta_agent_schemas import AgentBlueprint
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
+from prompts.system_agent_prompts import NETWORK_MANAGER_SYSTEM_PROMPT, GENERAL_ASSISTANT_SYSTEM_PROMPT
 
 async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprint: AgentBlueprint, config_data: dict):
     """
@@ -27,7 +28,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            ("Network Manager", "The central router agent for this network.", "groq", "llama-3.1-8b-instant", "all-MiniLM-L6-v2", "sentence", "You are the master coordinator.", "", "", "en", user_id, workspace_id, True, project_id, None, "[]", False, "[]", "[]")
+            ("Network Manager", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, True, project_id, None, "[]", False, "[]", "[]")
         )
         manager_id = (await run_in_threadpool(cursor.fetchone))[0]
 
@@ -38,7 +39,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             INSERT INTO agents (name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            ("General Assistant", "A versatile assistant.", "groq", "llama-3.1-8b-instant", "all-MiniLM-L6-v2", "sentence", "You are a helpful assistant.", "", "", "en", user_id, workspace_id, True, project_id, manager_id, "[]", False, "[]", "[]")
+            ("General Assistant", "A versatile, web-enabled fallback assistant.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", GENERAL_ASSISTANT_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, True, project_id, manager_id, "[]", False, "[]", "[]")
         )
 
         enabled_kb = config_data.get("enabled_knowledge", {})

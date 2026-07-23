@@ -289,7 +289,7 @@ export default function AgentSettingsPage() {
     name: agent?.name || "",
     description: agent?.description || "",
     provider: agent?.llm_provider || "groq",
-    model: agent?.llm_model || "llama-3.1-8b-instant",
+    model: agent?.llm_model || "llama-3.3-70b-versatile",
     embedding_model: agent?.embedding_model || "all-MiniLM-L6-v2",
     chunk_strategy: agent?.chunk_strategy || "sentence",
     system_prompt: agent?.system_prompt || "",
@@ -472,28 +472,39 @@ export default function AgentSettingsPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <div className="w-64 shrink-0 border-r border-border/50 bg-muted/10 p-4 space-y-1 overflow-y-auto h-full">
-          {[
-            { id: "identity", label: "Identity", icon: Bot },
-            { id: "behavior", label: "Behavior", icon: Brain },
-            { id: "model", label: "Model & AI", icon: Sparkles },
-            { id: "knowledge-base", label: "Knowledge Base", icon: Library },
-            { id: "endpoints", label: "API Endpoints", icon: Network },
-            { id: "integrations", label: "Integrations", icon: Blocks },
-            { id: "databases", label: "Databases", icon: Database },
-            { id: "code-interpreter", label: "Code Interpreter", icon: Terminal },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === tab.id
-                ? "bg-primary text-primary-foreground shadow-md"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                }`}
-            >
-              <tab.icon size={18} />
-              {tab.label}
-            </button>
-          ))}
+          {(() => {
+            const isCoreManagerAgent = agent?.name === "Network Manager" || agent?.name === "General Assistant";
+            const settingsTabs = isCoreManagerAgent
+              ? [
+                  { id: "identity", label: "Identity", icon: Bot },
+                  { id: "behavior", label: "Behavior", icon: Brain },
+                  { id: "model", label: "Model & AI", icon: Sparkles },
+                ]
+              : [
+                  { id: "identity", label: "Identity", icon: Bot },
+                  { id: "behavior", label: "Behavior", icon: Brain },
+                  { id: "model", label: "Model & AI", icon: Sparkles },
+                  { id: "knowledge-base", label: "Knowledge Base", icon: Library },
+                  { id: "endpoints", label: "API Endpoints", icon: Network },
+                  { id: "integrations", label: "Integrations", icon: Blocks },
+                  { id: "databases", label: "Databases", icon: Database },
+                  { id: "code-interpreter", label: "Code Interpreter", icon: Terminal },
+                ];
+
+            return settingsTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm font-medium ${activeTab === tab.id
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  }`}
+              >
+                <tab.icon size={18} />
+                {tab.label}
+              </button>
+            ));
+          })()}
         </div>
 
         {/* Content */}
