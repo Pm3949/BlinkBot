@@ -12,8 +12,9 @@ from email.mime.multipart import MIMEMultipart
 
 from database import get_db_connection
 from core.dependencies import rag_engine
+from utils.logger import get_department_logger
 
-logger = logging.getLogger(__name__)
+_logger = get_department_logger("system")
 
 # ==========================================
 # DOCUMENT INGESTION
@@ -39,7 +40,7 @@ def background_ingestion(
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        logger.info("⚙️ Background task started for doc id: %s", document_id)
+        _logger.info("⚙️ Background task started for doc id: %s", document_id)
 
         # Route to the correct chunking algorithm based on user/system preference
         if strategy == "naive":
@@ -72,10 +73,10 @@ def background_ingestion(
             "UPDATE documents SET status = 'completed' WHERE id = %s", (document_id,)
         )
         conn.commit()
-        logger.info("✅ Background task completed for doc id: %s", document_id)
+        _logger.info("✅ Background task completed for doc id: %s", document_id)
 
     except Exception:
-        logger.exception("Background ingestion failed for doc id %s", document_id)
+        _logger.exception("Background ingestion failed for doc id %s", document_id)
         if conn and cursor:
             try:
                 # If anything fails, mark the document as failed so the user isn't stuck waiting forever
@@ -111,7 +112,7 @@ def send_invite_email(
     smtp_pass = os.getenv("SMTP_PASSWORD")
 
     if not all([smtp_host, smtp_user, smtp_pass]):
-        logger.warning("⚠️ SMTP settings are missing. Email not sent.")
+        _logger.warning("⚠️ SMTP settings are missing. Email not sent.")
         return False
 
     try:
@@ -147,10 +148,10 @@ def send_invite_email(
             server.login(smtp_user, smtp_pass)
             server.sendmail(smtp_user, to_email, msg.as_string())
 
-        logger.info(f"📧 Invite email sent successfully to {to_email}")
+        _logger.info(f"📧 Invite email sent successfully to {to_email}")
         return True
     except Exception:
-        logger.exception(f"❌ Failed to send email to {to_email}")
+        _logger.exception(f"❌ Failed to send email to {to_email}")
         return False
 
 # ==========================================

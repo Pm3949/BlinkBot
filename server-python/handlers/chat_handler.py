@@ -975,11 +975,31 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                 )
 
                 try:
-                    routing_response = router_llm.invoke(routing_prompt)
-                    chosen_uuid = routing_response.content.strip()
-                    logger.info(f"Supervisor routed request to Agent ID: {chosen_uuid}")
+                    router_llm_json = router_llm.bind(response_format={"type": "json_object"})
+                    routing_response = router_llm_json.invoke(routing_prompt)
+                    content = routing_response.content.strip()
 
-                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]) == chosen_uuid), None)
+                    # Strip any stray markdown fences the model might add
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
+
+                    try:
+                        parsed = json.loads(content)
+                        chosen_uuid = parsed.get("agent_id", "").strip().lower()
+                        logger.info(f"Supervisor routed request to Agent ID: {chosen_uuid}")
+                    except json.JSONDecodeError:
+                        import re
+                        uuid_match = re.search(
+                            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                            content, re.IGNORECASE
+                        )
+                        chosen_uuid = uuid_match.group(0).lower() if uuid_match else ""
+                        logger.warning(f"Routing JSON parse failed; extracted UUID via regex: {chosen_uuid}")
+
+                    chosen_agent = next((sa for sa in sub_agents if str(sa[0]).lower() == chosen_uuid), None)
                     if chosen_agent and str(chosen_agent[0]) != str(master_agent_id):
                         active_agent_id = chosen_agent[0]
                         routed_agent_name = chosen_agent[1]

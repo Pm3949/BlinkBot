@@ -69,6 +69,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "../supabaseClient";
+import { claimPendingInvitesApi } from "../services/teamService";
 
 const AuthContext = createContext(null);
 
@@ -76,23 +77,13 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Claim pending invites automatically
+  // Claim pending invites automatically via backend API
   const claimPendingInvites = async (currentUser) => {
-    if (!currentUser?.email) return;
-
-    const isFromInviteLink = sessionStorage.getItem("pending_invite_claim") === "true";
-    if (!isFromInviteLink) return;
+    if (!currentUser) return;
 
     try {
-      const { error } = await supabase
-        .from("workspace_members")
-        .update({ user_id: currentUser.id })
-        .eq("email", currentUser.email)
-        .is("user_id", null);
-
-      if (!error) {
-        sessionStorage.removeItem("pending_invite_claim");
-      }
+      await claimPendingInvitesApi();
+      sessionStorage.removeItem("pending_invite_claim");
     } catch (err) {
       console.error("Failed to accept pending workspace invite:", err);
     }

@@ -15,7 +15,7 @@ from core.auth import (
     GOOGLE_CLIENT_SECRET, 
     FRONTEND_URL
 )
-from db import auth_repository
+from db import auth_repository, workspace_repository
 from utils.logger import get_department_logger
 
 logger = get_department_logger("auth")
@@ -105,6 +105,7 @@ async def handle_google_callback(base_url: str, request_url: str, code: str):
             
         logger.debug(f"Ensuring default workspace exists for user ID: {user_id}")
         await auth_repository.create_default_workspace(user_id, email)
+        await workspace_repository.claim_pending_workspace_invites(user_id, email)
         
         logger.info(f"Generating access token for user ID: {user_id}")
         jwt_token = create_access_token(user_id=user_id, email=email)
@@ -186,6 +187,7 @@ async def handle_verify_otp(email: str, otp: str):
         
         logger.debug(f"Creating default workspace for verified user: {user_id}")
         await auth_repository.create_default_workspace(user_id, email)
+        await workspace_repository.claim_pending_workspace_invites(user_id, email)
 
         logger.info(f"Generating access token for verified user ID: {user_id}")
         access_token = create_access_token(user_id=user_id, email=email)
@@ -225,6 +227,7 @@ async def handle_login(email: str, password: str):
             
         logger.debug(f"Creating or verifying default workspace for user ID: {user_id}")
         await auth_repository.create_default_workspace(user_id, email)
+        await workspace_repository.claim_pending_workspace_invites(user_id, email)
 
         if user.get('two_factor_enabled'):
             logger.info(f"Two-factor authentication (2FA) is enabled for user ID: {user_id}. Restricting login.")

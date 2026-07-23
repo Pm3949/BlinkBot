@@ -118,3 +118,16 @@ export async function removeMember(memberId) {
     throw new Error("Failed to remove member");
   }
 }
+
+export async function claimPendingInvitesApi() {
+  const response = await fetch(`${API_URL}/api/workspaces/claim-invites`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to claim pending workspace invites");
+  }
+
+  return response.json();
+}

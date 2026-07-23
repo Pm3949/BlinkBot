@@ -1,12 +1,4 @@
-import {
-  Bot,
-  Database,
-  Network,
-  Brain,
-  HardDrive,
-  MessageCircle,
-} from "lucide-react";
-
+import { Bot, HardDrive, Network, MessageCircle, Globe, Zap } from "lucide-react";
 import KPICard from "./KPICard";
 
 export default function KPIGrid({
@@ -21,53 +13,56 @@ export default function KPIGrid({
   internalSeries = [],
   widgetSeries = [],
 }) {
-  // Generate sparkline values from actual message counts if available
-  const internalSpark = internalSeries.length > 0 
-    ? internalSeries.slice(-7).map(d => d.messages) 
-    : [2, 5, 8, 4, 10, 6, 12];
+  const internalSpark =
+    internalSeries.length > 0
+      ? internalSeries.slice(-8).map((d) => d.messages)
+      : [2, 5, 3, 8, 4, 10, 6, 12];
 
-  const widgetSpark = widgetSeries.length > 0 
-    ? widgetSeries.slice(-7).map(d => d.messages) 
-    : [10, 22, 15, 30, 25, 45, 60];
+  const widgetSpark =
+    widgetSeries.length > 0
+      ? widgetSeries.slice(-8).map((d) => d.messages)
+      : [10, 22, 15, 30, 25, 45, 38, 60];
+
+  const cards = [
+    {
+      title: "Active Agents",
+      value: isLoadingAgents ? "—" : activeAgentsCount.toLocaleString(),
+      change: `${networksCount.toLocaleString()} networks deployed`,
+      icon: Bot,
+      accent: "primary",
+      sparklineData: [1, 2, 2, activeAgentsCount || 1, activeAgentsCount || 2, activeAgentsCount || 3, activeAgentsCount || 4, activeAgentsCount || 5],
+    },
+    {
+      title: "Chat Sessions",
+      value: isLoadingAgents ? "—" : `${conversationsCount.toLocaleString()}`,
+      change: `${messagesCount.toLocaleString()} total messages`,
+      icon: MessageCircle,
+      accent: "violet",
+      sparklineData: internalSpark,
+    },
+    {
+      title: "Widget Traffic",
+      value: isLoadingAgents ? "—" : widgetMessagesCount.toLocaleString(),
+      change: "Public widget messages",
+      icon: Globe,
+      accent: "cyan",
+      sparklineData: widgetSpark,
+    },
+    {
+      title: "Knowledge Base",
+      value: isLoadingAgents ? "—" : `${storageUsedMB.toFixed(1)} MB`,
+      change: `${documentsCount.toLocaleString()} source documents`,
+      icon: HardDrive,
+      accent: "emerald",
+      sparklineData: [10, 14, 12, 18, 20, 22, 25, storageUsedMB || 2],
+    },
+  ];
 
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      <KPICard
-        title="Active Agents"
-        value={
-          isLoadingAgents
-            ? "..."
-            : activeAgentsCount.toLocaleString()
-        }
-        change={`${networksCount.toLocaleString()} networks active`}
-        icon={Bot}
-        sparklineData={[1, 2, 2, activeAgentsCount || 1, activeAgentsCount || 2, activeAgentsCount || 3, activeAgentsCount || 4]}
-      />
-
-      <KPICard
-        title="Conversations & Messages"
-        value={`${conversationsCount.toLocaleString()} chats`}
-        change={`${messagesCount.toLocaleString()} messages`}
-        icon={MessageCircle}
-        sparklineData={internalSpark}
-      />
-
-      <KPICard
-        title="Widget Traffic"
-        value={`${widgetMessagesCount.toLocaleString()}`}
-        change="Widget messages all-time"
-        icon={Network}
-        sparklineData={widgetSpark}
-      />
-
-      <KPICard
-        title="Vector Database Storage"
-        value={`${storageUsedMB.toFixed(2)} MB`}
-        change={`${documentsCount.toLocaleString()} source docs`}
-        icon={HardDrive}
-        sparklineData={[10, 15, 12, 18, 20, 25, storageUsedMB || 2]}
-      />
+    <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {cards.map((card, i) => (
+        <KPICard key={card.title} {...card} index={i} />
+      ))}
     </div>
   );
 }
-

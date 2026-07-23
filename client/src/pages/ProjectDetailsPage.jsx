@@ -91,43 +91,7 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 };
 
 const getBoundaryTags = (agent) => {
-  const tags = [];
-  
-  const hasEndpoints = agent.endpoints && agent.endpoints.length > 0;
-  const hasDbs = agent.databases && agent.databases.length > 0;
-  const hasWebSearch = agent.web_search_enabled;
-  const hasCodeInterpreter = agent.code_interpreter_enabled;
-  const hasIntegrations = agent.native_integrations && agent.native_integrations.length > 0;
-  
-  if (hasEndpoints || hasDbs || hasWebSearch || hasCodeInterpreter || hasIntegrations) {
-    tags.push({
-      label: "🛠️ Tool Invoker",
-      class: "bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-300 border-green-200 dark:border-green-900"
-    });
-  }
-  
-  if (hasEndpoints || hasWebSearch || hasIntegrations) {
-    tags.push({
-      label: "⚠️ External API",
-      class: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-900"
-    });
-  }
-  
-  if (hasDbs) {
-    tags.push({
-      label: "💰 PII Access",
-      class: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300 border-red-200 dark:border-red-900"
-    });
-  }
-  
-  if (!hasEndpoints && !hasDbs && !hasWebSearch && !hasCodeInterpreter && !hasIntegrations) {
-    tags.push({
-      label: "🔒 Read-only",
-      class: "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-900"
-    });
-  }
-  
-  return tags;
+  return [];
 };
 
 export default function ProjectDetailsPage() {

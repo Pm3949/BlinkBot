@@ -136,9 +136,11 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-border glass shadow-sm transition-[width] duration-300 ease-out ${
-        collapsed ? "w-[76px]" : "w-[264px]"
-      }`}
+      className="fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-border glass shadow-sm overflow-hidden"
+      style={{
+        width: "var(--sidebar-width, 264px)",
+        transition: "width 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+      }}
     >
       <div className="flex h-20 items-center justify-between border-b border-border px-4">
         <div className={`min-w-0 transition-opacity ${collapsed ? "opacity-0" : "opacity-100"}`}>

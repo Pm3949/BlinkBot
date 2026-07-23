@@ -34,22 +34,32 @@ export default function AppShell() {
         <CreateAgentWizard onClose={() => setCreateAgentWizardOpen(false)} />
       )}
 
-      <div className="min-h-screen bg-background text-foreground transition-colors">
+      {/*
+        CSS-variable layout: --sidebar-width is set once here and used by
+        both the sidebar (width) and the main content (margin-left).
+        This guarantees zero gap at every animation frame.
+      */}
+      <div
+        className="min-h-screen bg-background text-foreground transition-colors"
+        style={{
+          "--sidebar-width": sidebarCollapsed ? "76px" : "264px",
+        }}
+      >
         <div className="hidden lg:block">
           <AppSidebar />
         </div>
 
         <div
-          className={`flex min-h-screen flex-col transition-[margin] duration-300 ease-out ${
-            sidebarCollapsed ? "lg:ml-[76px]" : "lg:ml-[264px]"
-          }`}
+          className="flex min-h-screen flex-col"
+          style={{
+            marginLeft: "var(--sidebar-width, 0px)",
+            transition: "margin-left 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
         >
-          <AppHeader
-            onMenuClick={() => setSidebarOpen(true)}
-          />
+          <AppHeader onMenuClick={() => setSidebarOpen(true)} />
 
           <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-            <div className="mx-auto w-full max-w-[1500px]">
+            <div className="w-full">
               <Outlet />
             </div>
           </main>

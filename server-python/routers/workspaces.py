@@ -13,7 +13,8 @@ from handlers.workspace_handler import (
     handle_get_workspace_members,
     handle_update_member_role,
     handle_update_member_permissions,
-    handle_remove_member
+    handle_remove_member,
+    handle_claim_invites
 )
 
 logger = logging.getLogger(__name__)
@@ -125,3 +126,12 @@ async def remove_member(member_id: str):
     Returns: A success message.
     """
     return await handle_remove_member(member_id)
+
+@router.post("/api/workspaces/claim-invites")
+async def claim_workspace_invites(current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint for logged-in users to claim pending invitations matching their email address.
+    """
+    user_id = current_user["sub"]
+    email = current_user.get("email") or ""
+    return await handle_claim_invites(user_id, email)

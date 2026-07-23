@@ -4,33 +4,44 @@ from .coding_prompts import CODING_SYSTEM_PROMPT
 from .api_prompts import API_SYSTEM_PROMPT
 from .native_prompts import NATIVE_SYSTEM_PROMPT
 
+
 def get_system_prompt(agent: dict) -> str:
     """
-    Dynamically construct the system prompt based on the agent's configured integrations.
-    """
-    prompt = BASE_SYSTEM_PROMPT + "\\n\\n"
-    
-    # If the agent has a custom persona defined by the user, we prepend/append it.
-    if agent.get("system_prompt"):
-        prompt += f"USER DEFINED PERSONA:\\n{agent['system_prompt']}\\n\\n"
+    Dynamically compose the system prompt for an agent based on its configured
+    integrations and custom persona.
 
-    prompt += "### TOOL INSTRUCTIONS ###\\n"
-    
-    # We check what tools the agent has to append specific instructions
-    db_connections = agent.get("db_connections", [])
-    if db_connections:
-        prompt += SQL_SYSTEM_PROMPT + "\\n"
-        
-    api_endpoints = agent.get("api_endpoints", [])
-    if api_endpoints:
-        prompt += API_SYSTEM_PROMPT + "\\n"
-        
-    native_integrations = agent.get("native_integrations", [])
-    if native_integrations:
-        prompt += NATIVE_SYSTEM_PROMPT + "\\n"
-        
-    # Example for code interpreter check (assuming it's a setting in the agent)
-    # if agent.get("enable_code_interpreter"):
-    #     prompt += CODING_SYSTEM_PROMPT + "\\n"
-        
-    return prompt
+    The prompt is layered in this order:
+      1. BASE_SYSTEM_PROMPT  — always present (universal grounding rules)
+      2. USER PERSONA         — optional custom system prompt written by the agent owner
+      3. TOOL INSTRUCTIONS    — one block per enabled tool category (SQL, API, Native, Code)
+    """
+    sections = [BASE_SYSTEM_PROMPT]
+
+    # 2. User-defined persona / custom instructions
+    if agent.get("system_prompt"):
+        sections.append(
+            "═══════════════════════════════════════════════════════════════\n"
+            " YOUR PERSONA & CUSTOM INSTRUCTIONS (defined by the agent owner):\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            + agent["system_prompt"]
+        )
+
+    # 3. Tool-specific rule blocks (only injected when the tool is actually configured)
+    tool_sections = []
+
+    if agent.get("db_connections"):
+        tool_sections.append(SQL_SYSTEM_PROMPT)
+
+    if agent.get("api_endpoints"):
+        tool_sections.append(API_SYSTEM_PROMPT)
+
+    if agent.get("native_integrations"):
+        tool_sections.append(NATIVE_SYSTEM_PROMPT)
+
+    if agent.get("enable_code_interpreter"):
+        tool_sections.append(CODING_SYSTEM_PROMPT)
+
+    if tool_sections:
+        sections.extend(tool_sections)
+
+    return "\n\n".join(sections)

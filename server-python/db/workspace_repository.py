@@ -16,13 +16,32 @@ async def create_workspace_member(workspace_id: str, email: str, role: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO workspace_members (workspace_id, email, name, role, permissions)
-            VALUES (%s, %s, %s, %s, '{"agents": false, "database": false, "notes": false}'::jsonb)
+            INSERT INTO workspace_members (workspace_id, user_id, email, name, role, permissions)
+            VALUES (
+                %s, 
+                (SELECT id FROM public.users WHERE LOWER(email) = LOWER(%s) LIMIT 1),
+                %s, 
+                %s, 
+                %s, 
+                '{"agents": false, "database": false, "notes": false}'::jsonb
+            )
             RETURNING id;
             """,
-            (workspace_id, email, email.split("@")[0], role),
+            (workspace_id, email, email, email.split("@")[0], role),
         )
         return (await run_in_threadpool(cursor.fetchone))[0]
+
+async def claim_pending_workspace_invites(user_id: str, email: str):
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            UPDATE workspace_members
+            SET user_id = %s
+            WHERE LOWER(email) = LOWER(%s) AND user_id IS NULL;
+            """,
+            (user_id, email),
+        )
 
 async def get_user_subscription_limits(user_id: str):
     async with get_db_cursor_async(commit=False) as cursor:

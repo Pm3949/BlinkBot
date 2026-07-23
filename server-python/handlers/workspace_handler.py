@@ -232,3 +232,13 @@ async def handle_remove_member(member_id: str):
     except Exception as e:
         logger.error(f"Error removing member {member_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove member")
+
+
+async def handle_claim_invites(user_id: str, email: str):
+    logger.info(f"Claiming pending workspace invites for user ID: {user_id}, Email: {email}")
+    try:
+        await workspace_repository.claim_pending_workspace_invites(user_id, email)
+        return {"message": "Pending workspace invites claimed successfully"}
+    except Exception as e:
+        logger.error(f"Error claiming invites for {email}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to claim invites")
