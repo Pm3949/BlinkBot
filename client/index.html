@@ -46,37 +46,47 @@
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "BlinkBot",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "url": "https://blinkbot.in",
-      "description": "BlinkBot lets you create custom AI chatbots powered by your own documents and data. Upload PDFs, configure with any LLM, and embed a chat widget on your website — no code required.",
-      "offers": [
+      "@graph": [
         {
-          "@type": "Offer",
-          "name": "Starter",
-          "price": "0",
-          "priceCurrency": "USD"
+          "@type": "WebSite",
+          "name": "BlinkBot",
+          "alternateName": ["Blink Bot"],
+          "url": "https://blinkbot.in/"
         },
         {
-          "@type": "Offer",
-          "name": "Pro",
-          "price": "24",
-          "priceCurrency": "USD"
-        },
-        {
-          "@type": "Offer",
-          "name": "Enterprise",
-          "price": "120",
-          "priceCurrency": "USD"
+          "@type": "SoftwareApplication",
+          "name": "BlinkBot",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web",
+          "url": "https://blinkbot.in/",
+          "description": "BlinkBot lets you create custom AI chatbots powered by your own documents and data. Upload PDFs, configure with any LLM, and embed a chat widget on your website — no code required.",
+          "offers": [
+            {
+              "@type": "Offer",
+              "name": "Starter",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            {
+              "@type": "Offer",
+              "name": "Pro",
+              "price": "24",
+              "priceCurrency": "USD"
+            },
+            {
+              "@type": "Offer",
+              "name": "Enterprise",
+              "price": "120",
+              "priceCurrency": "USD"
+            }
+          ],
+          "creator": {
+            "@type": "Organization",
+            "name": "BlinkBot",
+            "url": "https://blinkbot.in/"
+          }
         }
-      ],
-      "creator": {
-        "@type": "Organization",
-        "name": "BlinkBot",
-        "url": "https://blinkbot.in"
-      }
+      ]
     }
     </script>
     <!-- Google APIs & OAuth for Picker -->
