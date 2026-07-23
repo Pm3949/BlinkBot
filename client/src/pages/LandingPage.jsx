@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { usePageSeo } from '../hooks/usePageSeo';
 import { Link } from 'react-router-dom';
 import { 
-  Bot, Zap, Database, Globe, ArrowRight, ShieldCheck, Cpu, Sun, Moon, 
-  Sparkles, BarChart3, Users, Upload, Settings, Code, Brain, 
-  MessageSquare, ChevronRight, Check, Send, Loader2, Star,
-  Search, Layers, RefreshCw
+  Bot, Zap, Database, Globe, ArrowRight, Cpu, Sun, Moon, 
+  Sparkles, Users, Upload, Settings, Code, Brain, 
+  ChevronRight, ChevronLeft, Check, Send, Loader2, Star,
+  CheckCircle2, Play, FileText, ChevronDown, Copy, Eye, Terminal, 
+  Lightbulb, MessagesSquare, Sliders, HelpCircle, Wrench, Layers
 } from 'lucide-react';
 import Logo from '../components/shared/Logo';
 import { useUIStore } from "../store/useUIStore";
@@ -13,18 +14,157 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '';
 
+// Supported LLM Providers in Codebase
+const LLM_PROVIDERS = [
+  { name: "OpenRouter", badge: "DeepSeek R1, Llama 3.3, Qwen", desc: "Connect OpenRouter API key for DeepSeek & open models." },
+  { name: "OpenAI", badge: "GPT-4o & GPT-4o-mini", desc: "Industry standard models for multi-turn conversational agents." },
+  { name: "Groq", badge: "Ultra-Fast Llama-3", desc: "Low latency responses powered by Groq LPU inference." },
+  { name: "HuggingFace (HF)", badge: "Embeddings & Inference", desc: "Open source embedding models and inference endpoints." },
+  { name: "Anthropic", badge: "Claude 3.5 Sonnet", desc: "High precision analysis for research and document search." },
+  { name: "Google Gemini", badge: "Gemini 2.0 Flash", desc: "Large context window processing for complex datasets." }
+];
+
+// Demo personas for interactive sandbox
+const DEMO_PERSONAS = [
+  {
+    id: 'support',
+    name: 'Customer Support Bot',
+    badge: 'Support & FAQ',
+    docsCount: '34 PDFs & Help Guides',
+    avatarBg: 'bg-primary',
+    questions: [
+      "What is your refund policy?",
+      "How do I integrate OpenRouter API keys?",
+      "Can I customize my chat widget design?"
+    ],
+    responses: {
+      "What is your refund policy?": {
+        answer: "We offer a 30-day money-back guarantee on all paid plans. You can initiate a refund or modify your plan directly from Workspace Billing.",
+        sources: ["Refund_Policy.pdf (p. 2)", "Terms_of_Service.md"]
+      },
+      "How do I integrate OpenRouter API keys?": {
+        answer: "Go to Settings > Provider Credentials & Keys, enter your OpenRouter API key, and select DeepSeek R1, Llama 3.3, or Qwen models.",
+        sources: ["Provider_Setup_Guide.pdf"]
+      },
+      "Can I customize my chat widget design?": {
+        answer: "Yes! You can customize brand color, header title, screen position (Bottom Left / Right), avatar, and system prompts in the Widget Configurator.",
+        sources: ["Widget_Customization.md"]
+      }
+    }
+  },
+  {
+    id: 'sales',
+    name: 'Sales & Lead Qualifier',
+    badge: 'Lead Gen',
+    docsCount: 'Product Catalog & Specs',
+    avatarBg: 'bg-purple-600',
+    questions: [
+      "What plans are available?",
+      "Can I connect OpenRouter or HuggingFace?",
+      "How do message top-ups work?"
+    ],
+    responses: {
+      "What plans are available?": {
+        answer: "We offer Starter (Free $0), Pro (₹999/mo | $12/mo), and Business (₹3,999/mo | $49/mo). Annual billing saves 20%.",
+        sources: ["Pricing_Schedule_2026.pdf"]
+      },
+      "Can I connect OpenRouter or HuggingFace?": {
+        answer: "Yes! BlinkBot supports OpenRouter, HuggingFace (HF), OpenAI, Groq, Anthropic Claude, and Google Gemini.",
+        sources: ["LLM_Providers_Spec.pdf"]
+      },
+      "How do message top-ups work?": {
+        answer: "Message top-up credit packs never expire: +5,000 Messages for ₹299 ($4) or +20,000 Messages for ₹899 ($11).",
+        sources: ["Credit_Topups_Guide.pdf"]
+      }
+    }
+  },
+  {
+    id: 'docs',
+    name: 'Security & Legal Assistant',
+    badge: 'Compliance',
+    docsCount: '120 Policy Documents',
+    avatarBg: 'bg-emerald-600',
+    questions: [
+      "Is client data shared with LLM providers?",
+      "Where are vector embeddings stored?",
+      "How does workspace access control work?"
+    ],
+    responses: {
+      "Is client data shared with LLM providers?": {
+        answer: "No. Uploaded files and chat logs remain isolated in your workspace. Data is never used to re-train public LLMs.",
+        sources: ["Security_Whitepaper.pdf (p. 4)"]
+      },
+      "Where are vector embeddings stored?": {
+        answer: "Vector embeddings are stored with Row Level Security (RLS) in pgvector / Supabase, encrypted at rest.",
+        sources: ["Data_Security_Architecture.pdf"]
+      },
+      "How does workspace access control work?": {
+        answer: "Workspaces allow inviting team members with Admin or Member roles, isolating datasets, and managing API credentials.",
+        sources: ["Workspace_RBAC_Guide.pdf"]
+      }
+    }
+  }
+];
+
 export default function LandingPage() {
-  usePageSeo(); // Uses global default title & description
+  usePageSeo();
   const darkMode = useUIStore((state) => state.darkMode);
   const toggleDarkMode = useUIStore((state) => state.toggleDarkMode);
 
+  // Billing cycle state
+  const [annualBilling, setAnnualBilling] = useState(false);
+
+  // Form State
   const [demoForm, setDemoForm] = useState({ name: '', email: '', company: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Interactive Simulator State
+  const [activePersona, setActivePersona] = useState(DEMO_PERSONAS[0]);
+  const [simChatHistory, setSimChatHistory] = useState([]);
+  const [isSimTyping, setIsSimTyping] = useState(false);
+
+  // Widget Customizer State
+  const [customWidgetColor, setCustomWidgetColor] = useState('#FF4D00');
+  const [customWidgetTitle, setCustomWidgetTitle] = useState('BlinkBot Assistant');
+  const [customWidgetPosition, setCustomWidgetPosition] = useState('right');
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+
+  // Carousel Scroll Ref & FAQ State
+  const featureScrollRef = useRef(null);
+  const [openFaq, setOpenFaq] = useState(0);
+
+  // Initialize Simulator Chat when Persona Changes
+  useEffect(() => {
+    const defaultQ = activePersona.questions[0];
+    const defaultR = activePersona.responses[defaultQ];
+    setSimChatHistory([
+      { role: 'bot', text: `Hello! I am your **${activePersona.name}**. Ask me any question based on your uploaded documents!` },
+      { role: 'user', text: defaultQ },
+      { role: 'bot', text: defaultR.answer, sources: defaultR.sources }
+    ]);
+  }, [activePersona]);
+
+  const handleQuestionClick = (questionText) => {
+    if (isSimTyping) return;
+    
+    const updatedHistory = [...simChatHistory, { role: 'user', text: questionText }];
+    setSimChatHistory(updatedHistory);
+    setIsSimTyping(true);
+
+    setTimeout(() => {
+      const response = activePersona.responses[questionText] || {
+        answer: "I searched your document vector index and retrieved relevant context to answer your request.",
+        sources: ["Document_Index.pdf"]
+      };
+      setSimChatHistory([...updatedHistory, { role: 'bot', text: response.answer, sources: response.sources }]);
+      setIsSimTyping(false);
+    }, 600);
+  };
 
   const handleDemoSubmit = async (e) => {
     e.preventDefault();
     if (!demoForm.name.trim() || !demoForm.email.trim()) {
-      toast.error("Name and Email are required.");
+      toast.error("Please fill in your Name and Email.");
       return;
     }
     setIsSubmitting(true);
@@ -34,479 +174,821 @@ export default function LandingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(demoForm),
       });
-      if (!res.ok) throw new Error('Failed to submit');
-      toast.success("Demo request submitted! We'll get back to you soon.");
+      if (!res.ok) throw new Error('Submission failed');
+      toast.success("Demo request submitted! We will reach out shortly.");
       setDemoForm({ name: '', email: '', company: '', message: '' });
     } catch {
-      toast.error("Something went wrong. Please try again.");
+      toast.error("Could not submit request right now. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const copyWidgetScript = () => {
+    const scriptTag = `<script 
+  src="https://blinkbot.in/widget.js" 
+  data-chatbot-id="bot_demo_9823"
+  data-color="${customWidgetColor}"
+  data-position="${customWidgetPosition}"
+  async>
+</script>`;
+    navigator.clipboard.writeText(scriptTag);
+    setCopiedSnippet(true);
+    toast.success("Script snippet copied!");
+    setTimeout(() => setCopiedSnippet(false), 2000);
+  };
+
+  const scrollFeatures = (direction) => {
+    if (featureScrollRef.current) {
+      const scrollAmount = direction === 'left' ? -350 : 350;
+      featureScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/30 overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/20 overflow-x-hidden transition-colors duration-300">
+      
       {/* ═══════════════════════ NAVIGATION ═══════════════════════ */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/70 backdrop-blur-xl border-b border-border/30">
-        <div className="flex items-center justify-between px-6 md:px-8 py-4 max-w-7xl mx-auto">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-xl border-b border-border/80 transition-colors">
+        <div className="flex items-center justify-between px-6 md:px-10 py-4 max-w-7xl mx-auto">
           <Logo />
-          <div className="flex items-center gap-3 md:gap-5">
-            <a href="#features" className="hidden md:inline text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Features</a>
-            <a href="#how-it-works" className="hidden md:inline text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">How It Works</a>
-            <a href="#pricing" className="hidden md:inline text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
-            <a href="#demo" className="hidden md:inline text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Book a Demo</a>
+          
+          <div className="hidden md:flex items-center gap-8">
+            <a href="#features-carousel" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Features</a>
+            <a href="#sandbox" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Live Sandbox</a>
+            <a href="#providers" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">LLM Providers</a>
+            <a href="#widget-customizer" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Widget Configurator</a>
+            <a href="#pricing-slider" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+            <a href="#faq" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">FAQ</a>
+          </div>
+
+          <div className="flex items-center gap-3">
             <button
               onClick={toggleDarkMode}
               type="button"
-              className="h-9 w-9 rounded-lg border border-border/50 text-muted-foreground flex items-center justify-center hover:bg-muted hover:text-foreground transition-all"
+              aria-label="Toggle theme"
+              className="h-10 w-10 rounded-xl border border-border text-muted-foreground flex items-center justify-center hover:bg-muted hover:text-foreground transition-all shadow-xs"
             >
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+              {darkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
             </button>
-            <Link to="/login" className="text-sm font-semibold hover:text-primary transition-colors hidden sm:inline">
+            
+            <Link to="/login" className="text-sm font-semibold hover:text-primary transition-colors hidden sm:inline px-3 py-2">
               Log in
             </Link>
-            <Link to="/login" className="btn-primary px-5 py-2 rounded-full text-sm font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all">
-              Get Started Free
+            
+            <Link to="/login" className="btn-primary px-5 py-2.5 rounded-full text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-1.5">
+              <Zap size={15} /> Get Started Free
             </Link>
           </div>
         </div>
       </nav>
 
-      {/* ═══════════════════════ HERO ═══════════════════════ */}
-      <section className="relative pt-32 md:pt-40 pb-24 md:pb-32 flex flex-col items-center text-center px-6">
-        {/* Gradient orbs */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/15 blur-[150px] rounded-full pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-purple-500/10 blur-[120px] rounded-full pointer-events-none" />
-
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 text-primary text-sm font-semibold mb-8 backdrop-blur-md">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-          </span>
-          Now in Public Beta — Start for Free
+      {/* ═══════════════════════ HERO SECTION ═══════════════════════ */}
+      <section className="relative pt-36 md:pt-44 pb-20 md:pb-28 flex flex-col items-center text-center px-6">
+        <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs sm:text-sm font-semibold mb-8">
+          <Brain size={16} />
+          <span>Meta-Agent Assisted RAG Platform</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+          <span className="text-xs opacity-90">OpenRouter & HF Supported</span>
         </div>
 
-        <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.1]">
-          Your Custom AI Bots{' '}
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-purple-500 to-pink-500">
-            Built in Minutes
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight max-w-5xl leading-[1.15] text-foreground">
+          Build & Deploy AI Chatbots <br className="hidden sm:inline" />
+          <span className="text-primary">
+            Trained on Your Documents
           </span>
         </h1>
 
-        <p className="mt-6 md:mt-8 text-lg md:text-xl text-muted-foreground max-w-2xl leading-relaxed">
-          Upload your documents, configure with AI, and deploy powerful conversational bots to your website — no code required.
+        <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-3xl leading-relaxed">
+          Upload PDFs, CSVs, or web links. Power your agents with OpenRouter (DeepSeek R1, Llama 3.3, Qwen), OpenAI, Groq, or HuggingFace (HF), and embed a lightweight chat widget in minutes.
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row items-center gap-4">
-          <Link to="/login" className="btn-primary px-8 py-4 rounded-full text-lg font-bold shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] transition-all flex items-center gap-2">
-            Start Building Free <ArrowRight size={20} />
+          <Link to="/login" className="w-full sm:w-auto btn-primary px-8 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2">
+            Start Building Free <ArrowRight size={18} />
           </Link>
-          <a href="#demo" className="px-8 py-4 rounded-full text-lg font-semibold border border-border hover:bg-muted transition-all flex items-center gap-2">
-            Book a Demo <ChevronRight size={18} />
+          <a href="#sandbox" className="w-full sm:w-auto px-8 py-4 rounded-full text-base font-semibold border border-border bg-card hover:bg-muted transition-all flex items-center justify-center gap-2 shadow-xs">
+            <Play size={16} className="text-primary fill-primary" /> Test Sandbox Simulator
           </a>
         </div>
 
-        {/* Mock UI Preview */}
-        <div className="mt-16 md:mt-20 w-full max-w-4xl mx-auto relative">
-          <div className="absolute inset-0 bg-gradient-to-b from-primary/10 to-purple-500/10 rounded-[32px] blur-3xl -z-10 scale-105" />
-          <div className="bg-card border border-border/50 rounded-[24px] shadow-2xl overflow-hidden">
-            {/* Fake browser bar */}
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-border/50 bg-muted/30">
-              <div className="flex gap-1.5">
-                <div className="h-3 w-3 rounded-full bg-red-400/80"></div>
-                <div className="h-3 w-3 rounded-full bg-yellow-400/80"></div>
-                <div className="h-3 w-3 rounded-full bg-green-400/80"></div>
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs text-muted-foreground font-medium">
+          <div className="flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500" /> Free Starter Tier Included</div>
+          <div className="flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500" /> OpenRouter & HF Keys Supported</div>
+          <div className="flex items-center gap-2"><CheckCircle2 size={16} className="text-emerald-500" /> 1-Click HTML Script Embed</div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════ SUPPORTED PROVIDERS STRIP ═══════════════════════ */}
+      <section id="providers" className="py-12 border-y border-border bg-card">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-8">
+            <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Supported LLM Providers & Embedding Engines
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {LLM_PROVIDERS.map((provider, i) => (
+              <div 
+                key={i} 
+                className="p-4 rounded-2xl bg-background border border-border text-center transition-all hover:-translate-y-1 shadow-xs hover:border-primary/40"
+              >
+                <div className="font-bold text-sm text-foreground mb-1">{provider.name}</div>
+                <div className="text-[11px] font-semibold text-primary mb-1.5">{provider.badge}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">{provider.desc}</div>
               </div>
-              <div className="flex-1 mx-4">
-                <div className="bg-background border border-border/50 rounded-lg px-4 py-1.5 text-xs text-muted-foreground text-center">app.blinkbot.in/studio</div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════ SLIDING FEATURE CARDS CAROUSEL ═══════════════════════ */}
+      <section id="features-carousel" className="py-20 md:py-28 px-6 max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-12 gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3">
+              <Layers size={14} /> Sliding Feature Cards
+            </div>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+              Platform Features at a Glance
+            </h2>
+          </div>
+
+          {/* Carousel Arrows */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => scrollFeatures('left')}
+              className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs"
+              aria-label="Previous slide"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              onClick={() => scrollFeatures('right')}
+              className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs"
+              aria-label="Next slide"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Container */}
+        <div 
+          ref={featureScrollRef}
+          className="flex gap-6 overflow-x-auto scrollbar-none snap-x snap-mandatory py-4 px-1"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          <SlidingFeatureCard 
+            icon={Brain} 
+            title="Meta-Agent Prompting" 
+            badge="AI Assisted"
+            desc="Provide your bot objective. Meta-Agent automatically generates structured system prompts, persona settings, and response rules."
+          />
+          <SlidingFeatureCard 
+            icon={Database} 
+            title="Multi-Format Vector RAG" 
+            badge="PDF, CSV, TXT & Web"
+            desc="Ingest PDF manuals, CSV datasets, text files, or crawl website URLs. Auto-chunks text into pgvector / Supabase embeddings."
+          />
+          <SlidingFeatureCard 
+            icon={Cpu} 
+            title="OpenRouter & HF Integration" 
+            badge="Open Models"
+            desc="Plug in OpenRouter API keys to access DeepSeek R1, Llama 3.3, and Qwen 2.5 Coder, or use HuggingFace (HF) models."
+          />
+          <SlidingFeatureCard 
+            icon={Globe} 
+            title="1-Line Script Widget" 
+            badge="No Code Embed"
+            desc="Embed responsive chat widgets on HTML, React, WordPress, or Shopify sites with a single customizable script tag."
+          />
+          <SlidingFeatureCard 
+            icon={Wrench} 
+            title="Memory Patching & Tracing" 
+            badge="Self-Learning"
+            desc="Inspect real-time trace logs, flag incorrect responses, and apply Memory Patches to auto-correct bot behavior instantly."
+          />
+          <SlidingFeatureCard 
+            icon={Users} 
+            title="Isolated Workspaces & RBAC" 
+            badge="Team Collaboration"
+            desc="Create team workspaces, assign Admin/Member roles, isolate datasets, and manage encrypted API key credentials."
+          />
+        </div>
+      </section>
+
+      {/* ═══════════════════════ INTERACTIVE SANDBOX ═══════════════════════ */}
+      <section id="sandbox" className="py-20 md:py-28 bg-card border-y border-border px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
+              <Terminal size={14} /> Interactive Live Sandbox
+            </div>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+              Try Grounded RAG Retrieval Live
+            </h2>
+            <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
+              Select a persona card below to query documents and view real-time citation source tags.
+            </p>
+          </div>
+
+          {/* Persona Card Carousel */}
+          <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
+            {DEMO_PERSONAS.map((persona) => (
+              <button
+                key={persona.id}
+                onClick={() => setActivePersona(persona)}
+                className={`flex items-center gap-3 px-6 py-3.5 rounded-2xl text-sm font-bold transition-all ${
+                  activePersona.id === persona.id
+                    ? 'bg-primary text-white shadow-md scale-105'
+                    : 'bg-background border border-border text-muted-foreground hover:text-foreground hover:border-primary/40'
+                }`}
+              >
+                <div className={`w-3 h-3 rounded-full ${activePersona.id === persona.id ? 'bg-white' : 'bg-primary'}`} />
+                {persona.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Simulator Box */}
+          <div className="max-w-4xl mx-auto bg-background border border-border rounded-[28px] shadow-xl overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-border bg-muted/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl ${activePersona.avatarBg} flex items-center justify-center shadow-xs`}>
+                  <Bot size={20} className="text-white" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm flex items-center gap-2 text-foreground">
+                    {activePersona.name}
+                    <span className="text-[11px] bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">
+                      {activePersona.badge}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">{activePersona.docsCount}</div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-500 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                Context Active
               </div>
             </div>
-            {/* Content preview */}
-            <div className="p-6 md:p-8 grid md:grid-cols-3 gap-4 min-h-[260px]">
-              {/* Sidebar */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-semibold"><Bot size={16} className="text-primary" /> My Bots</div>
-                {["Sales Assistant", "Support Bot", "Lead Qualifier"].map((name, i) => (
-                  <div key={i} className={`flex items-center gap-2 p-2.5 rounded-xl text-sm transition-all ${i === 0 ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}>
-                    <div className={`h-2 w-2 rounded-full ${i === 0 ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
-                    {name}
+
+            {/* Chat Messages */}
+            <div className="p-6 md:p-8 space-y-4 min-h-[320px] max-h-[420px] overflow-y-auto bg-card text-xs">
+              {simChatHistory.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex gap-3 items-start ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                >
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
+                    msg.role === 'user' ? 'bg-blue-600 text-white' : `${activePersona.avatarBg} text-white`
+                  }`}>
+                    {msg.role === 'user' ? 'You' : <Bot size={16} />}
                   </div>
+
+                  <div className={`p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600/10 border border-blue-500/20 text-foreground rounded-tr-xs'
+                      : 'bg-background border border-border text-foreground shadow-xs rounded-tl-xs'
+                  }`}>
+                    <p>{msg.text}</p>
+                    
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-3 pt-2.5 border-t border-border flex flex-wrap gap-1.5 items-center">
+                        <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                          <FileText size={12} className="text-primary" /> Citation Sources:
+                        </span>
+                        {msg.sources.map((src, sIdx) => (
+                          <span key={sIdx} className="text-[10px] font-medium bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-primary/20">
+                            {src}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {isSimTyping && (
+                <div className="flex gap-3 items-center text-xs text-muted-foreground bg-muted/40 p-3 rounded-2xl max-w-xs">
+                  <Loader2 size={16} className="animate-spin text-primary" />
+                  Querying vector embeddings...
+                </div>
+              )}
+            </div>
+
+            {/* Prompt Buttons */}
+            <div className="p-4 border-t border-border bg-muted/30">
+              <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Lightbulb size={14} className="text-amber-500" /> Click a sample query:
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {activePersona.questions.map((q, qIdx) => (
+                  <button
+                    key={qIdx}
+                    onClick={() => handleQuestionClick(q)}
+                    disabled={isSimTyping}
+                    className="text-xs bg-card hover:bg-muted border border-border text-foreground px-3.5 py-2 rounded-xl transition-all text-left flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span>"{q}"</span>
+                    <ChevronRight size={13} className="text-muted-foreground" />
+                  </button>
                 ))}
               </div>
-              {/* Chat area */}
-              <div className="md:col-span-2 space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
-                  <div className="bg-muted/50 border border-border/30 p-3 rounded-2xl rounded-tl-sm text-sm max-w-[80%]">
-                    Based on your product catalog, the MacBook Pro 16" M3 is currently available at ₹2,49,900 with free delivery. Shall I help you place an order?
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 flex-row-reverse">
-                  <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0"><span className="text-white text-[10px] font-bold">U</span></div>
-                  <div className="bg-primary/10 border border-primary/20 p-3 rounded-2xl rounded-tr-sm text-sm max-w-[80%]">
-                    Yes! Also, what's the warranty policy?
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
-                  <div className="bg-muted/50 border border-border/30 p-3 rounded-2xl rounded-tl-sm text-sm max-w-[80%] flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin text-primary" /> Searching your documents...
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════ FEATURES ═══════════════════════ */}
-      <section id="features" className="py-20 md:py-28 border-y border-border/30">
-        <div className="max-w-7xl mx-auto px-6 md:px-8">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
-              <Sparkles size={14} /> Platform Features
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Everything you need to deploy AI bots.</h2>
-            <p className="mt-4 text-muted-foreground text-lg max-w-2xl mx-auto">Powerful features wrapped in an incredibly simple interface. No coding required.</p>
+      {/* ═══════════════════════ WIDGET CONFIGURATOR ═══════════════════════ */}
+      <section id="widget-customizer" className="py-20 md:py-28 px-6 max-w-7xl mx-auto">
+        <div className="text-center mb-14">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">
+            <Sliders size={14} /> Widget Configurator
           </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <FeatureCard 
-              icon={Layers} 
-              title="4-Step Bot Builder" 
-              desc="Create custom AI bots with our guided wizard — set identity, behavior, knowledge, and model in under 2 minutes."
-              color="from-blue-500/20 to-cyan-500/20"
-              iconColor="text-blue-500"
-            />
-            <FeatureCard 
-              icon={Sparkles} 
-              title="AI Auto-Configure" 
-              desc="Describe your bot in one sentence and our Meta-Agent writes the name, system prompt, and output format automatically."
-              color="from-purple-500/20 to-pink-500/20"
-              iconColor="text-purple-500"
-            />
-            <FeatureCard 
-              icon={Database} 
-              title="Instant Knowledge Base" 
-              desc="Upload PDFs, CSVs, TXT files or paste website URLs. We chunk, embed, and index your data into a vector database instantly."
-              color="from-emerald-500/20 to-teal-500/20"
-              iconColor="text-emerald-500"
-            />
-            <FeatureCard 
-              icon={Globe} 
-              title="Embeddable Chat Widget" 
-              desc="Generate an HTML snippet and embed your bot on any website in 30 seconds. Supports React components and REST API too."
-              color="from-orange-500/20 to-amber-500/20"
-              iconColor="text-orange-500"
-            />
-            <FeatureCard 
-              icon={BarChart3} 
-              title="Analytics & Insights" 
-              desc="Track message volumes, response times, agent performance, and conversation trends with real-time charts and metrics."
-              color="from-rose-500/20 to-red-500/20"
-              iconColor="text-rose-500"
-            />
-            <FeatureCard 
-              icon={Users} 
-              title="Team Collaboration" 
-              desc="Invite team members, assign roles (Admin/Member), and manage multiple workspaces. Everyone works in a secure silo."
-              color="from-indigo-500/20 to-violet-500/20"
-              iconColor="text-indigo-500"
-            />
-          </div>
+          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+            Custom Widget Theme & Live Snippet
+          </h2>
+          <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
+            Customize accent color, header title, and screen position with instant script generation.
+          </p>
         </div>
-      </section>
 
-      {/* ═══════════════════════ HOW IT WORKS ═══════════════════════ */}
-      <section id="how-it-works" className="py-20 md:py-28 bg-muted/10">
-        <div className="max-w-6xl mx-auto px-6 md:px-8">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider mb-4">
-              <Zap size={14} /> How It Works
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Three steps. Zero complexity.</h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 md:gap-12">
-            <StepCard number="01" title="Upload Your Data" desc="Drag & drop your PDFs, CSVs, or paste any website URL. We automatically chunk and embed everything into a high-performance vector database." icon={Upload} />
-            <StepCard number="02" title="Configure Your Bot" desc="Choose from Groq, OpenAI, or Ollama models. Set a system prompt, define output format, and enable web search fallback — or let AI configure it for you." icon={Settings} />
-            <StepCard number="03" title="Deploy Anywhere" desc="Embed a customizable chat widget on your website with one line of code, use our React component, or integrate via REST API." icon={Code} />
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════ WHY BLINKBOT ═══════════════════════ */}
-      <section className="py-20 md:py-28">
-        <div className="max-w-7xl mx-auto px-6 md:px-8">
-          <div className="grid md:grid-cols-2 gap-12 md:gap-16 items-center">
+        <div className="grid lg:grid-cols-12 gap-8 items-center">
+          {/* Controls */}
+          <div className="lg:col-span-5 bg-card border border-border rounded-[24px] p-6 md:p-8 shadow-lg space-y-6">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 text-xs font-bold uppercase tracking-wider mb-6">
-                <ShieldCheck size={14} /> Why BlinkBot
-              </div>
-              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-8">Built different. Built better.</h2>
-              <ul className="space-y-6">
-                <Differentiator icon={Cpu} title="Multi-Provider LLMs" desc="Groq, OpenAI, Ollama — use any provider. Never locked in. Switch models on the fly." />
-                <Differentiator icon={ShieldCheck} title="Privacy First" desc="Your data is never used to train public models. Embeddings are stored securely in your workspace." />
-                <Differentiator icon={RefreshCw} title="Self-Learning Bots" desc="Users can flag wrong answers. The feedback loop auto-corrects bot behavior with memory patching." />
-                <Differentiator icon={Search} title="Web Search Fallback" desc="When docs don't have the answer, bots automatically search the web for accurate responses." />
-              </ul>
+              <label className="text-sm font-semibold block mb-2 text-foreground">Header Title</label>
+              <input
+                type="text"
+                value={customWidgetTitle}
+                onChange={(e) => setCustomWidgetTitle(e.target.value)}
+                className="w-full border border-border bg-background rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+              />
             </div>
 
-            {/* Interactive demo card */}
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-500/20 rounded-[32px] blur-3xl -z-10" />
-              <div className="bg-card border border-border/50 rounded-[28px] p-6 md:p-8 shadow-2xl space-y-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center"><Bot size={22} className="text-white" /></div>
+            <div>
+              <label className="text-sm font-semibold block mb-2 text-foreground">Brand Accent Color</label>
+              <div className="flex items-center gap-3">
+                {['#FF4D00', '#2563EB', '#10B981', '#7C3AED', '#EC4899', '#F59E0B'].map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setCustomWidgetColor(color)}
+                    style={{ backgroundColor: color }}
+                    className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                      customWidgetColor === color ? 'scale-125 border-foreground' : 'border-transparent hover:scale-110'
+                    }`}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={customWidgetColor}
+                  onChange={(e) => setCustomWidgetColor(e.target.value)}
+                  className="w-9 h-9 rounded-lg border border-border cursor-pointer bg-transparent"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold block mb-2 text-foreground">Screen Position</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setCustomWidgetPosition('right')}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-semibold border transition-all ${
+                    customWidgetPosition === 'right' ? 'bg-primary text-white border-primary' : 'bg-background border-border hover:bg-muted text-foreground'
+                  }`}
+                >
+                  Bottom Right
+                </button>
+                <button
+                  onClick={() => setCustomWidgetPosition('left')}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-semibold border transition-all ${
+                    customWidgetPosition === 'left' ? 'bg-primary text-white border-primary' : 'bg-background border-border hover:bg-muted text-foreground'
+                  }`}
+                >
+                  Bottom Left
+                </button>
+              </div>
+            </div>
+
+            {/* Script Snippet */}
+            <div className="pt-2">
+              <div className="flex items-center justify-between text-xs font-semibold mb-2">
+                <span className="text-muted-foreground flex items-center gap-1"><Code size={13} /> HTML Snippet</span>
+                <button
+                  onClick={copyWidgetScript}
+                  className="text-primary hover:underline flex items-center gap-1 font-bold"
+                >
+                  {copiedSnippet ? <Check size={13} /> : <Copy size={13} />}
+                  {copiedSnippet ? 'Copied!' : 'Copy Code'}
+                </button>
+              </div>
+              <div className="bg-slate-950 text-slate-200 p-4 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800">
+                <code>{`<script src="https://blinkbot.in/widget.js"`}<br />
+                {`  data-chatbot-id="bot_demo_9823"`}<br />
+                {`  data-color="${customWidgetColor}"`}<br />
+                {`  data-position="${customWidgetPosition}" async>`}<br />
+                {`</script>`}</code>
+              </div>
+            </div>
+          </div>
+
+          {/* Live Mock Window */}
+          <div className="lg:col-span-7 flex flex-col items-center justify-center relative min-h-[420px] bg-card border border-border rounded-[28px] p-6 shadow-xl">
+            <div className="text-xs text-muted-foreground font-semibold mb-4 flex items-center gap-1.5">
+              <Eye size={14} className="text-primary" /> Live Widget Preview
+            </div>
+
+            <div className="w-full max-w-sm bg-background border border-border rounded-2xl shadow-xl overflow-hidden transition-all duration-300">
+              <div style={{ backgroundColor: customWidgetColor }} className="p-4 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                    <Bot size={18} className="text-white" />
+                  </div>
                   <div>
-                    <h4 className="font-bold">Support Agent</h4>
-                    <p className="text-xs text-muted-foreground">Trained on 47 documents • 12 web pages</p>
-                  </div>
-                  <div className="ml-auto flex items-center gap-1 text-xs text-emerald-500 font-semibold"><span className="h-2 w-2 bg-emerald-500 rounded-full" /> Online</div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
-                    <div className="bg-muted/50 p-3 rounded-2xl rounded-tl-sm text-sm">Hello! I've read all 47 company documents. How can I assist you today?</div>
-                  </div>
-                  <div className="flex items-start gap-3 flex-row-reverse">
-                    <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0"><span className="text-white text-[10px] font-bold">U</span></div>
-                    <div className="bg-primary/10 border border-primary/20 p-3 rounded-2xl rounded-tr-sm text-sm">What's our refund policy for enterprise clients?</div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shrink-0"><Bot size={14} className="text-white" /></div>
-                    <div className="bg-muted/50 p-3 rounded-2xl rounded-tl-sm text-sm">
-                      According to the <span className="text-primary font-medium">Enterprise Handbook (p.23)</span>, enterprise clients are eligible for a full refund within 30 days of purchase. After 30 days, a prorated refund applies.
-                    </div>
+                    <div className="font-bold text-sm">{customWidgetTitle || 'BlinkBot'}</div>
+                    <div className="text-[11px] opacity-90">Online | Powered by BlinkBot</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                  <div className="flex-1 bg-muted/30 border border-border/30 rounded-xl px-4 py-2.5 text-sm text-muted-foreground">Ask a follow-up question...</div>
-                  <button className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center"><Send size={16} className="text-white" /></button>
+              </div>
+
+              <div className="p-4 space-y-3 bg-card text-xs min-h-[220px]">
+                <div className="bg-background border border-border p-3 rounded-xl max-w-[85%] text-foreground">
+                  Hello! How can I assist you with your knowledge base today?
                 </div>
+                <div className="bg-primary/10 border border-primary/20 p-3 rounded-xl max-w-[85%] ml-auto text-right text-foreground">
+                  Which LLM providers are supported?
+                </div>
+                <div className="bg-background border border-border p-3 rounded-xl max-w-[85%] text-foreground">
+                  We support OpenRouter (DeepSeek R1/V3, Llama 3.3, Qwen), OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace!
+                </div>
+              </div>
+
+              <div className="p-3 border-t border-border bg-background flex items-center gap-2">
+                <div className="flex-1 bg-muted/40 rounded-xl px-3 py-2 text-xs text-muted-foreground">Type a message...</div>
+                <button style={{ backgroundColor: customWidgetColor }} className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0">
+                  <Send size={14} />
+                </button>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════ PRICING PREVIEW ═══════════════════════ */}
-      <section id="pricing" className="py-20 md:py-28 bg-muted/10 border-y border-border/30">
-        <div className="max-w-6xl mx-auto px-6 md:px-8">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">
-              <Star size={14} /> Pricing
+      {/* ═══════════════════════ SLIDING PRICING CARDS ═══════════════════════ */}
+      <section id="pricing-slider" className="py-20 md:py-28 bg-card border-y border-border px-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">
+              <Star size={14} /> Workspace Plans
             </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight">Simple, transparent pricing.</h2>
-            <p className="mt-4 text-muted-foreground text-lg">Start free. Scale as you grow. No hidden fees.</p>
+            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+              Transparent Workspace Pricing
+            </h2>
+            <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
+              Start free. Upgrade as your team, agents, and message volume scale.
+            </p>
+
+            {/* Billing Cycle Toggle */}
+            <div className="flex items-center justify-center gap-3 mt-8">
+              <span className={`text-sm font-semibold ${!annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
+              <button
+                type="button"
+                onClick={() => setAnnualBilling(!annualBilling)}
+                className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-0.5 ${
+                  annualBilling ? 'bg-primary' : 'bg-muted'
+                }`}
+              >
+                <span className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                  annualBilling ? 'translate-x-6' : 'translate-x-0'
+                }`} />
+              </button>
+              <span className={`text-sm font-semibold flex items-center gap-1.5 ${annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>
+                Annual Billing <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/20">Save 20%</span>
+              </span>
+            </div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6 md:gap-8">
-            <PricingCard title="Starter" price="0" desc="Perfect for exploring BlinkBot." features={["1 AI Bot", "1,000 Messages/mo", "100 MB Storage", "Community Support"]} />
-            <PricingCard title="Pro" price="24" desc="For teams and power users." features={["5 AI Bots", "10,000 Messages/mo", "500 MB Storage", "2 Chat Widgets", "Priority Support"]} isPopular />
-            <PricingCard title="Enterprise" price="120" desc="For organizations at scale." features={["20 AI Bots", "100,000 Messages/mo", "5 GB Storage", "10 Chat Widgets", "Custom Plan Builder"]} />
+          {/* Pricing Grid */}
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            <PricingCard 
+              title="Starter" 
+              priceInr="0"
+              priceUsd="0"
+              desc="Free tier included for building your first agent."
+              features={[
+                "1 Active Workspace",
+                "1 AI Agent per Workspace",
+                "1,000 AI Messages / month",
+                "100 MB Document Storage",
+                "1 Public Website Chatbot",
+                "Community Support"
+              ]} 
+            />
+            <PricingCard 
+              title="Pro" 
+              priceInr={annualBilling ? "799" : "999"}
+              priceUsd={annualBilling ? "10" : "12"}
+              desc="Ideal for active projects, creators, and growing teams."
+              features={[
+                "3 Active Workspaces",
+                "5 AI Agents per Workspace",
+                "10,000 AI Messages / month",
+                "1 GB Vector Storage",
+                "3 Public Website Chatbots",
+                "Granular Model & Provider Permissions",
+                "Priority Support"
+              ]} 
+              isPopular 
+            />
+            <PricingCard 
+              title="Business" 
+              priceInr={annualBilling ? "3,199" : "3,999"}
+              priceUsd={annualBilling ? "39" : "49"}
+              desc="For scaling applications & agency deployments."
+              features={[
+                "Unlimited Workspaces",
+                "20 AI Agents per Workspace",
+                "50,000 AI Messages / month",
+                "10 GB Vector Storage",
+                "Unlimited Public Chatbots",
+                "Full Audit Logging & RBAC Controls",
+                "Dedicated Support Manager"
+              ]} 
+            />
           </div>
 
-          <div className="text-center mt-10">
-            <Link to="/login" className="text-primary font-semibold hover:underline inline-flex items-center gap-1">
-              View full pricing & custom plan builder <ArrowRight size={16} />
+          {/* Message Topup Packs */}
+          <div className="mt-12 max-w-4xl mx-auto bg-background border border-border rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-md">
+            <div>
+              <div className="font-bold text-base text-foreground flex items-center gap-2">
+                <Zap size={18} className="text-amber-500 fill-amber-500" /> Non-Expiring Message Credit Top-Ups
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Need extra capacity? Add +5,000 Messages (₹299 | $4) or +20,000 Messages (₹899 | $11) anytime.
+              </p>
+            </div>
+            <Link to="/login" className="px-5 py-2.5 rounded-xl btn-primary text-xs font-bold shrink-0 shadow-md">
+              Workspace Billing
             </Link>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════════ BOOK A DEMO ═══════════════════════ */}
-      <section id="demo" className="py-20 md:py-28">
-        <div className="max-w-3xl mx-auto px-6 md:px-8">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
-              <MessageSquare size={14} /> Book a Demo
-            </div>
-            <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight">See BlinkBot in action.</h2>
-            <p className="mt-4 text-muted-foreground text-lg">Fill out the form and we'll schedule a personalized walkthrough of the platform.</p>
+      {/* ═══════════════════════ FAQ SECTION ═══════════════════════ */}
+      <section id="faq" className="py-20 md:py-28 px-6 max-w-4xl mx-auto">
+        <div className="text-center mb-14">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider mb-4">
+            <HelpCircle size={14} /> FAQ
           </div>
+          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+            Frequently Asked Questions
+          </h2>
+        </div>
 
-          <form onSubmit={handleDemoSubmit} className="bg-card border border-border/50 rounded-[28px] p-6 md:p-10 shadow-xl space-y-5">
-            <div className="grid sm:grid-cols-2 gap-5">
-              <div>
-                <label className="text-sm font-semibold block mb-2">Full Name <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={demoForm.name}
-                  onChange={(e) => setDemoForm({...demoForm, name: e.target.value})}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition"
-                  placeholder="John Doe"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold block mb-2">Work Email <span className="text-red-500">*</span></label>
-                <input
-                  type="email"
-                  value={demoForm.email}
-                  onChange={(e) => setDemoForm({...demoForm, email: e.target.value})}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition"
-                  placeholder="john@company.com"
-                  required
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-semibold block mb-2">Company</label>
-              <input
-                type="text"
-                value={demoForm.company}
-                onChange={(e) => setDemoForm({...demoForm, company: e.target.value})}
-                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition"
-                placeholder="Acme Corp"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold block mb-2">How can we help?</label>
-              <textarea
-                rows={4}
-                value={demoForm.message}
-                onChange={(e) => setDemoForm({...demoForm, message: e.target.value})}
-                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-y transition"
-                placeholder="Tell us about your use case..."
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full btn-primary py-4 rounded-xl text-base font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 flex items-center justify-center gap-2 disabled:opacity-70 transition-all"
+        <div className="space-y-4">
+          {FAQS.map((faq, idx) => (
+            <div 
+              key={idx}
+              className="bg-card border border-border rounded-2xl overflow-hidden transition-all shadow-xs"
             >
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              {isSubmitting ? "Submitting..." : "Request a Demo"}
-            </button>
-          </form>
+              <button
+                onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                className="w-full px-6 py-5 text-left font-bold text-base flex items-center justify-between gap-4 text-foreground hover:text-primary transition-colors"
+              >
+                <span>{faq.q}</span>
+                <ChevronDown size={18} className={`transition-transform duration-200 text-muted-foreground ${openFaq === idx ? 'rotate-180 text-primary' : ''}`} />
+              </button>
+
+              {openFaq === idx && (
+                <div className="px-6 pb-6 text-sm text-muted-foreground leading-relaxed border-t border-border pt-4 bg-background/50">
+                  {faq.a}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </section>
 
+      {/* ═══════════════════════ BOOK A DEMO FORM ═══════════════════════ */}
+      <section id="demo" className="py-20 md:py-28 px-6 max-w-4xl mx-auto">
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
+            <MessagesSquare size={14} /> Contact Us
+          </div>
+          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+            Schedule a Demo & Walkthrough
+          </h2>
+          <p className="mt-4 text-muted-foreground text-base">
+            Have high volume requirements or custom integration needs? Talk with our team.
+          </p>
+        </div>
+
+        <form onSubmit={handleDemoSubmit} className="bg-card border border-border rounded-[28px] p-6 md:p-10 shadow-xl space-y-6">
+          <div className="grid sm:grid-cols-2 gap-6">
+            <div>
+              <label className="text-sm font-semibold block mb-2 text-foreground">Full Name <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={demoForm.name}
+                onChange={(e) => setDemoForm({...demoForm, name: e.target.value})}
+                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                placeholder="Name"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-2 text-foreground">Work Email <span className="text-red-500">*</span></label>
+              <input
+                type="email"
+                value={demoForm.email}
+                onChange={(e) => setDemoForm({...demoForm, email: e.target.value})}
+                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+                placeholder="work@company.com"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold block mb-2 text-foreground">Company</label>
+            <input
+              type="text"
+              value={demoForm.company}
+              onChange={(e) => setDemoForm({...demoForm, company: e.target.value})}
+              className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground"
+              placeholder="Acme Corp"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold block mb-2 text-foreground">Requirements / Message</label>
+            <textarea
+              rows={4}
+              value={demoForm.message}
+              onChange={(e) => setDemoForm({...demoForm, message: e.target.value})}
+              className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-y text-foreground"
+              placeholder="Tell us about your documents or custom integration requirements..."
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full btn-primary py-4 rounded-xl text-base font-bold shadow-lg hover:shadow-xl flex items-center justify-center gap-2 transition-all disabled:opacity-75"
+          >
+            {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            {isSubmitting ? "Submitting..." : "Send Request"}
+          </button>
+        </form>
+      </section>
+
       {/* ═══════════════════════ FOOTER ═══════════════════════ */}
-      <footer className="border-t border-border/50 bg-muted/10">
+      <footer className="border-t border-border bg-card">
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-16">
           <div className="grid md:grid-cols-4 gap-10 md:gap-16">
-            {/* Brand */}
-            <div className="md:col-span-1">
+            <div className="md:col-span-1 space-y-4">
               <Logo />
-              <p className="text-sm text-muted-foreground mt-4 leading-relaxed">
-                Build, deploy, and manage custom AI bots powered by your own data. No code required.
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Build, train, and embed custom RAG AI bots with your knowledge base.
               </p>
             </div>
 
-            {/* Product */}
             <div>
-              <h4 className="font-bold text-sm uppercase tracking-wider mb-4">Product</h4>
-              <ul className="space-y-2.5 text-sm text-muted-foreground">
-                <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a></li>
-                <li><a href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</a></li>
-                <li><a href="#demo" className="hover:text-foreground transition-colors">Book a Demo</a></li>
+              <h4 className="font-bold text-sm uppercase tracking-wider mb-4 text-foreground">Platform</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><a href="#features-carousel" className="hover:text-primary transition-colors">Features</a></li>
+                <li><a href="#sandbox" className="hover:text-primary transition-colors">Live Sandbox</a></li>
+                <li><a href="#widget-customizer" className="hover:text-primary transition-colors">Widget Generator</a></li>
+                <li><a href="#pricing-slider" className="hover:text-primary transition-colors">Pricing</a></li>
               </ul>
             </div>
 
-            {/* Resources */}
             <div>
-              <h4 className="font-bold text-sm uppercase tracking-wider mb-4">Resources</h4>
-              <ul className="space-y-2.5 text-sm text-muted-foreground">
-                <li><Link to="/user-guide" className="hover:text-foreground transition-colors">User Guide</Link></li>
-                <li><Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link></li>
-                <li><Link to="/login" className="hover:text-foreground transition-colors">Dashboard</Link></li>
+              <h4 className="font-bold text-sm uppercase tracking-wider mb-4 text-foreground">Resources</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><Link to="/user-guide" className="hover:text-primary transition-colors">User Documentation</Link></li>
+                <li><Link to="/blog" className="hover:text-primary transition-colors">Product Blog</Link></li>
+                <li><Link to="/login" className="hover:text-primary transition-colors">Studio Console</Link></li>
               </ul>
             </div>
 
-            {/* Company */}
             <div>
-              <h4 className="font-bold text-sm uppercase tracking-wider mb-4">Company</h4>
-              <ul className="space-y-2.5 text-sm text-muted-foreground">
-                <li><Link to="/about" className="hover:text-foreground transition-colors">About Us</Link></li>
-                <li><Link to="/terms" className="hover:text-foreground transition-colors">Terms & Conditions</Link></li>
-                <li><a href="mailto:techmate.ed@gmail.com" className="hover:text-foreground transition-colors">Contact</a></li>
+              <h4 className="font-bold text-sm uppercase tracking-wider mb-4 text-foreground">Company</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><Link to="/about" className="hover:text-primary transition-colors">About Us</Link></li>
+                <li><Link to="/terms" className="hover:text-primary transition-colors">Terms of Service</Link></li>
+                <li><a href="mailto:techmate.ed@gmail.com" className="hover:text-primary transition-colors">Contact Support</a></li>
               </ul>
             </div>
           </div>
 
-          <div className="border-t border-border/30 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} BlinkBot. Built for the future of AI.</p>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-              <Link to="/about" className="hover:text-foreground transition-colors">About</Link>
-              <a href="mailto:techmate.ed@gmail.com" className="hover:text-foreground transition-colors">Contact</a>
+          <div className="border-t border-border mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+            <p>© {new Date().getFullYear()} BlinkBot. All rights reserved.</p>
+            <div className="flex items-center gap-6 font-medium">
+              <Link to="/terms" className="hover:text-primary transition-colors">Privacy & Terms</Link>
+              <Link to="/about" className="hover:text-primary transition-colors">About</Link>
+              <a href="mailto:techmate.ed@gmail.com" className="hover:text-primary transition-colors">Support</a>
             </div>
           </div>
         </div>
       </footer>
+
     </div>
   );
 }
 
 /* ═══════════════════════ SUB-COMPONENTS ═══════════════════════ */
 
-function FeatureCard({ icon: Icon, title, desc, color, iconColor }) {
+function SlidingFeatureCard({ icon: Icon, title, badge, desc }) {
   return (
-    <div className="group bg-card border border-border/50 rounded-[20px] p-7 hover:border-primary/40 hover:-translate-y-1 hover:shadow-xl transition-all duration-300">
-      <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${color} flex items-center justify-center mb-5`}>
-        <Icon size={24} className={iconColor} />
-      </div>
-      <h3 className="text-lg font-bold mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-    </div>
-  );
-}
-
-function StepCard({ number, title, desc, icon: Icon }) {
-  return (
-    <div className="relative text-center group">
-      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 text-primary mb-6 group-hover:scale-110 transition-transform">
-        <Icon size={28} />
-      </div>
-      <div className="text-6xl font-black text-primary/10 absolute -top-4 -left-2 md:left-auto md:-top-6 select-none pointer-events-none">{number}</div>
-      <h3 className="text-xl font-bold mb-3">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-    </div>
-  );
-}
-
-function Differentiator({ icon: Icon, title, desc }) {
-  return (
-    <li className="flex gap-4">
-      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-        <Icon size={20} className="text-primary" />
-      </div>
+    <div className="w-[300px] sm:w-[340px] shrink-0 snap-start bg-card border border-border rounded-[24px] p-7 hover:border-primary/50 hover:shadow-lg transition-all duration-300 flex flex-col justify-between">
       <div>
-        <h4 className="font-bold mb-1">{title}</h4>
+        <div className="flex items-center justify-between mb-5">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <Icon size={24} />
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border">
+            {badge}
+          </span>
+        </div>
+        <h3 className="text-xl font-bold mb-2.5 text-foreground">{title}</h3>
         <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
       </div>
-    </li>
+    </div>
   );
 }
 
-function PricingCard({ title, price, desc, features, isPopular }) {
+function PricingCard({ title, priceInr, priceUsd, desc, features, isPopular }) {
   return (
-    <div className={`relative bg-card border rounded-[24px] p-7 flex flex-col transition-all hover:-translate-y-1 hover:shadow-xl ${isPopular ? 'border-primary shadow-lg shadow-primary/10 scale-[1.02]' : 'border-border/50'}`}>
+    <div className={`relative bg-card border rounded-[28px] p-8 flex flex-col transition-all hover:-translate-y-1 hover:shadow-xl ${
+      isPopular 
+        ? 'border-primary shadow-lg ring-1 ring-primary/30' 
+        : 'border-border'
+    }`}>
       {isPopular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-primary text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Most Popular</span>
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+          <span className="bg-primary text-white text-[10px] font-extrabold px-3.5 py-1 rounded-full uppercase tracking-wider shadow-xs">
+            Most Popular
+          </span>
         </div>
       )}
-      <h3 className="text-xl font-bold">{title}</h3>
-      <p className="text-sm text-muted-foreground mt-1">{desc}</p>
-      <div className="mt-5 mb-6">
-        <span className="text-4xl font-extrabold">${price}</span>
-        <span className="text-muted-foreground">/month</span>
+
+      <h3 className="text-2xl font-bold text-foreground">{title}</h3>
+      <p className="text-sm text-muted-foreground mt-1.5 min-h-[40px]">{desc}</p>
+
+      <div className="mt-6 mb-6 flex items-baseline gap-2">
+        <span className="text-5xl font-black tracking-tight text-foreground">₹{priceInr}</span>
+        <span className="text-muted-foreground font-medium">/month</span>
+        <span className="text-xs text-muted-foreground/60 font-mono">(${priceUsd})</span>
       </div>
-      <ul className="space-y-2.5 flex-1">
+
+      <ul className="space-y-3.5 flex-1 mb-8 border-t border-border pt-6">
         {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-2.5 text-sm">
-            <Check size={16} className="text-emerald-500 shrink-0" />
-            {f}
+          <li key={i} className="flex items-center gap-3 text-sm text-foreground">
+            <Check size={16} className="text-emerald-500 shrink-0 font-bold" />
+            <span>{f}</span>
           </li>
         ))}
       </ul>
-      <Link to="/login" className={`mt-6 block text-center py-3 rounded-xl font-semibold text-sm transition-all ${isPopular ? 'btn-primary shadow-lg shadow-primary/20' : 'border border-border hover:bg-muted'}`}>
-        {price === "0" ? "Start Free" : "Get Started"}
+
+      <Link
+        to="/login"
+        className={`w-full text-center py-3.5 rounded-xl font-bold text-sm transition-all ${
+          isPopular
+            ? 'btn-primary shadow-md hover:shadow-lg'
+            : 'bg-muted/50 hover:bg-muted border border-border text-foreground'
+        }`}
+      >
+        {priceInr === "0" ? "Included Free" : `Upgrade to ${title}`}
       </Link>
     </div>
   );
 }
+
+const FAQS = [
+  {
+    q: "Which LLM model providers can I use with BlinkBot?",
+    a: "BlinkBot supports OpenRouter (access DeepSeek R1, DeepSeek V3, Llama 3.3 70B, Qwen 2.5 Coder, Gemini 2.0 Flash), OpenAI (GPT-4o, GPT-4o-mini), Groq, Anthropic Claude 3.5 Sonnet, Google Gemini, and HuggingFace (HF) embeddings & models."
+  },
+  {
+    q: "How do I connect OpenRouter or HuggingFace (HF) API keys?",
+    a: "In your workspace, go to Settings > Provider Credentials & Keys, enter your encrypted API key, and select your preferred model from the dropdown."
+  },
+  {
+    q: "Do I need coding experience to deploy a chat widget?",
+    a: "No coding required! Simply upload your files or website links, configure your bot persona in the dashboard, and copy-paste a 1-line script tag into your website HTML."
+  },
+  {
+    q: "Is my document data safe and kept private?",
+    a: "Yes. All vector embeddings are encrypted at rest with AES-256 and protected with Row Level Security (RLS) in pgvector / Supabase. Your data is never shared or used to re-train public LLM models."
+  },
+  {
+    q: "Can I buy additional message credits if I exceed my monthly plan?",
+    a: "Yes! Non-expiring message credit top-up packs are available in your Billing settings: +5,000 Messages for ₹299 ($4) or +20,000 Messages for ₹899 ($11)."
+  }
+];
