@@ -52,20 +52,22 @@ export function useWorkspacePermissions() {
   if (!currentWorkspace) {
     return {
       isAdmin: false,
+      canManageStudio: false,
+      canManageModels: false,
       canManageAgents: false,
-      canManageDatabase: false,
-      canManageNotes: false,
       role: "Viewer"
     };
   }
   const role = currentWorkspace.role;
   const isAdmin = role === "Admin" || role === "Owner";
+  const canManageStudio = isAdmin || currentWorkspace.permissions?.studio === true || currentWorkspace.permissions?.agents === true;
+  const canManageModels = isAdmin || currentWorkspace.permissions?.models === true;
   return {
     role,
     isAdmin,
-    canManageAgents: isAdmin || currentWorkspace.permissions?.agents === true,
-    canManageDatabase: isAdmin || currentWorkspace.permissions?.database === true,
-    canManageNotes: isAdmin || currentWorkspace.permissions?.notes === true,
+    canManageStudio,
+    canManageModels,
+    canManageAgents: canManageStudio,
   };
 }
 

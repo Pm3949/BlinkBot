@@ -16,7 +16,7 @@ async def create_default_workspace(user_id: str, email: str):
         )
         workspace_id = (await run_in_threadpool(cursor.fetchone))[0]
         
-        permissions = '{"agents": true, "database": true, "notes": true}'
+        permissions = '{"studio": true, "models": true}'
         await run_in_threadpool(
             cursor.execute,
             """

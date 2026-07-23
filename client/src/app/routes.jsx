@@ -95,7 +95,11 @@ export const router = createBrowserRouter([
       },
       {
         path: "models",
-        element: <ModelsPage />,
+        element: (
+          <PermissionRoute permission="canManageModels" label="Models">
+            <ModelsPage />
+          </PermissionRoute>
+        ),
       },
       {
         path: "settings",
@@ -106,7 +110,7 @@ export const router = createBrowserRouter([
       {
         path: "studio",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Studio">
+          <PermissionRoute permission="canManageStudio" label="Studio">
             <StudioPage />
           </PermissionRoute>
         ),
@@ -114,7 +118,7 @@ export const router = createBrowserRouter([
       {
         path: "studio/project/:projectId",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Agent Network">
+          <PermissionRoute permission="canManageStudio" label="Agent Network">
             <ProjectDetailsPage />
           </PermissionRoute>
         ),
@@ -122,7 +126,7 @@ export const router = createBrowserRouter([
       {
         path: "agent/:agentId/settings",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Agent Settings">
+          <PermissionRoute permission="canManageStudio" label="Agent Settings">
             <AgentSettingsPage />
           </PermissionRoute>
         ),
@@ -134,7 +138,7 @@ export const router = createBrowserRouter([
       {
         path: "chatbots/:chatbotId",
         element: (
-          <PermissionRoute permission="canManageAgents" label="Chatbot Editor">
+          <PermissionRoute permission="canManageStudio" label="Chatbot Editor">
             <ChatbotEditorPage />
           </PermissionRoute>
         ),

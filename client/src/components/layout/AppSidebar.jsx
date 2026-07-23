@@ -107,7 +107,7 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
   
   const { data: workspaces = [], isLoading } = useUserWorkspaces();
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
-  const { isAdmin } = useWorkspacePermissions();
+  const { isAdmin, canManageStudio, canManageModels } = useWorkspacePermissions();
   
   const { pendingVerificationsQuery } = useFeedback();
   const pendingCount = pendingVerificationsQuery?.data?.length || 0;
@@ -119,20 +119,22 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
   }, [workspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
   const filteredGroups = groups.map(group => {
-  if (group.label === "System") {
     return {
       ...group,
       items: group.items.filter(item => {
-        // केवल Admin ही Team और Billing देख सकते हैं
         if (item.path === "/team" || item.path === "/billing") {
           return isAdmin;
+        }
+        if (item.path === "/studio") {
+          return canManageStudio;
+        }
+        if (item.path === "/models") {
+          return canManageModels;
         }
         return true;
       })
     };
-  }
-  return group;
-});
+  });
 
   return (
     <aside

@@ -186,8 +186,8 @@ export default function TeamWorkspaceDashboard() {
                 <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Permissions
                   <div className="flex items-center space-x-6 mt-1 text-muted-foreground/70 text-[10px]">
-                    <span className="w-12 text-center">Agents</span>
-                    <span className="w-12 text-center">Databases</span>
+                    <span className="w-12 text-center">Studio</span>
+                    <span className="w-12 text-center">Models</span>
                   </div>
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -284,7 +284,7 @@ export default function TeamWorkspaceDashboard() {
                     {isOwner || member.role === "Admin" ? (
                       // Owner / Admin — full access locked checkmarks
                       <div className="flex items-center space-x-6">
-                        {["agents", "database"].map((perm) => (
+                        {["studio", "models"].map((perm) => (
                           <div key={perm} className="w-12 flex justify-center">
                             <span
                               title={isOwner ? "Owner has full access" : "Admin has full access"}
@@ -300,19 +300,19 @@ export default function TeamWorkspaceDashboard() {
                       <div className="flex items-center space-x-6">
                         <div className="w-12 flex justify-center">
                           <Switch
-                            checked={member.permissions?.agents || false}
-                            disabled={loadingToggles[`${member.id}-agents`]}
+                            checked={member.permissions?.studio ?? member.permissions?.agents ?? false}
+                            disabled={loadingToggles[`${member.id}-studio`]}
                             onCheckedChange={() =>
-                              handlePermissionToggle(member.id, member.permissions || {}, "agents")
+                              handlePermissionToggle(member.id, member.permissions || {}, "studio")
                             }
                           />
                         </div>
                         <div className="w-12 flex justify-center">
                           <Switch
-                            checked={member.permissions?.database || false}
-                            disabled={loadingToggles[`${member.id}-database`]}
+                            checked={member.permissions?.models ?? false}
+                            disabled={loadingToggles[`${member.id}-models`]}
                             onCheckedChange={() =>
-                              handlePermissionToggle(member.id, member.permissions || {}, "database")
+                              handlePermissionToggle(member.id, member.permissions || {}, "models")
                             }
                           />
                         </div>
@@ -320,18 +320,23 @@ export default function TeamWorkspaceDashboard() {
                     ) : (
                       // Current user is not Admin — show read-only permission dots
                       <div className="flex items-center space-x-6">
-                        {["agents", "database"].map((perm) => (
-                          <div key={perm} className="w-12 flex justify-center">
-                            <span
-                              className={`w-2.5 h-2.5 rounded-full ${
-                                member.permissions?.[perm]
-                                  ? "bg-primary"
-                                  : "bg-muted-foreground/30"
-                              }`}
-                              title={member.permissions?.[perm] ? "Enabled" : "Disabled"}
-                            />
-                          </div>
-                        ))}
+                        {["studio", "models"].map((perm) => {
+                          const isPermitted = perm === "studio" 
+                            ? (member.permissions?.studio ?? member.permissions?.agents ?? false)
+                            : (member.permissions?.models ?? false);
+                          return (
+                            <div key={perm} className="w-12 flex justify-center">
+                              <span
+                                className={`w-2.5 h-2.5 rounded-full ${
+                                  isPermitted
+                                    ? "bg-primary"
+                                    : "bg-muted-foreground/30"
+                                }`}
+                                title={isPermitted ? "Enabled" : "Disabled"}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </td>

@@ -23,7 +23,7 @@ async def create_workspace_member(workspace_id: str, email: str, role: str):
                 %s, 
                 %s, 
                 %s, 
-                '{"agents": false, "database": false, "notes": false}'::jsonb
+                '{"studio": false, "models": false}'::jsonb
             )
             RETURNING id;
             """,
@@ -82,7 +82,7 @@ async def create_workspace(name: str, owner_id: str, email: str, user_name: str)
             cursor.execute,
             """
             INSERT INTO workspace_members (workspace_id, user_id, email, name, role, permissions)
-            VALUES (%s, %s, %s, %s, 'Admin', '{"agents": true, "database": true, "notes": true}'::jsonb)
+            VALUES (%s, %s, %s, %s, 'Admin', '{"studio": true, "models": true}'::jsonb)
             """,
             (workspace_id, owner_id, email, user_name)
         )

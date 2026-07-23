@@ -72,7 +72,7 @@ export default function AgentSettingsPage() {
 
   const fileInputRef = useRef(null);
   const { user } = useAuth();
-  const { canManageDatabase } = useWorkspacePermissions();
+  const { canManageStudio } = useWorkspacePermissions();
   const [sourceTab, setSourceTab] = useState("files");
   const [connectingTo, setConnectingTo] = useState(null);
   const [url, setUrl] = useState("");
@@ -148,7 +148,7 @@ export default function AgentSettingsPage() {
   const isMutating = uploadMutation.isPending || processUrlMutation.isPending || deleteMutation.isPending || processConnectorMutation.isPending;
 
   const handleFileChange = async (event) => {
-    if (!canManageDatabase) return toast.error("No permission to upload files.");
+    if (!canManageStudio) return toast.error("No permission to upload files.");
     const files = Array.from(event.target.files || []);
     if (files.length === 0 || !selectedAgentId) return;
     try {
@@ -163,7 +163,7 @@ export default function AgentSettingsPage() {
   };
 
   const handleProcessUrl = async () => {
-    if (!canManageDatabase) return toast.error("No permission to scrape.");
+    if (!canManageStudio) return toast.error("No permission to scrape.");
     const trimmedUrl = url.trim();
     if (!selectedAgentId || !trimmedUrl) return toast.error("Enter a valid URL.");
     try {
@@ -185,7 +185,7 @@ export default function AgentSettingsPage() {
   };
 
   const handleCreateText = async (filename, text) => {
-    if (!canManageDatabase) return toast.error("No permission.");
+    if (!canManageStudio) return toast.error("No permission.");
     try {
       await processTextMutation.mutateAsync({ filename, text });
       toast.success("Text snippet queued for ingestion");
@@ -265,7 +265,7 @@ export default function AgentSettingsPage() {
   };
 
   const handleConnect = async (connectorId, connectorName) => {
-    if (!canManageDatabase) return toast.error("No permission.");
+    if (!canManageStudio) return toast.error("No permission.");
     if (connectorId === "gdrive") {
       toast.info("Google Drive connection initiated.");
       // GDrive logic stripped for brevity inside the modal script unless explicitly needed

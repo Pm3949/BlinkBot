@@ -106,7 +106,7 @@ CREATE TABLE workspace_members (
   email TEXT,
   name TEXT,
   role TEXT DEFAULT 'Viewer',
-  permissions JSONB DEFAULT '{"agents": false, "database": false, "notes": false}'::jsonb,
+  permissions JSONB DEFAULT '{"studio": false, "models": false}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   UNIQUE(workspace_id, user_id)
 );
@@ -204,7 +204,7 @@ BEGIN
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     'Admin',
-    '{"agents": true, "database": true, "notes": true}'::jsonb
+    '{"studio": true, "models": true}'::jsonb
   );
 
   RETURN NEW;

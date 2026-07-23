@@ -8,8 +8,8 @@ import {
 } from "../services/teamService";
 import { useUIStore } from "../store/useUIStore";
 
-const ADMIN_PERMISSIONS = { agents: true, database: true, notes: true };
-const DEFAULT_PERMISSIONS = { agents: false, database: false, notes: false };
+const ADMIN_PERMISSIONS = { studio: true, models: true };
+const DEFAULT_PERMISSIONS = { studio: false, models: false };
 
 export function useWorkspaceMembers() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
