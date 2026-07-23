@@ -181,7 +181,7 @@ async def handle_get_workspace_members(workspace_id: str):
 
 
 async def handle_update_member_role(member_id: str, role: str):
-    logger.info(f"Updating workspace member ID {member_id} role to: '{role}'")
+    logger.info(f"[AUDIT LOG] Updating workspace member ID {member_id} role to: '{role}'")
     try:
         logger.debug("Executing database member role update...")
         row = await workspace_repository.update_member_role(member_id, role)
@@ -189,7 +189,7 @@ async def handle_update_member_role(member_id: str, role: str):
             logger.warning(f"Update role rejected: Member ID {member_id} not found.")
             raise HTTPException(status_code=404, detail="Member not found")
             
-        logger.info(f"Member ID {member_id} role successfully updated.")
+        logger.info(f"[AUDIT LOG] Member ID {member_id} role successfully updated to '{role}'.")
         return {"message": "Role updated successfully"}
     except HTTPException:
         raise
@@ -199,7 +199,7 @@ async def handle_update_member_role(member_id: str, role: str):
 
 
 async def handle_update_member_permissions(member_id: str, permissions: dict):
-    logger.info(f"Updating workspace member ID {member_id} permissions payload: {permissions}")
+    logger.info(f"[AUDIT LOG] Updating workspace member ID {member_id} permissions: {permissions}")
     try:
         logger.debug("Executing database member permissions update...")
         row = await workspace_repository.update_member_permissions(member_id, permissions)
@@ -207,7 +207,7 @@ async def handle_update_member_permissions(member_id: str, permissions: dict):
             logger.warning(f"Update permissions rejected: Member ID {member_id} not found.")
             raise HTTPException(status_code=404, detail="Member not found")
             
-        logger.info(f"Member ID {member_id} permissions successfully updated.")
+        logger.info(f"[AUDIT LOG] Member ID {member_id} permissions successfully updated.")
         return {"message": "Permissions updated successfully"}
     except HTTPException:
         raise
@@ -217,7 +217,7 @@ async def handle_update_member_permissions(member_id: str, permissions: dict):
 
 
 async def handle_remove_member(member_id: str):
-    logger.info(f"Removing member ID: {member_id} from workspace")
+    logger.info(f"[AUDIT LOG] Removing member ID: {member_id} from workspace")
     try:
         logger.debug("Executing database member deletion query...")
         row = await workspace_repository.remove_member(member_id)
@@ -225,13 +225,44 @@ async def handle_remove_member(member_id: str):
             logger.warning(f"Remove member rejected: Member ID {member_id} not found.")
             raise HTTPException(status_code=404, detail="Member not found")
             
-        logger.info(f"Member ID {member_id} successfully removed.")
+        logger.info(f"[AUDIT LOG] Member ID {member_id} successfully removed.")
         return {"message": "Member removed successfully"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error removing member {member_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to remove member")
+
+
+async def handle_resend_invite_workspace_member(member_id: str, sender_email: str = None):
+    logger.info(f"Resending workspace invitation for member ID: {member_id}")
+    try:
+        member = await workspace_repository.get_member_by_id(member_id)
+        if not member:
+            logger.warning(f"Resend invite rejected: Member ID {member_id} not found.")
+            raise HTTPException(status_code=404, detail="Member not found")
+            
+        email = member[2]
+        workspace_name = member[5] or "Workspace"
+        invited_by = sender_email or "Workspace Admin"
+        
+        APP_URL = os.getenv("FRONTEND_URL", "https://blinkbot.in")
+        signup_url = f"{APP_URL}/login?email={email}&invite=true"
+        
+        logger.info(f"Resending invitation email to {email}...")
+        send_invite_email(
+            to_email=email,
+            workspace_name=workspace_name,
+            invited_by=invited_by,
+            signup_url=signup_url,
+        )
+        logger.info(f"[AUDIT LOG] Invitation email resent to '{email}' for workspace '{workspace_name}' by '{invited_by}'")
+        return {"message": "Invitation resent successfully!"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to resend workspace invite for member {member_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to resend invitation")
 
 
 async def handle_claim_invites(user_id: str, email: str):

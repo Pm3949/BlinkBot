@@ -51,6 +51,7 @@ export function useWorkspacePermissions() {
   const currentWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   if (!currentWorkspace) {
     return {
+      isOwner: false,
       isAdmin: false,
       canManageStudio: false,
       canManageModels: false,
@@ -59,11 +60,13 @@ export function useWorkspacePermissions() {
     };
   }
   const role = currentWorkspace.role;
-  const isAdmin = role === "Admin" || role === "Owner";
+  const isOwner = role === "Owner";
+  const isAdmin = role === "Admin" || isOwner;
   const canManageStudio = isAdmin || currentWorkspace.permissions?.studio === true || currentWorkspace.permissions?.agents === true;
   const canManageModels = isAdmin || currentWorkspace.permissions?.models === true;
   return {
     role,
+    isOwner,
     isAdmin,
     canManageStudio,
     canManageModels,

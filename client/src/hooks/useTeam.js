@@ -4,7 +4,8 @@ import {
   inviteMember,
   updateMemberRole,
   updateMemberPermissions,
-  removeMember
+  removeMember,
+  resendInviteMember
 } from "../services/teamService";
 import { useUIStore } from "../store/useUIStore";
 
@@ -93,6 +94,17 @@ export function useRemoveMember() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   return useMutation({
     mutationFn: removeMember,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace_members", activeWorkspaceId] });
+    },
+  });
+}
+
+export function useResendInviteMember() {
+  const queryClient = useQueryClient();
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  return useMutation({
+    mutationFn: (memberId) => resendInviteMember(memberId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspace_members", activeWorkspaceId] });
     },

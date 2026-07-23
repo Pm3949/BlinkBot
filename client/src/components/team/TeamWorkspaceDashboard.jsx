@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, Plus, Crown, Check, Lock } from "lucide-react";
+import { Search, Plus, Crown, Check, Lock, Mail, Info } from "lucide-react";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
@@ -14,7 +14,8 @@ import {
   useInviteMember,
   useUpdateMemberRole,
   useUpdateMemberPermissions,
-  useRemoveMember
+  useRemoveMember,
+  useResendInviteMember
 } from "../../hooks/useTeam";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
@@ -34,6 +35,7 @@ export default function TeamWorkspaceDashboard() {
   const updateRoleMutation = useUpdateMemberRole();
   const updatePermissionsMutation = useUpdateMemberPermissions();
   const removeMutation = useRemoveMember();
+  const resendInviteMutation = useResendInviteMember();
 
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { data: workspaces = [] } = useUserWorkspaces();
@@ -86,6 +88,15 @@ export default function TeamWorkspaceDashboard() {
       toast.success("Member removed");
     } catch (e) {
       toast.error("Failed to remove member");
+    }
+  };
+
+  const handleResendInvite = async (memberId) => {
+    try {
+      await resendInviteMutation.mutateAsync(memberId);
+      toast.success("Invitation email resent successfully!");
+    } catch (e) {
+      toast.error(e.message || "Failed to resend invitation email");
     }
   };
 
@@ -186,8 +197,12 @@ export default function TeamWorkspaceDashboard() {
                 <th className="px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Permissions
                   <div className="flex items-center space-x-6 mt-1 text-muted-foreground/70 text-[10px]">
-                    <span className="w-12 text-center">Studio</span>
-                    <span className="w-12 text-center">Models</span>
+                    <span className="w-12 text-center flex items-center justify-center gap-1 cursor-help" title="Allows creating and managing AI Agents, Chatbots & Workflows">
+                      Studio <Info className="w-2.5 h-2.5 text-muted-foreground/60" />
+                    </span>
+                    <span className="w-12 text-center flex items-center justify-center gap-1 cursor-help" title="Allows configuring LLM Provider API Keys & Model selections">
+                      Models <Info className="w-2.5 h-2.5 text-muted-foreground/60" />
+                    </span>
                   </div>
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
@@ -346,14 +361,29 @@ export default function TeamWorkspaceDashboard() {
                     {activeWorkspace?.owner_id === member.user_id ? (
                       <span className="text-muted-foreground text-xs font-semibold mr-4">Owner (Cannot Remove)</span>
                     ) : isCurrentUserAdmin ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveMember(member.id)}
-                        className="text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
-                      >
-                        Remove
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        {!member.user_id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={resendInviteMutation.isPending}
+                            onClick={() => handleResendInvite(member.id)}
+                            className="h-8 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                            title="Resend invitation email"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            Resend
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemove(member.id)}
+                          className="h-8 text-xs text-muted-foreground hover:text-red-600 hover:bg-red-500/10"
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     ) : null}
                   </td>
                 </tr>

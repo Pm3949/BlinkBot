@@ -27,15 +27,32 @@ export default class ErrorBoundary extends Component {
             </h1>
 
             <p className="mt-3 text-sm text-slate-500 dark:text-zinc-400">
-              BlinkBot hit an unexpected rendering error. Refresh the page to try again.
+              BlinkBot hit an unexpected rendering error. Refresh the page or reset state to try again.
             </p>
 
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-6 rounded-2xl bg-[var(--primary)] px-5 py-3 text-white hover:bg-[var(--primary-hover)]"
-            >
-              Reload
-            </button>
+            {this.state.error && (
+              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-500 font-mono text-left overflow-auto max-h-32">
+                {this.state.error.toString()}
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary/90"
+              >
+                Reload Page
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.clear();
+                  window.location.href = "/";
+                }}
+                className="rounded-2xl border border-border px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                Clear State & Reset
+              </button>
+            </div>
           </div>
         </div>
       );

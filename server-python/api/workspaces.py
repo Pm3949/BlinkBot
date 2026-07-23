@@ -14,7 +14,8 @@ from handlers.workspace_handler import (
     handle_update_member_role,
     handle_update_member_permissions,
     handle_remove_member,
-    handle_claim_invites
+    handle_claim_invites,
+    handle_resend_invite_workspace_member
 )
 
 logger = logging.getLogger(__name__)
@@ -136,3 +137,11 @@ async def claim_workspace_invites(current_user: dict = Depends(get_current_user)
     user_id = current_user["sub"]
     email = current_user.get("email") or ""
     return await handle_claim_invites(user_id, email)
+
+@router.post("/api/workspaces/members/{member_id}/resend-invite")
+async def resend_member_invite(member_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    What it does: HTTP endpoint to resend an invitation email to a pending workspace member.
+    """
+    sender_email = current_user.get("email") or ""
+    return await handle_resend_invite_workspace_member(member_id, sender_email)

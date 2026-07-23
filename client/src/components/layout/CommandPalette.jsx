@@ -10,6 +10,8 @@ import {
   Plus,
   Settings,
   LayoutDashboard,
+  User,
+  Building2
 } from "lucide-react";
 import { useUIStore } from "../../store/useUIStore";
 
@@ -48,7 +50,7 @@ const commands = [
   },
   {
     icon: Settings,
-    label: "Settings",
+    label: "Workspace Settings",
     shortcut: "S",
     path: "/settings",
   },

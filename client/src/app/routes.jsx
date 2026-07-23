@@ -103,7 +103,11 @@ export const router = createBrowserRouter([
       },
       {
         path: "settings",
-        element: <SettingsPage />,
+        element: (
+          <RoleRoute requiredRole="Owner">
+            <SettingsPage />
+          </RoleRoute>
+        ),
       },
 
       // ── Feature-permission guarded routes ─────────────────────────

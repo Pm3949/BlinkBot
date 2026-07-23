@@ -23,6 +23,16 @@ export function usePermissionSync() {
   const channelRef = useRef(null);
 
   useEffect(() => {
+    // Background polling sync fallback to ensure permissions stay up-to-date
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["user_workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspace_members"] });
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [queryClient]);
+
+  useEffect(() => {
     if (!user?.id) return;
 
     // Create a Supabase Realtime channel filtered to this user's rows only

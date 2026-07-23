@@ -67,6 +67,7 @@ function fromBase64Url(str) {
  */
 export function encodeId(id) {
   if (!id) return id;
+  if (isEncoded(id)) return id;
   try {
     const enc = new TextEncoder();
     const idBytes = enc.encode(id);
@@ -88,12 +89,14 @@ export function encodeId(id) {
  */
 export function decodeId(token) {
   if (!token) return token;
+  if (!isEncoded(token)) return token;
   try {
     const xored = fromBase64Url(token);
     const keyBytes = buildKeyBytes(xored.length);
     const idBytes = xored.map((b, i) => b ^ keyBytes[i]);
     const dec = new TextDecoder();
-    return dec.decode(idBytes);
+    const result = dec.decode(idBytes);
+    return result || token;
   } catch {
     // If decoding fails the token might already be a plain ID (migration)
     return token;

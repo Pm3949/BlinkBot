@@ -39,10 +39,15 @@ export default function RoleRoute({ requiredRole = "Admin", children }) {
   const requiredRank = ROLE_RANK[requiredRole] ?? 3;
 
   if (userRank < requiredRank) {
+    const requiredTitle = requiredRole === "Owner" ? "Workspace Owner Access Required" : "Admin Access Required";
+    const requiredDesc = requiredRole === "Owner" 
+      ? `You are signed in as ${role || "a Member"}. Only the Workspace Owner can access Workspace Settings.`
+      : `You are signed in as a ${role || "Member"}. Only Admins can access this section. Contact your workspace administrator for help.`;
+
     return (
       <AccessDeniedScreen
-        title="Admin Access Required"
-        description={`You are signed in as a ${role || "Member"}. Only Admins can access this section. Contact your workspace administrator for help.`}
+        title={requiredTitle}
+        description={requiredDesc}
       />
     );
   }

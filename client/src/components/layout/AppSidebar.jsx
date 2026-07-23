@@ -15,7 +15,9 @@ import {
   Globe,
   ShieldCheck,
   Plus,
-  Cpu
+  Cpu,
+  User,
+  Building2
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useUserWorkspaces, useWorkspacePermissions } from "../../hooks/useSettings";
@@ -107,14 +109,17 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
   
   const { data: workspaces = [], isLoading } = useUserWorkspaces();
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
-  const { isAdmin, canManageStudio, canManageModels } = useWorkspacePermissions();
+  const { isOwner, isAdmin, canManageStudio, canManageModels } = useWorkspacePermissions();
   
   const { pendingVerificationsQuery } = useFeedback();
   const pendingCount = pendingVerificationsQuery?.data?.length || 0;
 
   useEffect(() => {
-    if (workspaces.length > 0 && !activeWorkspaceId) {
-      setActiveWorkspaceId(workspaces[0].id);
+    if (workspaces.length > 0) {
+      const exists = workspaces.some((w) => w.id === activeWorkspaceId);
+      if (!activeWorkspaceId || !exists) {
+        setActiveWorkspaceId(workspaces[0].id);
+      }
     }
   }, [workspaces, activeWorkspaceId, setActiveWorkspaceId]);
 
@@ -124,6 +129,9 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
       items: group.items.filter(item => {
         if (item.path === "/team" || item.path === "/billing") {
           return isAdmin;
+        }
+        if (item.path === "/settings") {
+          return isOwner;
         }
         if (item.path === "/studio") {
           return canManageStudio;

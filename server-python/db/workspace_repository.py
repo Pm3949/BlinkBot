@@ -170,3 +170,17 @@ async def remove_member(member_id: str):
             (member_id,)
         )
         return await run_in_threadpool(cursor.fetchone)
+
+async def get_member_by_id(member_id: str):
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT wm.id, wm.workspace_id, wm.email, wm.name, wm.user_id, w.name as workspace_name
+            FROM workspace_members wm
+            JOIN workspaces w ON wm.workspace_id = w.id
+            WHERE wm.id = %s
+            """,
+            (member_id,)
+        )
+        return await run_in_threadpool(cursor.fetchone)

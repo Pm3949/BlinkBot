@@ -131,3 +131,17 @@ export async function claimPendingInvitesApi() {
 
   return response.json();
 }
+
+export async function resendInviteMember(memberId) {
+  const response = await fetch(`${API_URL}/api/workspaces/members/${memberId}/resend-invite`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to resend invitation");
+  }
+
+  return response.json();
+}
