@@ -276,6 +276,13 @@ async def lifespan(app: FastAPI):
     os.makedirs("logs", exist_ok=True)
     scheduler.start()
     
+    # Start concurrent background loading of models
+    try:
+        from core.dependencies import warm_up_models_background
+        warm_up_models_background()
+    except Exception as e:
+        logger.error(f"Failed to trigger model pre-loading in background: {e}")
+
     try:
         from db.model_repository import init_ai_models_table
         await init_ai_models_table()

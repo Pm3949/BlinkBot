@@ -68,6 +68,8 @@ export default function ModelsPage() {
   const testSingleModelMutation = useTestSingleModel();
   const [modelTestState, setModelTestState] = useState({});
   const [editingModel, setEditingModel] = useState(null);
+  const [showModelApiKey, setShowModelApiKey] = useState(false);
+  const [showEditModelApiKey, setShowEditModelApiKey] = useState(false);
 
   // Form for adding custom model
   const [newModelForm, setNewModelForm] = useState({
@@ -77,7 +79,8 @@ export default function ModelsPage() {
     category: "General",
     requires_key: false,
     description: "",
-    base_url: ""
+    base_url: "",
+    api_key: ""
   });
 
   // Local state for API keys form in Tab 2
@@ -206,7 +209,8 @@ export default function ModelsPage() {
         category: "General",
         requires_key: false,
         description: "",
-        base_url: ""
+        base_url: "",
+        api_key: ""
       });
     } catch (e) {
       toast.error(e.message || "Failed to add model");
@@ -223,7 +227,8 @@ export default function ModelsPage() {
       category: model.category || "General",
       requires_key: model.requires_key,
       description: model.description || "",
-      base_url: model.base_url || ""
+      base_url: model.base_url || "",
+      api_key: model.api_key || ""
     });
   };
 
@@ -242,7 +247,8 @@ export default function ModelsPage() {
           category: editingModel.category,
           requires_key: editingModel.requires_key,
           description: editingModel.description.trim(),
-          base_url: editingModel.base_url.trim()
+          base_url: editingModel.base_url.trim(),
+          api_key: editingModel.api_key.trim()
         }
       });
       toast.success("Model updated successfully!");
@@ -985,6 +991,7 @@ export default function ModelsPage() {
                   <option value="huggingface">HuggingFace</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Google Gemini</option>
+                  <option value="custom_openai">Custom OpenAI Server</option>
                 </select>
               </div>
 
@@ -1034,18 +1041,57 @@ export default function ModelsPage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                Custom Base URL (Optional Override)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. https://api.together.xyz/v1 or leave blank for default provider URL"
-                value={newModelForm.base_url}
-                onChange={(e) => setNewModelForm((p) => ({ ...p, base_url: e.target.value }))}
-                className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
-              />
-            </div>
+            {newModelForm.provider !== "custom_openai" ? (
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                  Custom Base URL (Optional Override)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. https://api.together.xyz/v1 or leave blank for default provider URL"
+                  value={newModelForm.base_url}
+                  onChange={(e) => setNewModelForm((p) => ({ ...p, base_url: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                    Custom Base URL (Required)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. https://api.together.xyz/v1"
+                    value={newModelForm.base_url}
+                    onChange={(e) => setNewModelForm((p) => ({ ...p, base_url: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                    API Key / Token
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showModelApiKey ? "text" : "password"}
+                      placeholder="Enter API key for this hosted model"
+                      value={newModelForm.api_key}
+                      onChange={(e) => setNewModelForm((p) => ({ ...p, api_key: e.target.value }))}
+                      className="w-full pl-4 pr-10 py-3 rounded-2xl border border-input bg-card font-mono text-xs focus:ring-2 focus:ring-primary outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowModelApiKey(!showModelApiKey)}
+                      className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      title={showModelApiKey ? "Hide key" : "Show key"}
+                    >
+                      {showModelApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
@@ -1177,18 +1223,57 @@ export default function ModelsPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                  Base URL Override (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://api.example.com/v1"
-                  value={editingModel.base_url}
-                  onChange={(e) => setEditingModel((p) => ({ ...p, base_url: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
-                />
-              </div>
+              {editingModel.provider !== "custom_openai" ? (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                    Base URL Override (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://api.example.com/v1"
+                    value={editingModel.base_url}
+                    onChange={(e) => setEditingModel((p) => ({ ...p, base_url: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                      Custom Base URL (Required)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. https://api.together.xyz/v1"
+                      value={editingModel.base_url}
+                      onChange={(e) => setEditingModel((p) => ({ ...p, base_url: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-2xl border border-input bg-card font-mono text-xs outline-none focus:ring-2 focus:ring-primary transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                      API Key / Token
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type={showEditModelApiKey ? "text" : "password"}
+                        placeholder={editingModel.api_key ? "Leave as is or enter new API key" : "Enter API key"}
+                        value={editingModel.api_key}
+                        onChange={(e) => setEditingModel((p) => ({ ...p, api_key: e.target.value }))}
+                        className="w-full pl-4 pr-10 py-3 rounded-2xl border border-input bg-card font-mono text-xs focus:ring-2 focus:ring-primary outline-none transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditModelApiKey(!showEditModelApiKey)}
+                        className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
+                        title={showEditModelApiKey ? "Hide key" : "Show key"}
+                      >
+                        {showEditModelApiKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">

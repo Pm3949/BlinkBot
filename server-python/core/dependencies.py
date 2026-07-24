@@ -6,8 +6,12 @@ once when the server starts, rather than every time an API endpoint is hit.
 """
 import os
 import razorpay
+import logging
 from pathlib import Path
 from custom_rag import CustomRAGEngine
+
+logger = logging.getLogger(__name__)
+
 
 # ==========================================
 # CORE ENGINE INITIALIZATION
@@ -15,13 +19,28 @@ from custom_rag import CustomRAGEngine
 # Initialize the custom Retrieval-Augmented Generation engine.
 rag_engine = CustomRAGEngine()
 
-# Edge Case Handled: Cold Start Latency.
-# Loading an embedding model into memory can take several seconds. If we wait until 
-# the first user asks a question, that user will experience a lag spike.
-# By forcing the engine to load the default model here, we "warm up" the cache,
-# ensuring zero latency for the very first API request.
-rag_engine._get_model('all-MiniLM-L6-v2')
-rag_engine._get_reranker_model('cross-encoder/ms-marco-MiniLM-L-6-v2')
+def warm_up_models_background():
+    """
+    Background loading helper.
+    Spins up a background daemon thread to load heavy embedding and reranker models.
+    This prevents blocking server boot and uvicorn hot-reloads during development.
+    """
+    import threading
+    
+    def load():
+        try:
+            logger.info("Concurrently loading embedding model 'all-MiniLM-L6-v2' in background...")
+            rag_engine._get_model('all-MiniLM-L6-v2')
+            
+            logger.info("Concurrently loading reranker model 'cross-encoder/ms-marco-MiniLM-L-6-v2' in background...")
+            rag_engine._get_reranker_model('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            
+            logger.info("Background model loading complete. System is fully warm!")
+        except Exception as e:
+            logger.error(f"Failed to load models in background thread: {e}")
+
+    threading.Thread(target=load, daemon=True).start()
+
 
 # ==========================================
 # DIRECTORY MANAGEMENT

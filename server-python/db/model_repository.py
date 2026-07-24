@@ -1,6 +1,14 @@
 import json
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
+from core.security import encrypt_key, decrypt_key
+
+def mask_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "********"
+    return f"{key[:4]}********{key[-4:]}"
 
 async def init_ai_models_table():
     """Ensure the ai_models table exists and contains seed data."""
@@ -11,7 +19,7 @@ async def init_ai_models_table():
             CREATE TABLE IF NOT EXISTS ai_models (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 provider VARCHAR(50) NOT NULL,
-                model_id VARCHAR(100) NOT NULL UNIQUE,
+                model_id VARCHAR(100) NOT NULL,
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
                 requires_key BOOLEAN DEFAULT FALSE,
@@ -22,6 +30,11 @@ async def init_ai_models_table():
             );
             """
         )
+        # Migrations
+        await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS api_key TEXT;")
+        await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;")
+        await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models DROP CONSTRAINT IF EXISTS ai_models_model_id_key;")
+
         # Seed defaults
         seed_sql = """
         INSERT INTO ai_models (provider, model_id, name, description, requires_key, category, is_active)
@@ -66,17 +79,18 @@ async def init_ai_models_table():
         """
         await run_in_threadpool(cursor.execute, seed_sql)
 
-async def get_active_models():
+async def get_active_models(user_id: str = None):
     """Retrieve all active models for agent creation / settings dropdowns."""
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, provider, model_id, name, description, requires_key, base_url, category, created_at
+            SELECT id, provider, model_id, name, description, requires_key, base_url, category, created_at, user_id, api_key
             FROM ai_models
-            WHERE is_active = TRUE
+            WHERE is_active = TRUE AND (user_id IS NULL OR user_id = %s)
             ORDER BY provider ASC, name ASC
-            """
+            """,
+            (user_id,)
         )
         rows = await run_in_threadpool(cursor.fetchall)
         return [
@@ -89,21 +103,25 @@ async def get_active_models():
                 "requires_key": r[5],
                 "base_url": r[6] or "",
                 "category": r[7] or "General",
-                "created_at": r[8].isoformat() if r[8] else None
+                "created_at": r[8].isoformat() if r[8] else None,
+                "user_id": str(r[9]) if r[9] else None,
+                "api_key": mask_key(decrypt_key(r[10])) if r[10] else ""
             }
             for r in rows
         ]
 
-async def get_all_models():
+async def get_all_models(user_id: str = None):
     """Retrieve all models (active and inactive) for admin management."""
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at
+            SELECT id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key
             FROM ai_models
+            WHERE user_id IS NULL OR user_id = %s
             ORDER BY provider ASC, created_at DESC
-            """
+            """,
+            (user_id,)
         )
         rows = await run_in_threadpool(cursor.fetchall)
         return [
@@ -117,20 +135,25 @@ async def get_all_models():
                 "base_url": r[6] or "",
                 "is_active": r[7],
                 "category": r[8] or "General",
-                "created_at": r[9].isoformat() if r[9] else None
+                "created_at": r[9].isoformat() if r[9] else None,
+                "user_id": str(r[10]) if r[10] else None,
+                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
             }
             for r in rows
         ]
 
-async def create_model(data: dict):
+async def create_model(data: dict, user_id: str = None):
     """Add a new model entry into the catalog."""
     async with get_db_cursor_async(commit=True) as cursor:
+        raw_key = data.get("api_key", "")
+        enc_key = encrypt_key(raw_key) if raw_key else None
+        
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO ai_models (provider, model_id, name, description, requires_key, base_url, category, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
-            RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at;
+            INSERT INTO ai_models (provider, model_id, name, description, requires_key, base_url, category, is_active, user_id, api_key)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+            RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key;
             """,
             (
                 data.get("provider", "openai"),
@@ -139,7 +162,9 @@ async def create_model(data: dict):
                 data.get("description", ""),
                 data.get("requires_key", False),
                 data.get("base_url", ""),
-                data.get("category", "General")
+                data.get("category", "General"),
+                user_id,
+                enc_key
             )
         )
         r = await run_in_threadpool(cursor.fetchone)
@@ -154,17 +179,52 @@ async def create_model(data: dict):
                 "base_url": r[6] or "",
                 "is_active": r[7],
                 "category": r[8] or "General",
-                "created_at": r[9].isoformat() if r[9] else None
+                "created_at": r[9].isoformat() if r[9] else None,
+                "user_id": str(r[10]) if r[10] else None,
+                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
             }
         return None
 
-async def update_model(model_db_id: str, data: dict):
+async def update_model(model_db_id: str, data: dict, user_id: str = None):
     """Update model fields or active status."""
     async with get_db_cursor_async(commit=True) as cursor:
+        # First ensure the user has access to update this model (cannot update system models or other user's models)
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT user_id, api_key FROM ai_models WHERE id = %s",
+            (model_db_id,)
+        )
+        existing = await run_in_threadpool(cursor.fetchone)
+        if not existing:
+            return None
+        
+        db_user_id, db_api_key = existing
+        if db_user_id is not None and str(db_user_id) != user_id:
+            # Unauthorized to modify this user's model
+            return None
+        if db_user_id is None and "is_active" not in data:
+            # Users can toggle is_active for system models, but cannot update other properties
+            return None
+
         set_clauses = []
         values = []
-        for key in ["name", "description", "requires_key", "base_url", "is_active", "category", "provider", "model_id"]:
+        
+        # Handle API key encryption specifically
+        if "api_key" in data:
+            raw_key = data["api_key"]
+            if raw_key and not raw_key.startswith("********"):
+                enc_key = encrypt_key(raw_key)
+                set_clauses.append("api_key = %s")
+                values.append(enc_key)
+            elif not raw_key:
+                set_clauses.append("api_key = NULL")
+
+        allowed_keys = ["name", "description", "requires_key", "base_url", "is_active", "category", "provider", "model_id"]
+        for key in allowed_keys:
             if key in data:
+                # System models can only have their is_active updated by users
+                if db_user_id is None and key != "is_active":
+                    continue
                 set_clauses.append(f"{key} = %s")
                 values.append(data[key])
 
@@ -176,7 +236,7 @@ async def update_model(model_db_id: str, data: dict):
         UPDATE ai_models
         SET {', '.join(set_clauses)}
         WHERE id = %s
-        RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at;
+        RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key;
         """
         await run_in_threadpool(cursor.execute, query, tuple(values))
         r = await run_in_threadpool(cursor.fetchone)
@@ -191,16 +251,28 @@ async def update_model(model_db_id: str, data: dict):
                 "base_url": r[6] or "",
                 "is_active": r[7],
                 "category": r[8] or "General",
-                "created_at": r[9].isoformat() if r[9] else None
+                "created_at": r[9].isoformat() if r[9] else None,
+                "user_id": str(r[10]) if r[10] else None,
+                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
             }
         return None
 
-async def delete_model(model_db_id: str):
+async def delete_model(model_db_id: str, user_id: str = None):
     """Delete a model entry."""
     async with get_db_cursor_async(commit=True) as cursor:
+        # Check permissions: can only delete user-specific models
         await run_in_threadpool(
             cursor.execute,
-            "DELETE FROM ai_models WHERE id = %s",
+            "SELECT user_id FROM ai_models WHERE id = %s",
             (model_db_id,)
+        )
+        row = await run_in_threadpool(cursor.fetchone)
+        if not row or row[0] is None or str(row[0]) != user_id:
+            return 0
+            
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM ai_models WHERE id = %s AND user_id = %s",
+            (model_db_id, user_id)
         )
         return cursor.rowcount

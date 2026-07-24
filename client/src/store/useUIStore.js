@@ -44,7 +44,7 @@ export const useUIStore = create(
 
       notesDrawerOpen: false,
 
-      darkMode: false,
+      darkMode: true,
 
       createAgentWizardOpen: false,
 

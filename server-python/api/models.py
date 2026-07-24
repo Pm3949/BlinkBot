@@ -14,6 +14,7 @@ class ModelCreate(BaseModel):
     requires_key: Optional[bool] = False
     base_url: Optional[str] = ""
     category: Optional[str] = "General"
+    api_key: Optional[str] = ""
 
 class ModelUpdate(BaseModel):
     name: Optional[str] = None
@@ -24,6 +25,7 @@ class ModelUpdate(BaseModel):
     category: Optional[str] = None
     provider: Optional[str] = None
     model_id: Optional[str] = None
+    api_key: Optional[str] = None
 
 class KeyTestRequest(BaseModel):
     provider: str
@@ -31,29 +33,34 @@ class KeyTestRequest(BaseModel):
     base_url: Optional[str] = ""
 
 @router.get("/api/models")
-async def get_active_models():
+async def get_active_models(current_user: dict = Depends(get_current_user)):
     """Returns all active AI models grouped by provider for agent creation/dropdowns."""
-    return await model_handler.handle_get_active_models()
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    return await model_handler.handle_get_active_models(user_id=user_id)
 
 @router.get("/api/models/all")
 async def get_all_models(current_user: dict = Depends(get_current_user)):
     """Returns all models (active & inactive) for administration."""
-    return await model_handler.handle_get_all_models()
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    return await model_handler.handle_get_all_models(user_id=user_id)
 
 @router.post("/api/models")
 async def create_model(payload: ModelCreate, current_user: dict = Depends(get_current_user)):
     """Adds a new model entry to the system catalog."""
-    return await model_handler.handle_create_model(payload.dict())
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    return await model_handler.handle_create_model(payload.dict(), user_id=user_id)
 
 @router.put("/api/models/{model_id}")
 async def update_model(model_id: str, payload: ModelUpdate, current_user: dict = Depends(get_current_user)):
     """Updates an existing model configuration or toggles active state."""
-    return await model_handler.handle_update_model(model_id, payload.dict(exclude_unset=True))
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    return await model_handler.handle_update_model(model_id, payload.dict(exclude_unset=True), user_id=user_id)
 
 @router.delete("/api/models/{model_id}")
 async def delete_model(model_id: str, current_user: dict = Depends(get_current_user)):
     """Deletes a model entry from the system catalog."""
-    return await model_handler.handle_delete_model(model_id)
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    return await model_handler.handle_delete_model(model_id, user_id=user_id)
 
 class SingleModelTestRequest(BaseModel):
     provider: str

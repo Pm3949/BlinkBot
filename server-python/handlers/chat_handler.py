@@ -109,6 +109,27 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
     logger.info(f"Creating resilient LLM instance for model: {model_name} (provider: {provider})")
     try:
         from db import model_repository, settings_repository
+        from database import get_db_cursor_async
+        from fastapi.concurrency import run_in_threadpool
+        
+        # If it is custom_openai, retrieve its registered endpoint URL and encrypted key
+        if provider.lower() == "custom_openai" and not base_url:
+            try:
+                async with get_db_cursor_async(commit=False) as cursor:
+                    await run_in_threadpool(
+                        cursor.execute,
+                        "SELECT base_url, api_key FROM ai_models WHERE model_id = %s AND (user_id IS NULL OR user_id = %s)",
+                        (model_name, user_id)
+                    )
+                    row = await run_in_threadpool(cursor.fetchone)
+                    if row:
+                        if row[0]:
+                            base_url = row[0]
+                        if row[1] and not api_key:
+                            api_key = decrypt_key(row[1])
+            except Exception as dbe:
+                logger.error(f"Error fetching custom model parameters: {dbe}")
+
         user_keys = None
         if user_id:
             logger.debug(f"Retrieving user settings keys for user ID: {user_id}")
@@ -127,7 +148,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
         primary_llm = create_llm_instance(provider, model_name, api_key, base_url)
         
         logger.debug("Fetching active model alternatives from model repository...")
-        all_active = await model_repository.get_active_models()
+        all_active = await model_repository.get_active_models(user_id=user_id)
         primary_info = next((m for m in all_active if m["model_id"] == model_name), None)
         
         if primary_info:

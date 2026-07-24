@@ -20,12 +20,16 @@ try {
     localStorage.getItem("blinkbot-ui") || "{}",
   );
 
+  const isDarkMode = storedTheme?.state && 'darkMode' in storedTheme.state 
+    ? Boolean(storedTheme.state.darkMode) 
+    : true;
+
   document.documentElement.classList.toggle(
     "dark",
-    Boolean(storedTheme?.state?.darkMode),
+    isDarkMode,
   );
 } catch {
-  document.documentElement.classList.remove("dark");
+  document.documentElement.classList.add("dark");
 }
 
 const originalFetch = window.fetch;

@@ -7,10 +7,10 @@ from utils.logger import get_department_logger
 
 logger = get_department_logger("system")
 
-async def handle_get_active_models():
+async def handle_get_active_models(user_id: str = None):
     """Returns active models grouped by provider for frontend dropdowns."""
     try:
-        models = await model_repository.get_active_models()
+        models = await model_repository.get_active_models(user_id=user_id)
         grouped = {}
         for m in models:
             prov = m["provider"]
@@ -22,31 +22,31 @@ async def handle_get_active_models():
         logger.error(f"Error fetching active models: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_get_all_models():
+async def handle_get_all_models(user_id: str = None):
     """Returns all models for admin management."""
     try:
-        models = await model_repository.get_all_models()
+        models = await model_repository.get_all_models(user_id=user_id)
         return {"models": models}
     except Exception as e:
         logger.error(f"Error fetching all models: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_create_model(payload: dict):
+async def handle_create_model(payload: dict, user_id: str = None):
     """Creates a new model entry in the database."""
     try:
         if not payload.get("name") or not payload.get("model_id") or not payload.get("provider"):
             raise HTTPException(status_code=400, detail="name, model_id, and provider are required")
         
-        model = await model_repository.create_model(payload)
+        model = await model_repository.create_model(payload, user_id=user_id)
         return {"status": "success", "model": model}
     except Exception as e:
         logger.error(f"Error creating model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_update_model(model_id: str, payload: dict):
+async def handle_update_model(model_id: str, payload: dict, user_id: str = None):
     """Updates an existing model entry."""
     try:
-        updated = await model_repository.update_model(model_id, payload)
+        updated = await model_repository.update_model(model_id, payload, user_id=user_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Model not found")
         return {"status": "success", "model": updated}
@@ -56,10 +56,10 @@ async def handle_update_model(model_id: str, payload: dict):
         logger.error(f"Error updating model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def handle_delete_model(model_id: str):
+async def handle_delete_model(model_id: str, user_id: str = None):
     """Deletes a model entry."""
     try:
-        count = await model_repository.delete_model(model_id)
+        count = await model_repository.delete_model(model_id, user_id=user_id)
         if count == 0:
             raise HTTPException(status_code=404, detail="Model not found")
         return {"status": "success", "message": "Model deleted"}
@@ -171,6 +171,25 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
 
     if not provider or not model_id:
         raise HTTPException(status_code=400, detail="provider and model_id are required")
+
+    # Fetch model specific key if not passed or masked, and if it belongs to user (or is system model)
+    if (not api_key or api_key.startswith("********")) and provider == "custom_openai":
+        try:
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT api_key, base_url FROM ai_models WHERE model_id = %s AND (user_id IS NULL OR user_id = %s)",
+                    (model_id, user_id)
+                )
+                row = await run_in_threadpool(cursor.fetchone)
+                if row:
+                    from core.security import decrypt_key
+                    if row[0]:
+                        api_key = decrypt_key(row[0])
+                    if row[1] and not base_url:
+                        base_url = row[1]
+        except Exception as e:
+            logger.error(f"Error fetching custom model key for testing: {e}")
 
     # Fetch user's saved provider key if not explicitly passed
     if not api_key:
