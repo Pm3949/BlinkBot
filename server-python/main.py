@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel
 from io import BytesIO
 from gtts import gTTS
@@ -41,6 +41,13 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="Custom BlinkBot Backend")
+
+# ==========================================
+# LOADER.IO VERIFICATION
+# ==========================================
+@app.get("/loaderio-9c2c52496e408f1ec4033fadcc17a9b7.txt", response_class=PlainTextResponse)
+def loaderio_verify():
+    return "loaderio-9c2c52496e408f1ec4033fadcc17a9b7"
 
 # Initialize Groq client for Speech-to-Text capabilities
 try:
