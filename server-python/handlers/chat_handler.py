@@ -1,36 +1,81 @@
-import os
-import uuid
-from typing import Optional, List, Dict
-import asyncio
-from fastapi import WebSocket, HTTPException, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
-import aiohttp
-import json
+"""
+================================================================================
+ARCHITECTURAL CONTEXT & FILE OVERVIEW
+================================================================================
+This script is the core real-time message processor and orchestrator for 
+RAGMate chats. It handles chat execution for direct agent conversations (via WebSockets),
+embedded web widgets (via WebSockets), and third-party developer integrations (via API v1 HTTP streaming).
 
+From top to bottom, the file executes as follows:
+1. Imports: Loads standard libraries (os, uuid, typing, asyncio, JSON), 
+   FastAPI WebSocket/HTTP routing structures, and LangChain message types and SDKs.
+2. Helper Factories:
+   - `create_llm_instance`: Configures individual LangChain LLMs (Groq, OpenAI, Ollama, Anthropic, Gemini, OpenRouter).
+   - `create_resilient_llm_instance`: Wraps LLMs with automated standby backup fallbacks for high availability.
+   - `create_webhook_tool`: Dynamic utility mapper that binds HTTP request actions as agent tools.
+3. Chat Handlers:
+   - `handle_chat_with_agent` (WebSockets): Powers internal workspace chats using LangGraph Multi-Agent coordination.
+   - `handle_widget_chat` (WebSockets): Powers client-facing web widgets using standard Vector RAG.
+   - `handle_api_v1_chat` (HTTP Streaming): Returns StreamingResponses to external developers via API tokens.
+4. Maintenance Handlers:
+   - `handle_delete_agent` & `handle_delete_chatbot`: Wipes records and logs safely.
+
+All real-time streams check monthly subscription message limits, decrypt API keys on the fly, 
+and scrub sensitive PII data to maintain user privacy.
+"""
+
+import os  # Read system environment settings
+import uuid  # Generate unique tracking session IDs
+from typing import Optional, List, Dict  # Strict Python type annotations
+import asyncio  # Asynchronous thread execution controls
+from fastapi import WebSocket, HTTPException, WebSocketDisconnect  # WebSocket protocols
+from fastapi.responses import StreamingResponse  # Server-Sent Events (SSE) streaming API
+import aiohttp  # Async client to perform external HTTP calls (webhooks)
+import json  # JSON encoder/decoder utilities
+
+# LangChain structured chat wrappers to track conversational roles
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
 
+# LangChain LLM adapters
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
 
+# Local workspace imports
 from db import chat_repository
 from core.dependencies import rag_engine
 from core.security import decrypt_key
 from core.scrubber import scrub_pii
 from handlers.websocket_handlers import agent_connection_manager
-
 from utils.logger import get_department_logger
 
+# Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
 
 def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs):
+    """
+    Spins up a customized LangChain LLM instance based on selected parameters.
+
+    Parameters:
+        provider (str): The name of the model provider (e.g., 'openai', 'groq', 'custom_openai').
+        model_name (str): The model ID to load (e.g., 'gpt-4o', 'llama-3.3-70b-versatile').
+        api_key (str, optional): The API credential key used to authenticate request calls.
+        base_url (str, optional): Alternative hosting address (e.g., local LM Studio or vLLM proxy).
+        **kwargs: Additional parameters passed to the LangChain wrapper.
+
+    Returns:
+        BaseChatModel: An instantiated LangChain chat wrapper ready to run prompt completions.
+
+    Exceptions Raised:
+        Falls back to ChatOpenAI if Anthropic/Gemini library initializations throw errors.
+    """
     logger.debug(f"Creating LLM instance: provider={provider}, model_name={model_name}, has_api_key={bool(api_key)}, base_url={base_url}")
     prov = (provider or "groq").lower()
     
-    # 1. OpenRouter
+    # 1. OpenRouter Integration
     if prov == "openrouter":
-        key = api_key or os.getenv("OPENROUTER_API_KEY")
+        key = api_key or os.getenv("OPENROUTER_API_KEY")  # Read global key if no user-specific key is provided
         logger.debug("Configuring ChatOpenAI for OpenRouter endpoint...")
         return ChatOpenAI(
             model_name=model_name,
@@ -39,7 +84,7 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             **kwargs
         )
         
-    # 2. HuggingFace Serverless Inference / Endpoints
+    # 2. HuggingFace Serverless API Endpoint
     elif prov == "huggingface":
         key = api_key or os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
         target_base = base_url or "https://api-inference.huggingface.co/v1"
@@ -51,7 +96,7 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             **kwargs
         )
         
-    # 3. Custom OpenAI-compatible server (vLLM, LMStudio, LocalAI)
+    # 3. Custom OpenAI-compatible server (e.g., vLLM, LMStudio, LocalAI)
     elif prov == "custom_openai":
         target_base = base_url or "http://localhost:8000/v1"
         logger.debug(f"Configuring ChatOpenAI for custom OpenAI-compatible server at: {target_base}")
@@ -62,7 +107,7 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             **kwargs
         )
         
-    # 4. Anthropic Claude
+    # 4. Anthropic Claude (uses native library, falls back to OpenAI wrapper on load failure)
     elif prov == "anthropic":
         try:
             from langchain_anthropic import ChatAnthropic
@@ -73,7 +118,7 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             logger.error(f"Failed to load Anthropic module, falling back to ChatOpenAI: {e}", exc_info=True)
             return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"), **kwargs)
 
-    # 5. Google Gemini
+    # 5. Google Gemini (uses native generative-ai library)
     elif prov == "gemini":
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -87,32 +132,49 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
             logger.error(f"Failed to load Gemini module, falling back to ChatOpenAI: {e}", exc_info=True)
             return ChatOpenAI(model_name=model_name, api_key=api_key or os.getenv("OPENAI_API_KEY"), **kwargs)
 
-    # 6. OpenAI
+    # 6. Standard OpenAI GPT models
     elif prov == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY")
         logger.debug("Configuring ChatOpenAI for OpenAI...")
         return ChatOpenAI(model_name=model_name, api_key=key, **kwargs)
 
-    # 7. Ollama
+    # 7. Local Ollama Server
     elif prov == "ollama":
         target_base = base_url or "http://localhost:11434"
         logger.debug(f"Configuring ChatOllama for local Ollama server at: {target_base}")
         return ChatOllama(model=model_name, base_url=target_base, **kwargs)
 
-    # 8. Default: Groq
+    # 8. Default fallback: Groq Serverless Inference
     else:
         key = api_key or os.getenv("GROQ_API_KEY")
         logger.debug("Configuring ChatGroq for Groq...")
         return ChatGroq(model_name=model_name, api_key=key)
 
+
 async def create_resilient_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, user_id: Optional[str] = None):
+    """
+    Bootstraps an LLM instance backed by a pool of active models to handle rate-limits and outages.
+    - Resolves custom OpenAI database addresses.
+    - Selects the active user API key or falls back to system global keys.
+    - Sets up up to 2 alternative backup models of the same category.
+
+    Parameters:
+        provider (str): Primary model provider.
+        model_name (str): Primary model ID.
+        api_key (str, optional): Key override.
+        base_url (str, optional): Connection URL override.
+        user_id (str, optional): User ID checking database settings.
+
+    Returns:
+        BaseChatModel: A resilient LLM wrapper containing configured backup fallbacks.
+    """
     logger.info(f"Creating resilient LLM instance for model: {model_name} (provider: {provider})")
     try:
         from db import model_repository, settings_repository
         from database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         
-        # If it is custom_openai, retrieve its registered endpoint URL and encrypted key
+        # If model is registered as custom_openai, fetch its connection parameters from DB
         if provider.lower() == "custom_openai" and not base_url:
             try:
                 async with get_db_cursor_async(commit=False) as cursor:
@@ -135,7 +197,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
             logger.debug(f"Retrieving user settings keys for user ID: {user_id}")
             user_keys = await settings_repository.get_effective_user_settings(user_id)
             
-        # If no explicit api_key passed, try loading from user/shared keys
+        # Try loading API keys from user settings if no explicit override is passed
         if not api_key and user_keys:
             provider_index_map = {
                 "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5
@@ -147,6 +209,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
                 
         primary_llm = create_llm_instance(provider, model_name, api_key, base_url)
         
+        # Pull alternative active models of same category (e.g. General, Reasoning)
         logger.debug("Fetching active model alternatives from model repository...")
         all_active = await model_repository.get_active_models(user_id=user_id)
         primary_info = next((m for m in all_active if m["model_id"] == model_name), None)
@@ -157,7 +220,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
             
             if alternatives:
                 fallbacks = []
-                for alt in alternatives[:2]:
+                for alt in alternatives[:2]:  # Select up to 2 alternatives
                     alt_prov = alt["provider"]
                     alt_mod = alt["model_id"]
                     alt_base = alt.get("base_url")
@@ -184,7 +247,19 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
         
     return create_llm_instance(provider, model_name, api_key, base_url)
 
+
 def create_webhook_tool(endpoint, project_tools_dict):
+    """
+    Creates a LangChain Tool structured to issue custom HTTP requests (webhooks).
+    This allows agents to trigger external APIs at runtime.
+
+    Parameters:
+        endpoint (dict): Contains tool specs ('connection_id', 'method', 'path', 'name', 'description').
+        project_tools_dict (dict): Maps tool IDs to credential setups.
+
+    Returns:
+        BaseTool: A LangChain tool function that handles network payloads.
+    """
     from langchain_core.tools import tool
     import json as json_lib
     
@@ -192,6 +267,7 @@ def create_webhook_tool(endpoint, project_tools_dict):
     base_url = ""
     headers = {}
     
+    # Load custom headers and authorization keys if configured
     if conn_id and conn_id in project_tools_dict:
         try:
             config = json_lib.loads(project_tools_dict[conn_id]) if isinstance(project_tools_dict[conn_id], str) else project_tools_dict[conn_id]
@@ -236,12 +312,12 @@ def create_webhook_tool(endpoint, project_tools_dict):
                 payload_dict = payload_dict["payload"]
 
             logger.info(f"🔨 TOOL TRIGGERED: Executing webhook '{name}' to {full_url}")
-            # Sanitize authorization headers in debug log
             sanitized_headers = headers.copy()
             if "Authorization" in sanitized_headers:
                 sanitized_headers["Authorization"] = "[MASKED]"
             logger.debug(f"Webhook request: method={method}, headers={sanitized_headers}, payload={payload_dict}")
             
+            # Fire the async network client request
             async with aiohttp.ClientSession() as session:
                 kwargs_request = {"headers": headers}
                 if method.upper() in ["POST", "PUT", "PATCH"]:
@@ -266,6 +342,12 @@ def create_webhook_tool(endpoint, project_tools_dict):
 
 
 async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
+    """
+    Orchestrates real-time bidirectional WebSocket chats for agents.
+    - Handles multi-agent routing.
+    - Validates plan message limits.
+    - Streams chunk-by-chunk LLM output and tool-execution status changes back to the client.
+    """
     from utils.logger import client_ip_var, user_id_var
     client_ip = websocket.client.host if websocket.client else "-"
     if "x-forwarded-for" in websocket.headers:
@@ -356,19 +438,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     native_integrations_str = decrypt_key(native_integrations_encrypted)
                     native_integrations = json.loads(native_integrations_str) if native_integrations_str else []
 
-                    from prompts import get_system_prompt
-                    system_prompt = get_system_prompt({
-                        "system_prompt": system_prompt,
-                        "api_endpoints": endpoints,
-                        "native_integrations": native_integrations,
-                        "db_connections": databases,
-                        "enable_code_interpreter": code_interpreter_enabled
-                    })
-
                     active_agent_id = agent_id
                     routed_agent_name = None
                     gateway_name = agent_name
 
+                    # 1. Check if we need to route query between multiple agents
                     if project_id and not parent_agent_id:
                         logger.info(f"Agent is a coordinator router for multi-agent project: {project_id}")
                         sub_agents = await chat_repository.get_sub_agents_for_project(project_id)
@@ -455,6 +529,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             except Exception as re_err:
                                 logger.error(f"Dynamic routing decision failed: {re_err}", exc_info=True)
  
+                    # 2. Check user's messaging quotas
                     logger.debug("Checking user chat limits before execution...")
                     current_msg_count, limits = await chat_repository.get_user_chat_limits(user_id)
                     if current_msg_count >= limits["agent_messages"]:
@@ -468,7 +543,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         )
                         continue
 
-                    # LangGraph Multi-Agent Setup
+                    # 3. LangGraph Multi-Agent Setup
                     logger.debug("Setting up LangGraph multi-agent orchestrator...")
                     from graph_orchestrator import build_multi_agent_graph
 
@@ -572,12 +647,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         if web_enabled:
                             t_list.append(search_web)
                             
+                        # Load and mount custom endpoints/webhooks
                         agent_endpoints = endpoints_map.get(str(aid), [])
                         for ep in agent_endpoints:
                             if ep.get("method") and ep.get("path"):
                                 webhook_tool = create_webhook_tool(ep, project_tools_dict)
                                 t_list.append(webhook_tool)
                                 
+                        # Load and mount database connections
                         agent_dbs = databases_map.get(str(aid), [])
                         for db in agent_dbs:
                             if db.get("connection_string") and db.get("name"):
@@ -585,6 +662,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 sql_tools = create_sql_tools(db.get("connection_string"), db.get("name"))
                                 t_list.extend(sql_tools)
                                 
+                        # Load and mount code interpreter tools
                         if code_interpreter_enabled and str(aid) == str(agent_id):
                             from tools.code_tools import create_code_tools
                             t_list.extend(create_code_tools())
@@ -593,6 +671,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             from tools.code_tools import create_code_tools
                             t_list.extend(create_code_tools())
 
+                        # Load and mount native app integrations (Slack, Gmail, etc.)
                         agent_native = native_integrations_map.get(str(aid), [])
                         if agent_native:
                             from tools.native_tools import create_native_tools
@@ -647,6 +726,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         tools_factory=tools_factory
                     )
 
+                    # Build memory context using the last 6 messages
                     history_items = history or []
                     msgs = []
                     for msg in history_items[-6:]:
@@ -659,6 +739,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
                     
+                    # 4. Stream response and tool-execution updates back to WebSocket client
                     async for event in graph.astream_events(inputs, version="v2"):
                         kind = event["event"]
                         
@@ -715,6 +796,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
 
 async def handle_widget_chat(websocket: WebSocket, client_id: str):
+    """
+    Handles chat requests originating from the embedded web chat widget.
+    Similar to handle_chat_with_agent, but uses simpler RAG (Retrieval-Augmented Generation) search 
+    and checks message limits specific to the widget dashboard.
+    """
     from utils.logger import client_ip_var, user_id_var
     client_ip = websocket.client.host if websocket.client else "-"
     if "x-forwarded-for" in websocket.headers:
@@ -772,6 +858,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
 
                     agent_id, settings_chatbot, message_count, user_id, allowed_domains = chatbot_data
 
+                    # Check limits
                     logger.debug("Checking widget plan limits...")
                     total_widget_msgs, limits = await chat_repository.check_widget_limits(user_id)
                     if total_widget_msgs >= limits["chatbot_messages"]:
@@ -785,6 +872,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         )
                         continue
 
+                    # Log widget message event
                     logger.debug(f"Logging widget message count increment in database for chatbot ID: {chatbot_id}")
                     await chat_repository.log_widget_message(chatbot_id)
 
@@ -832,6 +920,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     hyde_query = rag_engine.generate_hyde_query(message, llm)
                     query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
 
+                    # Fetch relevant document chunks
                     logger.debug("Executing vector search in database...")
                     best_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), agent_id, 15)
                     logger.debug("Applying reranking and MMR filters...")
@@ -843,6 +932,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         context = "\n\n---\n\n".join([decrypt_key(match[0]) or match[0] for match in best_matches])
                     logger.info(f"Context retrieval finished. Matching count: {len(best_matches) if best_matches else 0}")
 
+                    # Assemble chat history text
                     history_items = history or []
                     history_text = ""
                     for msg in history_items[-6:]:
@@ -857,6 +947,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     if output_format:
                         formatted_system_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{output_format}"
 
+                    # Setting up grounding rules based on database context
                     if not best_matches:
                         grounding_rules = """
                     1. CRITICAL: THERE ARE NO DOCUMENTS LOADED. You MUST NOT answer any factual questions.
@@ -873,6 +964,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     6. DETAIL RULE: For summaries/essays, provide highly detailed answers.
                         """
 
+                    # Compile the final input prompt
                     prompt = f"""{formatted_system_prompt}{memory_patch}
                     You are a strict, professional AI assistant grounded ONLY in the provided documents.
 
@@ -888,6 +980,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     CURRENT USER INPUT: {message}
                     """
 
+                    # Add target output language formatting
                     lang_map = {
                         "en": "English", "es": "Spanish", "fr": "French", "de": "German",
                         "hi": "Hindi", "zh-cn": "Chinese", "ja": "Japanese", "ko": "Korean",
@@ -896,16 +989,25 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         lang_name = lang_map.get(language.lower(), language)
                         prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-                    logger.info("Initiating model response stream...")
-                    for chunk in llm.stream(prompt):
-                        if chunk.content:
+                    # Stream model chunks back to widget WebSocket
+                    async def stream_generator():
+                        full_response = ""
+                        try:
+                            logger.info("Streaming model response...")
+                            for chunk in llm.stream(prompt):
+                                if chunk.content:
+                                    full_response += chunk.content
+                                    await agent_connection_manager.send_json(
+                                        {"type": "text_chunk", "content": chunk.content}, client_id
+                                    )
+                            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                        except Exception as exc:
+                            logger.error("Streaming generation failed", exc_info=True)
                             await agent_connection_manager.send_json(
-                                {"type": "text_chunk", "content": chunk.content},
-                                client_id,
+                                {"type": "error", "content": str(exc)}, client_id
                             )
 
-                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
-                    logger.info("Widget stream generation complete.")
+                    asyncio.create_task(stream_generator())
 
                 except Exception as e:
                     logger.error("Widget Chat endpoint failed", exc_info=True)
@@ -922,6 +1024,14 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
 
 
 async def handle_api_v1_chat(message: str, session_id: Optional[str], language: Optional[str], x_api_key: str):
+    """
+    Handles API v1 chat requests using standard HTTP streaming.
+    Designed for developers calling RAGMate via external APIs.
+    - Validates API key.
+    - Resolves workspace routing and routing decisions.
+    - Performs RAG retrieval.
+    - Returns a FastAPI StreamingResponse.
+    """
     logger.info(f"API v1 chat request received (Session ID: {session_id}, key: {x_api_key[:5] if x_api_key else None}...)")
     if not x_api_key:
         logger.warning("Rejected API request: Missing x-api-key header.")
@@ -973,6 +1083,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         custom_api_key = decrypt_key(custom_api_key)
         endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
 
+        # Return warning early if the primary agent is set to inactive
         if not is_active:
             logger.warning(f"Agent '{agent_name}' is offline. Returning offline streaming response.")
             async def offline_stream():
@@ -986,6 +1097,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         routed_agent_name = None
         gateway_name = agent_name
 
+        # Supervisor multi-agent routing
         if project_id and not parent_agent_id:
             logger.info("Project workspace routing enabled.")
             sub_agents = await chat_repository.get_sub_agents_for_project(project_id)
@@ -1012,7 +1124,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                     routing_response = router_llm_json.invoke(routing_prompt)
                     content = routing_response.content.strip()
 
-                    # Strip any stray markdown fences the model might add
+                    # Strip stray markdown fences
                     if content.startswith("```json"):
                         content = content[7:]
                     if content.endswith("```"):
@@ -1067,6 +1179,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         logger.debug("Creating resilient LLM instance...")
         llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
+        # Vector RAG search
         logger.debug("Generating HyDE vector search query...")
         hyde_query = rag_engine.generate_hyde_query(message, llm)
         query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
@@ -1074,6 +1187,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         logger.debug("Executing database vector document matches search...")
         best_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), active_agent_id, 15)
 
+        # Merge with master agent documents if routed
         if active_agent_id != master_agent_id:
             master_matches = await chat_repository.get_documents_hybrid(hyde_query, str(query_vector), master_agent_id, 15)
             combined = best_matches + master_matches
@@ -1186,6 +1300,10 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
 
 
 async def handle_delete_agent(agent_id: str):
+    """
+    Deletes an AI Agent and all its linked sub-agents, documents, and chat histories.
+    Safe-guarded to prevent deleting permanent system agents ('Network Manager', 'General Assistant').
+    """
     logger.info(f"Attempting to delete agent ID: {agent_id}")
     try:
         logger.debug("Retrieving agent detail parameters...")
@@ -1220,6 +1338,10 @@ async def handle_delete_agent(agent_id: str):
 
 
 async def handle_delete_chatbot(chatbot_id: str):
+    """
+    Deletes a registered Web Chatbot client using its ID.
+    Wipes message logs and metadata.
+    """
     logger.info(f"Attempting to delete chatbot ID: {chatbot_id}")
     try:
         await chat_repository.delete_chatbot(chatbot_id)

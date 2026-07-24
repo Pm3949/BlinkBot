@@ -1,10 +1,38 @@
-import logging
-from typing import Optional
-from pydantic import BaseModel
-from fastapi import APIRouter, Request, Header, Response, WebSocket
+"""
+================================================================================
+ARCHITECTURAL CONTEXT & FILE OVERVIEW
+================================================================================
+This script acts as the HTTP routing entry point for all Chat interface actions
+in the RAGMate backend. It maps inbound HTTP REST requests and WebSocket connections
+directly to the underlying business logic executors defined inside the chat handler
+modules.
 
+From top to bottom, the file performs the following tasks:
+1. Imports: Loads standard typing libraries, FastAPI APIRouter routing structures,
+   Request/Response objects, WebSocket protocols, validation schemas, and rate-limiting
+   Limiter dependencies.
+2. Routing Initialization: Declares the APIRouter for 'chat' tag groupings.
+3. Input Payload Validation Schema:
+   - `APIChatRequest`: Validates programmatic JSON inputs submitted via HTTP v1 endpoints.
+4. HTTP and WebSocket Routes:
+   - WS `/ws/chat/{client_id}`: Bi-directional WebSocket endpoint for internal user dashboards.
+   - WS `/ws/widget/chat/{client_id}`: Bi-directional WebSocket endpoint for visitor widgets.
+   - POST `/api/v1/chat`: Streaming REST HTTP endpoint for external developers (API calls).
+   - DELETE `/agents/{agent_id}`: REST endpoint to delete an AI Agent.
+   - DELETE `/chatbots/{chatbot_id}`: REST endpoint to delete a widget chatbot.
+"""
+
+import logging  # Import python logging library
+from typing import Optional  # Import Optional type mapping for query validations
+from pydantic import BaseModel  # Pydantic BaseModels for payload validations
+from fastapi import APIRouter, Request, Header, Response, WebSocket  # FastAPI routing tools
+
+# Input validation schemas
 from schemas import ChatRequest, WidgetChatRequest
+# Rate limiter instance
 from routers.auth import limiter
+
+# Import chat logic handlers
 from handlers.chat_handler import (
     handle_chat_with_agent,
     handle_widget_chat,
@@ -13,51 +41,85 @@ from handlers.chat_handler import (
     handle_delete_chatbot
 )
 
+# Instantiate file logger
 logger = logging.getLogger(__name__)
+
+# Initialize FastAPI router for chat endpoints, grouping with tags
 router = APIRouter(tags=["chat"])
 
 class APIChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = None
-    language: Optional[str] = None
+    """
+    Validates JSON request payloads submitted to the public API v1 endpoint.
+    """
+    message: str                                # User input text message content
+    session_id: Optional[str] = None            # Client tracking session UUID (optional)
+    language: Optional[str] = None              # Conversational language code target (e.g. 'en', 'es')
+
 
 @router.websocket("/ws/chat/{client_id}")
 async def chat_with_agent(websocket: WebSocket, client_id: str):
     """
-    What it does: Opens a real-time connection for the internal web dashboard chat, passing messages to the handler.
-    Args:
-        websocket (WebSocket): The connection provided by the user's browser.
-        client_id (str): The unique ID of the user's chat session.
-    Returns: None.
+    HTTP WebSocket endpoint opening a real-time bidirectional connection 
+    for internal workspace chats.
+
+    Parameters:
+        websocket (WebSocket): The raw FastAPI WebSocket connection context.
+        client_id (str): Unique client session connection tracking ID.
+
+    Returns:
+        None: Pipes raw sockets traffic directly to the chat handlers.
+
+    Exceptions Raised:
+        FastAPI WebSocketDisconnect: Raised when a socket connection is severed.
     """
+    # Route socket connection directly to chat connection manager handlers
     await handle_chat_with_agent(websocket, client_id)
 
 
 @router.websocket("/ws/widget/chat/{client_id}")
 async def widget_chat(websocket: WebSocket, client_id: str):
     """
-    What it does: Opens a real-time connection for external website widgets, passing visitor messages to the handler.
-    Args:
-        websocket (WebSocket): The connection provided by the visitor's browser.
-        client_id (str): The unique ID of the visitor's chat session.
-    Returns: None.
+    HTTP WebSocket endpoint opening a real-time bidirectional connection
+    for public website widgets.
+
+    Parameters:
+        websocket (WebSocket): The raw FastAPI WebSocket connection context.
+        client_id (str): Unique client session connection tracking ID.
+
+    Returns:
+        None: Pipes raw sockets traffic directly to the widget chat handlers.
+
+    Exceptions Raised:
+        FastAPI WebSocketDisconnect: Raised when a socket connection is severed.
     """
+    # Route socket connection directly to widget connection manager handlers
     await handle_widget_chat(websocket, client_id)
 
 
 @router.post("/api/v1/chat")
-@limiter.limit("25/minute")
+@limiter.limit("25/minute")  # Limit public API calls to 25 queries per minute per IP address
 async def api_v1_chat(req: APIChatRequest, request: Request, response: Response, x_api_key: str = Header(...)):
     """
-    What it does: Receives a programmatic chat request via an API key and streams the response back.
-    Args:
-        req (APIChatRequest): The request containing the message and optional session data.
-        request (Request): The incoming HTTP request.
-        response (Response): The outgoing HTTP response.
-        x_api_key (str): The developer API key required for access.
-    Returns: A streaming response of the generated answer.
+    HTTP POST endpoint returning a Server-Sent Events (SSE) streaming response
+    for developers querying agents via API integrations.
+
+    Parameters:
+        req (APIChatRequest): The pydantic-validated request payload.
+        request (Request): The raw FastAPI HTTP request payload context.
+        response (Response): The raw FastAPI HTTP response payload context.
+        x_api_key (str): Developer API key (retrieved from Headers).
+
+    Returns:
+        StreamingResponse: Stream of text chunks generated by the AI model.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if API key check fails.
+        HTTPException(500): Raised if streaming generation fails.
     """
+    # Trigger the chat logic streaming builder
     stream_response, session_id = await handle_api_v1_chat(req.message, req.session_id, req.language, x_api_key)
+    
+    # Inject tracking session ID into HTTP response header so client knows the conversation ID
     response.headers["X-Session-ID"] = session_id
     return stream_response
 
@@ -65,20 +127,37 @@ async def api_v1_chat(req: APIChatRequest, request: Request, response: Response,
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
     """
-    What it does: Receives a request to completely delete an agent and calls the handler to wipe its data.
-    Args:
-        agent_id (str): The ID of the agent to delete.
-    Returns: A confirmation message.
+    HTTP DELETE endpoint to delete an AI Agent.
+
+    Parameters:
+        agent_id (str): Target Agent UUID path parameter.
+
+    Returns:
+        dict: Status confirmation message payload.
+
+    Exceptions Raised:
+        HTTPException(400): Raised if attempting to delete permanent core system agents.
+        HTTPException(404): Raised if agent not found.
+        HTTPException(500): Raised if database wipes crash.
     """
+    # Route execution to handlers layer
     return await handle_delete_agent(agent_id)
 
 
 @router.delete("/chatbots/{chatbot_id}")
 async def delete_chatbot(chatbot_id: str):
     """
-    What it does: Receives a request to delete an external chat widget and calls the handler to erase it.
-    Args:
-        chatbot_id (str): The ID of the chatbot widget to delete.
-    Returns: A confirmation message.
+    HTTP DELETE endpoint to delete a chatbot widget.
+
+    Parameters:
+        chatbot_id (str): Target Chatbot UUID path parameter.
+
+    Returns:
+        dict: Status confirmation message payload.
+
+    Exceptions Raised:
+        HTTPException(500): Raised if database wipes fail.
     """
+    # Route execution to handlers layer
     return await handle_delete_chatbot(chatbot_id)
+"""

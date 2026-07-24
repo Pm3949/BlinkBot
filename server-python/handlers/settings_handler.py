@@ -1,18 +1,58 @@
-from fastapi import HTTPException
-from core.security import encrypt_key, decrypt_key
-from db import settings_repository
+"""
+================================================================================
+ARCHITECTURAL CONTEXT & FILE OVERVIEW
+================================================================================
+This script acts as the business logic coordinator for managing User Settings
+and API Credential Keys in RAGMate.
 
+From top to bottom, the file performs the following tasks:
+1. Imports: Loads FastAPI exception classes, database settings repositories, and
+   symmetrical cryptography helpers (`encrypt_key`, `decrypt_key`).
+2. Logging: Initializes a department logger named "system" to audit credentials edits.
+3. Settings Retrieval (`handle_get_user_settings`): Queries user configurations from database,
+   falling back to default empty settings layouts, and decrypts the encrypted API keys
+   before returning them.
+4. Settings Ingestion (`handle_update_user_settings`): Receives settings updates, 
+   symmetrically encrypts all incoming key variables, registers them inside settings tables,
+   and returns the updated configuration map.
+"""
+
+from fastapi import HTTPException  # Import web exceptions to raise clean HTTP error status codes
+from core.security import encrypt_key, decrypt_key  # Cryptographic tools for symmetrical API key protection
+from db import settings_repository  # Database access layer for settings table queries
+
+# Logging utilities
 from utils.logger import get_department_logger
 
+# Set up department logger specifically scoped to "system" activities
 logger = get_department_logger("system")
 
 
 async def handle_get_user_settings(user_id: str):
+    """
+    Retrieves and decrypts the API keys and configuration parameters for a user.
+    If no configurations exist, returns default empty parameters.
+
+    Parameters:
+        user_id (str): The unique database UUID identifying the user.
+
+    Returns:
+        dict: A dictionary of configurations containing:
+            - 'openai_api_key', 'groq_api_key', 'gemini_api_key', 'openrouter_api_key',
+              'anthropic_api_key', 'huggingface_api_key': Decrypted text strings.
+            - 'two_factor_enabled': Boolean flag.
+            - 'share_keys': Boolean flag.
+
+    Exceptions Raised:
+        HTTPException(500): Raised if SQL database queries crash.
+    """
     logger.info(f"Retrieving credential settings for user ID: {user_id}")
     try:
+        # Fetch user configurations from repository
         logger.debug("Querying user settings configuration from database...")
         row = await settings_repository.get_user_settings(user_id)
         
+        # If no configurations exist, return defaults
         if not row:
             logger.info(f"No custom settings found. Returning default empty settings layout for user {user_id}.")
             return {
@@ -27,6 +67,7 @@ async def handle_get_user_settings(user_id: str):
             }
             
         logger.info(f"Successfully retrieved settings details for user ID: {user_id}")
+        # Return decrypted values
         return {
             "openai_api_key": decrypt_key(row[0]) or "",
             "groq_api_key": decrypt_key(row[1]) or "",
@@ -53,10 +94,31 @@ async def handle_update_user_settings(
     two_factor_enabled: bool = None,
     share_keys: bool = None
 ):
-    # Log update intentions with masked api keys
+    """
+    Encrypts and updates user configurations and API keys in the database.
+
+    Parameters:
+        user_id (str): The unique database UUID identifying the user.
+        openai_api_key (str, optional): OpenAI Key override.
+        groq_api_key (str, optional): Groq Key override.
+        gemini_api_key (str, optional): Gemini Key override.
+        openrouter_api_key (str, optional): OpenRouter Key override.
+        anthropic_api_key (str, optional): Anthropic Key override.
+        huggingface_api_key (str, optional): HuggingFace Key override.
+        two_factor_enabled (bool, optional): 2FA boolean flag.
+        share_keys (bool, optional): Share keys flag.
+
+    Returns:
+        dict: The updated and decrypted configuration details.
+
+    Exceptions Raised:
+        HTTPException(500): Raised if dynamic database updates fail.
+    """
+    # Log updates with masked key logs
     logger.info(f"Updating credential settings for user ID: {user_id} (share_keys: {share_keys}, 2FA: {two_factor_enabled})")
     logger.debug(f"Keys updated status: openai={bool(openai_api_key)}, groq={bool(groq_api_key)}, gemini={bool(gemini_api_key)}, openrouter={bool(openrouter_api_key)}, anthropic={bool(anthropic_api_key)}, huggingface={bool(huggingface_api_key)}")
     try:
+        # Symmetrically encrypt incoming API keys before database inserts
         openai_key = encrypt_key(openai_api_key) if openai_api_key is not None else None
         groq_key = encrypt_key(groq_api_key) if groq_api_key is not None else None
         gemini_key = encrypt_key(gemini_api_key) if gemini_api_key is not None else None
@@ -64,6 +126,7 @@ async def handle_update_user_settings(
         anthropic_key = encrypt_key(anthropic_api_key) if anthropic_api_key is not None else None
         huggingface_key = encrypt_key(huggingface_api_key) if huggingface_api_key is not None else None
 
+        # Execute upsert statement in database repository
         logger.debug("Executing settings update query in settings_repository...")
         row = await settings_repository.upsert_user_settings(
             user_id, openai_key, groq_key, gemini_key, openrouter_key, anthropic_key, huggingface_key, two_factor_enabled, share_keys

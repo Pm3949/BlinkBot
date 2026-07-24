@@ -1,10 +1,46 @@
-import logging
-from typing import Optional
+"""
+================================================================================
+ARCHITECTURAL CONTEXT & FILE OVERVIEW
+================================================================================
+This script acts as the HTTP routing entry point for all Knowledge Base Document
+management actions in the RAGMate backend. It maps inbound HTTP REST requests and
+WebSocket connections directly to the underlying business logic executors defined
+inside the document handler modules.
+
+From top to bottom, the file performs the following tasks:
+1. Imports: Loads standard typing libraries, FastAPI APIRouter routing components,
+   File/Form structures, WebSocket protocols and disconnect exceptions, validation schemas,
+   rate limiters, handlers, and JWT credentials guards.
+2. Routing Initialization: Declares the APIRouter for 'documents' tag groupings.
+3. Input Payload Validation Schemas:
+   - `InitiateUploadRequest`: Validates body parameters when initiating chunked uploads.
+   - `CompleteUploadRequest`: Validates body parameters when finalizing chunked uploads.
+4. HTTP and WebSocket Routes:
+   - WS `/ws/documents/upload/status/{session_key}`: Real-time progress updates channel.
+   - POST `/api/documents/upload/initiate`: Allocates upload session credentials.
+   - PUT `/api/documents/upload/chunk`: Saves individual file chunks.
+   - POST `/api/documents/upload/complete`: Reassembles chunks and starts background processing.
+   - GET `/api/documents/{doc_id}/view`: Streams decrypted document content.
+   - POST `/process-file`: Ingests smaller, single-upload documents.
+   - POST `/process-url`: Web scrapes raw text off URL targets.
+   - POST `/process-connector`: Connects external data integrations.
+   - GET `/agents/{agent_id}/documents`: Lists documents linked to agents.
+   - DELETE `/documents/{doc_id}`: Deletes documents and text chunks.
+"""
+
+import logging  # Import python logging library
+from typing import Optional  # Import typing Optional for parameter validations
+# Import FastAPI parameters for routing, files, forms, dependencies, headers, and WebSockets
 from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile, Depends, Header, Request, WebSocket, WebSocketDisconnect
 
+# Import local data validation schemas
 from schemas import URLRequest, ConnectorRequest
+# Rate limiter instance
 from routers.auth import limiter
+# Real-time WebSockets upload progress manager
 from handlers.websocket_handlers import upload_status_manager
+
+# Import document logic handlers
 from handlers.document_handler import (
     handle_initiate_upload,
     handle_upload_chunk,
@@ -16,58 +52,87 @@ from handlers.document_handler import (
     handle_get_documents,
     handle_delete_document
 )
-from pydantic import BaseModel
-from core.auth import get_current_user
+from pydantic import BaseModel  # Pydantic BaseModels for payload validations
+from core.auth import get_current_user  # JWT helper to authenticate requests
 
+# Instantiate file logger
 logger = logging.getLogger(__name__)
+
+# Initialize FastAPI router for document endpoints
 router = APIRouter(tags=["documents"])
 
 class InitiateUploadRequest(BaseModel):
-    agent_id: str
-    filename: str
-    file_size_bytes: int
+    """
+    Validates payload options when starting a chunked upload transaction.
+    """
+    agent_id: str                              # Target AI Agent UUID
+    filename: str                              # Name of the file being uploaded
+    file_size_bytes: int                       # Total size of the file in bytes
 
 class CompleteUploadRequest(BaseModel):
-    upload_id: str
-    agent_id: str
-    filename: str
+    """
+    Validates payload options when finalizing chunked uploads.
+    """
+    upload_id: str                             # The unique upload session ID
+    agent_id: str                              # Target AI Agent UUID
+    filename: str                              # Name of the file being reassembled
 
 
 @router.websocket("/ws/documents/upload/status/{session_key}")
 async def upload_status_ws(websocket: WebSocket, session_key: str):
     """
-    What it does: Opens a real-time connection so the frontend can receive progress updates as a document is processed.
-    Args:
-        websocket (WebSocket): The connection provided by the user's browser.
-        session_key (str): The unique ID of the ongoing upload session.
-    Returns: None.
+    HTTP WebSocket endpoint opening a real-time connection to stream
+    document vectorization progress updates to the user.
+
+    Parameters:
+        websocket (websocket): The raw FastAPI WebSocket connection context.
+        session_key (str): Unique upload tracking session key.
+
+    Returns:
+        None: Pipes raw sockets status updates to the manager.
+
+    Exceptions Raised:
+        WebSocketDisconnect: Safely handled when clients sever socket connections.
     """
     logger.info(f"🔌 WebSocket connection requested for upload status agent: {session_key}")
+    # Establish WebSocket protocol handshake and register listener
     await upload_status_manager.connect(websocket, session_key)
     logger.info(f"✅ WebSocket connected for upload status agent: {session_key}")
     try:
+        # Maintain socket connection alive, listening to inputs
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
+        # Deregister listener on connection sever
         upload_status_manager.disconnect(websocket, session_key)
         logger.info(f"❌ WebSocket disconnected for upload status agent: {session_key}")
 
 
 @router.post("/api/documents/upload/initiate")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute")  # Limit submissions to 10 attempts per minute per IP address
 async def initiate_upload(req: InitiateUploadRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """
-    What it does: Receives a request from the user to start uploading a file, checking their storage limits first.
-    Args:
-        req (InitiateUploadRequest): The user's request details including agent ID, file name, and file size.
-        request (Request): The incoming HTTP request.
-    Returns: An upload ID and recommended chunk size.
+    HTTP POST endpoint starting a chunked upload. Checks storage quotas.
+
+    Parameters:
+        req (InitiateUploadRequest): The pydantic-validated request payload.
+        request (Request): The raw FastAPI HTTP request payload context.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: A dictionary containing the upload ID and recommended chunk size.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(403): Raised if workspace storage limits are exceeded.
+        HTTPException(500): Raised if upload initiation crashes.
     """
+    # Route execution to handlers layer
     return await handle_initiate_upload(req.agent_id, req.file_size_bytes)
 
 
 @router.put("/api/documents/upload/chunk")
-@limiter.limit("60/minute")
+@limiter.limit("60/minute")  # Limit chunk uploads to 60 attempts per minute per IP address
 async def upload_chunk(
     upload_id: str,
     chunk_index: int,
@@ -76,19 +141,29 @@ async def upload_chunk(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    What it does: Receives a piece (chunk) of a large file from the user and saves it.
-    Args:
-        upload_id (str): The upload session ID.
-        chunk_index (int): The order of this piece.
-        request (Request): The HTTP request.
-        chunk (UploadFile): The file chunk data.
-    Returns: A success message.
+    HTTP PUT endpoint to upload individual chunks of a large file.
+
+    Parameters:
+        upload_id (str): Unique upload tracking ID path parameter.
+        chunk_index (int): Index number of the chunk (0-indexed).
+        request (Request): The raw FastAPI HTTP request payload context.
+        chunk (UploadFile): Binary stream of the chunk.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: A confirmation message dictionary.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(404): Raised if upload session ID not found.
+        HTTPException(500): Raised if saving the chunk file fails.
     """
+    # Route execution to handlers layer
     return await handle_upload_chunk(upload_id, chunk_index, chunk)
 
 
 @router.post("/api/documents/upload/complete")
-@limiter.limit("10/minute")
+@limiter.limit("10/minute")  # Limit completions to 10 attempts per minute per IP address
 async def complete_upload(
     req: CompleteUploadRequest,
     request: Request,
@@ -96,13 +171,24 @@ async def complete_upload(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    What it does: Finalizes a chunked file upload by joining it together and telling the system to process it.
-    Args:
-        req (CompleteUploadRequest): The request containing upload ID and filename.
-        request (Request): The HTTP request.
-        background_tasks (BackgroundTasks): FastAPIs tool for running slow tasks in the background.
-    Returns: A confirmation message.
+    HTTP POST endpoint to finalize a chunked upload. Reassembles chunks, verifies integrity,
+    and schedules background processing.
+
+    Parameters:
+        req (CompleteUploadRequest): The pydantic-validated request payload.
+        request (Request): The raw FastAPI HTTP request payload context.
+        background_tasks (BackgroundTasks): FastAPI BackgroundTasks scheduler.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: A confirmation message dictionary.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(400): Raised if magic bytes check fails or reassembly crashes.
+        HTTPException(500): Raised if ingestion processes crash.
     """
+    # Route execution to handlers layer
     return await handle_complete_upload(req.upload_id, req.agent_id, req.filename, background_tasks)
 
 
@@ -113,13 +199,23 @@ async def view_document(
     authorization: Optional[str] = Header(None)
 ):
     """
-    What it does: Allows a user to view a document they uploaded by streaming it back to their browser.
-    Args:
-        doc_id (str): The ID of the document they want to look at.
-        token (str, optional): An access token provided in the URL.
-        authorization (str, optional): An access token provided in the headers.
-    Returns: A streaming response of the file.
+    HTTP GET endpoint to retrieve and stream decrypted document content.
+    Accepts access tokens from query parameters or HTTP authorization headers.
+
+    Parameters:
+        doc_id (str): Target Document UUID path parameter.
+        token (str, optional): Token provided in the URL query parameter.
+        authorization (str, optional): Token provided in the HTTP authorization headers.
+
+    Returns:
+        StreamingResponse: Stream containing the decrypted data.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(404): Raised if file not found.
+        HTTPException(500): Raised if decryption crashes.
     """
+    # Route execution to handlers layer, passing either query parameter or Header token
     return await handle_view_document(doc_id, token if token else authorization)
 
 
@@ -131,56 +227,102 @@ async def process_file(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    What it does: Uploads a single file (not in pieces) and starts processing it immediately.
-    Args:
-        background_tasks (BackgroundTasks): FastAPIs tool to run things later.
-        file (UploadFile): The actual file being uploaded.
-        agent_id (str): The ID of the agent learning from this file.
-    Returns: A confirmation message.
+    HTTP POST endpoint to ingest smaller single-upload documents.
+
+    Parameters:
+        background_tasks (BackgroundTasks): FastAPI BackgroundTasks scheduler.
+        file (UploadFile): FastAPI binary upload body parameters mapping.
+        agent_id (str): Target AI Agent UUID (Form Parameter).
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: A confirmation message dictionary.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(400): Raised if file extension is invalid.
+        HTTPException(500): Raised if ingestion crashes.
     """
+    # Route execution to handlers layer
     return await handle_process_file(agent_id, file, background_tasks)
 
 
 @router.post("/process-url")
 async def process_url(req: URLRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """
-    What it does: Takes a website URL from the user and tells the system to scrape and process it.
-    Args:
-        req (URLRequest): The user's request with the URL.
-        background_tasks (BackgroundTasks): FastAPIs tool to run things later.
-    Returns: A confirmation message.
+    HTTP POST endpoint scraping and vectorizing content from a target URL.
+
+    Parameters:
+        req (URLRequest): The pydantic-validated request payload.
+        background_tasks (BackgroundTasks): FastAPI BackgroundTasks scheduler.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: Ingestion status dictionary.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(500): Raised if scraping or ingestion crashes.
     """
+    # Route execution to handlers layer
     return await handle_process_url(req.agent_id, req.url, background_tasks)
 
 
 @router.post("/process-connector")
 async def process_connector(req: ConnectorRequest, current_user: dict = Depends(get_current_user)):
     """
-    What it does: Fakes a connection to a third party tool like Slack or Google Drive for demo purposes.
-    Args:
-        req (ConnectorRequest): Details about which app to connect to.
-    Returns: A success message showing connection established.
+    HTTP POST endpoint integrating external data sources.
+
+    Parameters:
+        req (ConnectorRequest): The pydantic-validated request payload.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: Integration confirmation message.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(500): Raised if database writes crash.
     """
+    # Route execution to handlers layer
     return await handle_process_connector(req.agent_id, req.connector_id)
 
 
 @router.get("/agents/{agent_id}/documents")
 async def get_documents(agent_id: str, current_user: dict = Depends(get_current_user)):
     """
-    What it does: Asks the database for all documents uploaded to a specific agent.
-    Args:
-        agent_id (str): The ID of the agent we want to see files for.
-    Returns: A list of documents.
+    HTTP GET endpoint to list all documents uploaded for an agent.
+
+    Parameters:
+        agent_id (str): Unique database AI Agent UUID path parameter.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: A dictionary mapping documents details in a list.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(500): Raised if queries fail.
     """
+    # Route execution to handlers layer
     return await handle_get_documents(agent_id)
 
 
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     """
-    What it does: Receives a request from the user to permanently delete a document.
-    Args:
-        doc_id (str): The ID of the document to throw away.
-    Returns: A confirmation message.
+    HTTP DELETE endpoint to delete a document and its memory.
+
+    Parameters:
+        doc_id (str): Target Document UUID path parameter.
+        current_user (dict): JWT payload automatically injected by authentication dependency.
+
+    Returns:
+        dict: Deletion status confirmation message.
+
+    Exceptions Raised:
+        HTTPException(401): Raised if token is invalid.
+        HTTPException(500): Raised if deletions crash.
     """
+    # Route execution to handlers layer
     return await handle_delete_document(doc_id)
