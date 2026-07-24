@@ -24,7 +24,8 @@ import {
   Pencil,
   Eye,
   EyeOff,
-  Network
+  Network,
+  RotateCw
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
@@ -56,7 +57,7 @@ export default function ModelsPage() {
   const [testingProvider, setTestingProvider] = useState(null);
 
   // Data queries
-  const { data: modelsData, isLoading: isLoadingModels } = useAllModels();
+  const { data: modelsData, isLoading: isLoadingModels, refetch: refetchModels, isRefetching: isRefetchingModels } = useAllModels();
   const { data: userSettings } = useUserSettings();
   const updateSettingsMutation = useUpdateUserSettings();
 
@@ -314,6 +315,18 @@ export default function ModelsPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await refetchModels();
+              toast.success("Models catalog refreshed!");
+            }}
+            disabled={isRefetchingModels}
+            className="rounded-xl shadow-sm gap-2 border-border/60 hover:bg-muted"
+          >
+            <RotateCw size={15} className={isRefetchingModels ? "animate-spin text-primary" : ""} />
+            <span>Refresh</span>
+          </Button>
           {activeTab === "catalog" && (
             <Button
               onClick={() => setIsAddModalOpen(true)}

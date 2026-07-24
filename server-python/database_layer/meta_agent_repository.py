@@ -28,7 +28,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            ("Network Manager", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, True, project_id, None, "[]", False, "[]", "[]")
+            ("Network Manager", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, None, "[]", False, "[]", "[]")
         )
         manager_id = (await run_in_threadpool(cursor.fetchone))[0]
 
@@ -39,7 +39,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             INSERT INTO agents (name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            ("General Assistant", "A versatile, web-enabled fallback assistant.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", GENERAL_ASSISTANT_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, True, project_id, manager_id, "[]", False, "[]", "[]")
+            ("General Assistant", "A friendly greeting and welcome assistant.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", GENERAL_ASSISTANT_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, manager_id, "[]", False, "[]", "[]")
         )
 
         enabled_kb = config_data.get("enabled_knowledge", {})

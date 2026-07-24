@@ -14,93 +14,92 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-// Supported LLM Providers in Codebase
 const LLM_PROVIDERS = [
-  { name: "OpenRouter", badge: "DeepSeek R1, Llama 3.3, Qwen", desc: "Connect OpenRouter API key for DeepSeek & open models." },
-  { name: "OpenAI", badge: "GPT-4o & GPT-4o-mini", desc: "Industry standard models for multi-turn conversational agents." },
-  { name: "Groq", badge: "Ultra-Fast Llama-3", desc: "Low latency responses powered by Groq LPU inference." },
-  { name: "HuggingFace (HF)", badge: "Embeddings & Inference", desc: "Open source embedding models and inference endpoints." },
-  { name: "Anthropic", badge: "Claude 3.5 Sonnet", desc: "High precision analysis for research and document search." },
-  { name: "Google Gemini", badge: "Gemini 2.0 Flash", desc: "Large context window processing for complex datasets." }
+  { name: "OpenRouter", badge: "Access to everything", desc: "Connect your key to use DeepSeek, Llama, and more." },
+  { name: "OpenAI", badge: "GPT-4o & more", desc: "The industry standard for conversational AI." },
+  { name: "Groq", badge: "Lightning Fast", desc: "Get instant responses with Groq's high-speed processing." },
+  { name: "HuggingFace", badge: "Open Source", desc: "Plug in open-source embedding models easily." },
+  { name: "Anthropic", badge: "Claude 3.5 Sonnet", desc: "Great for deep research and careful analysis." },
+  { name: "Google Gemini", badge: "Gemini 2.0 Flash", desc: "Handles massive documents effortlessly." }
 ];
 
 // Demo personas for interactive sandbox
 const DEMO_PERSONAS = [
   {
     id: 'support',
-    name: 'Customer Support Bot',
-    badge: 'Support & FAQ',
-    docsCount: '34 PDFs & Help Guides',
-    avatarBg: 'bg-primary',
+    name: 'Helpdesk Assistant',
+    badge: 'Customer Support',
+    docsCount: 'Trained on Help Guides',
+    avatarBg: 'bg-blue-500',
     questions: [
       "What is your refund policy?",
-      "How do I integrate OpenRouter API keys?",
-      "Can I customize my chat widget design?"
+      "How do I add my team members?",
+      "Can I change the widget color?"
     ],
     responses: {
       "What is your refund policy?": {
-        answer: "We offer a 30-day money-back guarantee on all paid plans. You can initiate a refund or modify your plan directly from Workspace Billing.",
-        sources: ["Refund_Policy.pdf (p. 2)", "Terms_of_Service.md"]
+        answer: "We offer a 30-day money-back guarantee. You can cancel or change your plan anytime from the Billing page.",
+        sources: ["Refund_Policy.pdf", "Terms_of_Service.md"]
       },
-      "How do I integrate OpenRouter API keys?": {
-        answer: "Go to Settings > Provider Credentials & Keys, enter your OpenRouter API key, and select DeepSeek R1, Llama 3.3, or Qwen models.",
-        sources: ["Provider_Setup_Guide.pdf"]
+      "How do I add my team members?": {
+        answer: "Go to your Workspace Settings and click 'Invite Members'. You can choose whether they are Admins or Viewers.",
+        sources: ["Team_Guide.pdf"]
       },
-      "Can I customize my chat widget design?": {
-        answer: "Yes! You can customize brand color, header title, screen position (Bottom Left / Right), avatar, and system prompts in the Widget Configurator.",
+      "Can I change the widget color?": {
+        answer: "Absolutely! You can easily customize the brand color, title, and position from the Widget Configurator.",
         sources: ["Widget_Customization.md"]
       }
     }
   },
   {
     id: 'sales',
-    name: 'Sales & Lead Qualifier',
-    badge: 'Lead Gen',
-    docsCount: 'Product Catalog & Specs',
-    avatarBg: 'bg-purple-600',
+    name: 'Sales Assistant',
+    badge: 'Product Info',
+    docsCount: 'Trained on Catalogs',
+    avatarBg: 'bg-purple-500',
     questions: [
-      "What plans are available?",
-      "Can I connect OpenRouter or HuggingFace?",
-      "How do message top-ups work?"
+      "What pricing plans do you have?",
+      "Do you support free open-source models?",
+      "Can I buy more messages later?"
     ],
     responses: {
-      "What plans are available?": {
-        answer: "We offer Starter (Free $0), Pro (₹999/mo | $12/mo), and Business (₹3,999/mo | $49/mo). Annual billing saves 20%.",
-        sources: ["Pricing_Schedule_2026.pdf"]
+      "What pricing plans do you have?": {
+        answer: "We have a Free Starter plan, a Pro plan for $12/mo, and a Business plan for $49/mo. Annual plans get a 20% discount!",
+        sources: ["Pricing_2026.pdf"]
       },
-      "Can I connect OpenRouter or HuggingFace?": {
-        answer: "Yes! BlinkBot supports OpenRouter, HuggingFace (HF), OpenAI, Groq, Anthropic Claude, and Google Gemini.",
-        sources: ["LLM_Providers_Spec.pdf"]
+      "Do you support free open-source models?": {
+        answer: "Yes! You can connect OpenRouter or HuggingFace to use a wide variety of open-source models for your assistants.",
+        sources: ["Supported_Models.pdf"]
       },
-      "How do message top-ups work?": {
-        answer: "Message top-up credit packs never expire: +5,000 Messages for ₹299 ($4) or +20,000 Messages for ₹899 ($11).",
-        sources: ["Credit_Topups_Guide.pdf"]
+      "Can I buy more messages later?": {
+        answer: "Of course! You can buy message top-ups anytime, and they never expire.",
+        sources: ["Billing_Guide.pdf"]
       }
     }
   },
   {
     id: 'docs',
-    name: 'Security & Legal Assistant',
-    badge: 'Compliance',
-    docsCount: '120 Policy Documents',
-    avatarBg: 'bg-emerald-600',
+    name: 'Onboarding Guide',
+    badge: 'HR & Policies',
+    docsCount: 'Trained on Handbooks',
+    avatarBg: 'bg-emerald-500',
     questions: [
-      "Is client data shared with LLM providers?",
-      "Where are vector embeddings stored?",
-      "How does workspace access control work?"
+      "Is our company data kept private?",
+      "How do I request time off?",
+      "What are the office hours?"
     ],
     responses: {
-      "Is client data shared with LLM providers?": {
-        answer: "No. Uploaded files and chat logs remain isolated in your workspace. Data is never used to re-train public LLMs.",
-        sources: ["Security_Whitepaper.pdf (p. 4)"]
+      "Is our company data kept private?": {
+        answer: "Yes. All uploaded files are strictly isolated in your workspace. We never use your data to train public AI models.",
+        sources: ["Privacy_Policy.pdf"]
       },
-      "Where are vector embeddings stored?": {
-        answer: "Vector embeddings are stored with Row Level Security (RLS) in pgvector / Supabase, encrypted at rest.",
-        sources: ["Data_Security_Architecture.pdf"]
+      "How do I request time off?": {
+        answer: "You can request time off through the HR portal. Just submit a form at least two weeks in advance for vacations.",
+        sources: ["Employee_Handbook.pdf"]
       },
-      "How does workspace access control work?": {
-        answer: "Workspaces allow inviting team members with Admin or Member roles, isolating datasets, and managing API credentials.",
-        sources: ["Workspace_RBAC_Guide.pdf"]
+      "What are the office hours?": {
+        answer: "Our core office hours are 9 AM to 5 PM, Monday through Friday. We also offer flexible working hours for most teams.",
+        sources: ["Office_Policies.pdf"]
       }
     }
   }
@@ -245,22 +244,20 @@ export default function LandingPage() {
 
       {/* ═══════════════════════ HERO SECTION ═══════════════════════ */}
       <section className="relative pt-36 md:pt-44 pb-20 md:pb-28 flex flex-col items-center text-center px-6">
-        <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full border border-primary/30 bg-primary/10 text-primary text-xs sm:text-sm font-semibold mb-8">
+        <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs sm:text-sm font-medium mb-8">
           <Brain size={16} />
-          <span>Meta-Agent Assisted RAG Platform</span>
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          <span className="text-xs opacity-90">OpenRouter & HF Supported</span>
+          <span>Create AI Assistants that actually understand you</span>
         </div>
 
-        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-tight max-w-5xl leading-[1.15] text-foreground">
-          Build & Deploy AI Chatbots <br className="hidden sm:inline" />
-          <span className="text-primary">
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.15] text-foreground">
+          Build & Deploy AI Assistants <br className="hidden sm:inline" />
+          <span className="text-primary font-medium">
             Trained on Your Documents
           </span>
         </h1>
 
         <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-3xl leading-relaxed">
-          Upload PDFs, CSVs, or web links. Power your agents with OpenRouter (DeepSeek R1, Llama 3.3, Qwen), OpenAI, Groq, or HuggingFace (HF), and embed a lightweight chat widget in minutes.
+          Upload your PDFs, text files, or website links. Choose your favorite AI model, and embed a chat widget on your site in minutes—no coding required.
         </p>
 
         <div className="mt-10 flex flex-col sm:flex-row items-center gap-4">
@@ -342,39 +339,39 @@ export default function LandingPage() {
         >
           <SlidingFeatureCard 
             icon={Brain} 
-            title="Meta-Agent Prompting" 
+            title="Auto-Prompt Generation" 
             badge="AI Assisted"
-            desc="Provide your bot objective. Meta-Agent automatically generates structured system prompts, persona settings, and response rules."
+            desc="Just describe what you want your bot to do. Our system will automatically generate the perfect system prompts and rules for it."
           />
           <SlidingFeatureCard 
             icon={Database} 
-            title="Multi-Format Vector RAG" 
-            badge="PDF, CSV, TXT & Web"
-            desc="Ingest PDF manuals, CSV datasets, text files, or crawl website URLs. Auto-chunks text into pgvector / Supabase embeddings."
+            title="Chat with your Data" 
+            badge="PDF & Web"
+            desc="Simply upload your manuals, policies, or website links. The AI reads and understands them instantly to answer questions."
           />
           <SlidingFeatureCard 
             icon={Cpu} 
-            title="OpenRouter & HF Integration" 
-            badge="Open Models"
-            desc="Plug in OpenRouter API keys to access DeepSeek R1, Llama 3.3, and Qwen 2.5 Coder, or use HuggingFace (HF) models."
+            title="Bring your own AI" 
+            badge="Model Choice"
+            desc="Prefer OpenAI, Claude, or open-source models? Plug in your API keys and seamlessly switch between top-tier AI providers."
           />
           <SlidingFeatureCard 
             icon={Globe} 
-            title="1-Line Script Widget" 
-            badge="No Code Embed"
-            desc="Embed responsive chat widgets on HTML, React, WordPress, or Shopify sites with a single customizable script tag."
+            title="Simple Website Widget" 
+            badge="No Code"
+            desc="Add a beautiful chat widget to your website by pasting just one line of code. It works on WordPress, Shopify, React, and more."
           />
           <SlidingFeatureCard 
             icon={Wrench} 
-            title="Memory Patching & Tracing" 
+            title="Fix AI Mistakes" 
             badge="Self-Learning"
-            desc="Inspect real-time trace logs, flag incorrect responses, and apply Memory Patches to auto-correct bot behavior instantly."
+            desc="Did the bot give a wrong answer? Easily flag incorrect responses and add a correction. The bot learns instantly without retraining."
           />
           <SlidingFeatureCard 
             icon={Users} 
-            title="Isolated Workspaces & RBAC" 
-            badge="Team Collaboration"
-            desc="Create team workspaces, assign Admin/Member roles, isolate datasets, and manage encrypted API key credentials."
+            title="Built for Teams" 
+            badge="Collaboration"
+            desc="Invite your coworkers to workspaces. Assign roles, keep datasets private, and manage access seamlessly."
           />
         </div>
       </section>
@@ -643,14 +640,14 @@ export default function LandingPage() {
       <section id="pricing-slider" className="py-20 md:py-28 bg-card border-y border-border px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">
-              <Star size={14} /> Workspace Plans
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium mb-4">
+              <Star size={14} /> Pricing
             </div>
             <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Transparent Workspace Pricing
+              Simple, transparent pricing
             </h2>
             <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
-              Start free. Upgrade as your team, agents, and message volume scale.
+              Start for free, and upgrade only when you need more agents or messages.
             </p>
 
             {/* Billing Cycle Toggle */}
@@ -679,13 +676,13 @@ export default function LandingPage() {
               title="Starter" 
               priceInr="0"
               priceUsd="0"
-              desc="Free tier included for building your first agent."
+              desc="Perfect for building your first AI assistant."
               features={[
-                "1 Active Workspace",
-                "1 AI Agent per Workspace",
-                "1,000 AI Messages / month",
+                "1 Workspace",
+                "1 AI Assistant",
+                "1,000 Messages / month",
                 "100 MB Document Storage",
-                "1 Public Website Chatbot",
+                "1 Website Chatbot",
                 "Community Support"
               ]} 
             />
@@ -693,14 +690,14 @@ export default function LandingPage() {
               title="Pro" 
               priceInr={annualBilling ? "799" : "999"}
               priceUsd={annualBilling ? "10" : "12"}
-              desc="Ideal for active projects, creators, and growing teams."
+              desc="For creators and teams who need more power."
               features={[
-                "3 Active Workspaces",
-                "5 AI Agents per Workspace",
-                "10,000 AI Messages / month",
-                "1 GB Vector Storage",
-                "3 Public Website Chatbots",
-                "Granular Model & Provider Permissions",
+                "3 Workspaces",
+                "5 AI Assistants",
+                "10,000 Messages / month",
+                "1 GB Document Storage",
+                "3 Website Chatbots",
+                "Custom AI Models",
                 "Priority Support"
               ]} 
               isPopular 
@@ -709,15 +706,15 @@ export default function LandingPage() {
               title="Business" 
               priceInr={annualBilling ? "3,199" : "3,999"}
               priceUsd={annualBilling ? "39" : "49"}
-              desc="For scaling applications & agency deployments."
+              desc="For growing businesses and heavy usage."
               features={[
                 "Unlimited Workspaces",
-                "20 AI Agents per Workspace",
-                "50,000 AI Messages / month",
-                "10 GB Vector Storage",
-                "Unlimited Public Chatbots",
-                "Full Audit Logging & RBAC Controls",
-                "Dedicated Support Manager"
+                "20 AI Assistants",
+                "50,000 Messages / month",
+                "10 GB Document Storage",
+                "Unlimited Website Chatbots",
+                "Advanced Team Roles",
+                "Dedicated Support"
               ]} 
             />
           </div>
@@ -972,23 +969,23 @@ function PricingCard({ title, priceInr, priceUsd, desc, features, isPopular }) {
 
 const FAQS = [
   {
-    q: "Which LLM model providers can I use with BlinkBot?",
-    a: "BlinkBot supports OpenRouter (access DeepSeek R1, DeepSeek V3, Llama 3.3 70B, Qwen 2.5 Coder, Gemini 2.0 Flash), OpenAI (GPT-4o, GPT-4o-mini), Groq, Anthropic Claude 3.5 Sonnet, Google Gemini, and HuggingFace (HF) embeddings & models."
+    q: "Which AI models can I use?",
+    a: "You can easily connect OpenRouter, OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace models. You have full freedom to choose what works best for you!"
   },
   {
-    q: "How do I connect OpenRouter or HuggingFace (HF) API keys?",
-    a: "In your workspace, go to Settings > Provider Credentials & Keys, enter your encrypted API key, and select your preferred model from the dropdown."
+    q: "How do I connect my API keys?",
+    a: "Just head over to Settings > Provider Credentials in your workspace, enter your key, and you're good to go. It's securely encrypted."
   },
   {
-    q: "Do I need coding experience to deploy a chat widget?",
-    a: "No coding required! Simply upload your files or website links, configure your bot persona in the dashboard, and copy-paste a 1-line script tag into your website HTML."
+    q: "Do I need coding experience to add the widget to my site?",
+    a: "Not at all! You just copy and paste a single line of code into your website, and your chatbot will appear instantly."
   },
   {
-    q: "Is my document data safe and kept private?",
-    a: "Yes. All vector embeddings are encrypted at rest with AES-256 and protected with Row Level Security (RLS) in pgvector / Supabase. Your data is never shared or used to re-train public LLM models."
+    q: "Is my document data kept private?",
+    a: "Absolutely. Your uploaded files are strictly isolated to your workspace and encrypted. We never use your personal data to train public AI models."
   },
   {
-    q: "Can I buy additional message credits if I exceed my monthly plan?",
-    a: "Yes! Non-expiring message credit top-up packs are available in your Billing settings: +5,000 Messages for ₹299 ($4) or +20,000 Messages for ₹899 ($11)."
+    q: "What happens if I run out of messages?",
+    a: "You can easily purchase a message top-up pack from the Billing page, and those extra messages will never expire."
   }
 ];

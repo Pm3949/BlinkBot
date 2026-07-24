@@ -51,7 +51,7 @@ def build_multi_agent_graph(
         for sa in sub_agents:
             is_master = str(sa[0]) == str(master_agent_id)
             role_tag = (
-                " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]"
+                " [MASTER/GLOBAL - Greeting and default fallback agent]"
                 if is_master
                 else ""
             )
@@ -120,9 +120,8 @@ def build_multi_agent_graph(
         else:
             llm_with_tools = llm
             
-        msgs = list(state["messages"])
-        if not any(isinstance(m, SystemMessage) for m in msgs):
-            msgs.insert(0, SystemMessage(content=sys_prompt))
+        msgs = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
+        msgs.insert(0, SystemMessage(content=sys_prompt))
             
         try:
             response = None
@@ -133,10 +132,17 @@ def build_multi_agent_graph(
                     response += chunk
             print("AGENT RESPONSE:", response)
         except Exception as e:
-            if "Failed to call a function" in str(e) or "tool" in str(e).lower() or "400" in str(e):
-                print(f"Groq API Error caught: {e}. Falling back to standard LLM without tools.")
+            err_str = str(e).lower()
+            if "413" in err_str or "rate_limit" in err_str or "too large" in err_str or "failed to call a function" in err_str or "tool" in err_str or "400" in err_str:
+                print(f"API/Rate Limit Error caught: {e}. Retrying with payload truncation...")
+                truncated_msgs = []
+                for m in msgs:
+                    if hasattr(m, "content") and isinstance(m.content, str) and len(m.content) > 2000:
+                        truncated_msgs.append(m.__class__(content=m.content[:2000] + "\n...[truncated for token limits]"))
+                    else:
+                        truncated_msgs.append(m)
                 response = None
-                async for chunk in llm.astream(msgs):
+                async for chunk in llm.astream(truncated_msgs):
                     if response is None:
                         response = chunk
                     else:

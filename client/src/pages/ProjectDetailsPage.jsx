@@ -4,7 +4,6 @@ import { useAgentProjects, useProjectSubAgents, useUpdateAgent, useDeleteAgent }
 import { useSandboxChat } from '../hooks/useSandboxChat';
 import { useUIStore } from '../store/useUIStore';
 import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2, MessagesSquare } from 'lucide-react';
-import ApiToolsModal from '../components/agents/ApiToolsModal';
 import CreateAgentWizard from '../components/agents/CreateAgentWizard';
 import StudioSandboxChat from '../components/chat/StudioSandboxChat';
 import TracePanel from '../components/chat/TracePanel';
@@ -99,7 +98,6 @@ export default function ProjectDetailsPage() {
   const navigate = useNavigate();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const [agentToEdit, setAgentToEdit] = useState(null);
-  const [isToolsModalOpen, setIsToolsModalOpen] = useState(false);
   const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
   const [addingParentId, setAddingParentId] = useState(null);
   const [agentToDelete, setAgentToDelete] = useState(null);
@@ -383,22 +381,16 @@ export default function ProjectDetailsPage() {
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
-          {subAgents.length === 0 && (
+        {subAgents.length === 0 && (
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => handleAddAgent(null)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition shadow-sm"
             >
               <Plus size={16} /> Create Master Agent
             </button>
-          )}
-          <button 
-            onClick={() => setIsToolsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition shadow-sm"
-          >
-            API Tools Manager
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 relative flex overflow-hidden">
@@ -480,9 +472,7 @@ export default function ProjectDetailsPage() {
         )}
       </div>
 
-      {isToolsModalOpen && (
-        <ApiToolsModal project={project} onClose={() => setIsToolsModalOpen(false)} />
-      )}
+
       {isCreateAgentOpen && (
         <CreateAgentWizard 
           projectId={projectId}

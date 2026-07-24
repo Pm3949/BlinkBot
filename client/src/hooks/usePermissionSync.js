@@ -23,13 +23,7 @@ export function usePermissionSync() {
   const channelRef = useRef(null);
 
   useEffect(() => {
-    // Background polling sync fallback to ensure permissions stay up-to-date
-    const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ["user_workspaces"] });
-      queryClient.invalidateQueries({ queryKey: ["workspace_members"] });
-    }, 15000);
-
-    return () => clearInterval(interval);
+  // Supabase Realtime WebSocket handles instant permission sync without background HTTP polling
   }, [queryClient]);
 
   useEffect(() => {

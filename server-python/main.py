@@ -289,6 +289,35 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to resume interrupted uploads on startup: {e}")
 
+    # Synchronize default settings & system prompts for Network Manager and General Assistant
+    try:
+        from database import get_db_cursor_async
+        from fastapi.concurrency import run_in_threadpool
+        from prompts.system_agent_prompts import NETWORK_MANAGER_SYSTEM_PROMPT, GENERAL_ASSISTANT_SYSTEM_PROMPT
+        
+        async with get_db_cursor_async(commit=True) as cursor:
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                UPDATE agents 
+                SET web_search_enabled = FALSE, system_prompt = %s 
+                WHERE name = 'Network Manager'
+                """,
+                (NETWORK_MANAGER_SYSTEM_PROMPT,)
+            )
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                UPDATE agents 
+                SET web_search_enabled = FALSE, description = 'Friendly greeting and default welcome assistant.', system_prompt = %s 
+                WHERE name = 'General Assistant'
+                """,
+                (GENERAL_ASSISTANT_SYSTEM_PROMPT,)
+            )
+        logger.info("Successfully updated default web_search_enabled=False and system prompts for core agents.")
+    except Exception as e:
+        logger.error(f"Failed to update core agents settings on startup: {e}")
+
     yield
 
     # On shutdown: Explicitly close all active file handlers and completely purge logs directory

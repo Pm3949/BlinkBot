@@ -2,6 +2,7 @@ import json
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from core.security import encrypt_key
+from prompts.system_agent_prompts import GENERAL_ASSISTANT_SYSTEM_PROMPT
 
 async def get_agents(workspace_id: str, include_gateways: bool = False):
     async with get_db_cursor_async(commit=False) as cursor:
@@ -151,18 +152,18 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
             """,
             (
                 "General Assistant", 
-                "A versatile assistant for general queries and web search.", 
+                "A friendly greeting and welcome assistant.", 
                 "groq", 
                 "llama-3.3-70b-versatile",
                 "all-MiniLM-L6-v2", 
                 "sentence", 
-                "You are a helpful general assistant. Use your tools to answer user queries accurately.", 
+                GENERAL_ASSISTANT_SYSTEM_PROMPT, 
                 "",
                 encrypt_key(""), 
                 "en", 
                 user_id, 
                 workspace_id, 
-                True, # Web search enabled
+                False, # Web search disabled by default
                 project_id, 
                 manager_id, 
                 json.dumps([]),

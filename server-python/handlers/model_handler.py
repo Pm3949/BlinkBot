@@ -197,25 +197,32 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
         from handlers.chat_handler import create_llm_instance
         llm = create_llm_instance(provider, model_id, api_key=api_key, base_url=base_url, max_retries=0)
         
-        # Lightweight ping test with low max_tokens/max_output_tokens to preserve credits
+        # Test live invocation with tool binding verification
         from langchain_core.messages import HumanMessage
-        response = None
+        from langchain_core.tools import tool
+        
+        @tool
+        def ping_test_tool() -> str:
+            """Internal verification tool."""
+            return "pong"
+
+        has_tool_support = True
         try:
-            if provider == "google":
-                llm_to_test = llm.bind(max_output_tokens=5)
-            else:
-                llm_to_test = llm.bind(max_tokens=5)
+            llm_to_test = llm.bind_tools([ping_test_tool])
             response = await llm_to_test.ainvoke([HumanMessage(content="Respond with: OK")])
-        except Exception as e:
-            logger.warning(f"Binding limit/test invoke failed, attempting fallback invocation: {e}")
+        except Exception as tool_err:
+            has_tool_support = False
+            logger.warning(f"Model '{model_id}' ({provider}) tool binding ping failed ({tool_err}), testing basic completion...")
             response = await llm.ainvoke([HumanMessage(content="Respond with: OK")])
             
         text_out = getattr(response, "content", str(response)).strip()
         
+        capability_msg = " (Supports Tool & RAG Execution)" if has_tool_support else " (Text Only - Limited Tool Support)"
         return {
             "status": "success",
-            "message": f"Model '{model_id}' is active and responding cleanly!",
-            "response": text_out
+            "message": f"Model '{model_id}' is active and responding cleanly!{capability_msg}",
+            "response": text_out,
+            "has_tool_support": has_tool_support
         }
     except Exception as e:
         logger.error(f"Error testing model {model_id} ({provider}): {e}")

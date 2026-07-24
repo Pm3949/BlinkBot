@@ -156,8 +156,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
                     except Exception as fe:
                         logger.warning(f"Failed to instantiate fallback model {alt_mod}: {fe}")
                 
-                if fallbacks:
-                    logger.info(f"Wrapping model {model_name} with fallbacks: {[f.model_name for f in fallbacks if hasattr(f, 'model_name')] or [alt['model_id'] for alt in alternatives[:2]]}")
+                    logger.info(f"Primary model '{model_name}' is ACTIVE. Standby backup fallbacks configured: {[f.model_name for f in fallbacks if hasattr(f, 'model_name')] or [alt['model_id'] for alt in alternatives[:2]]}")
                     return primary_llm.with_fallbacks(fallbacks)
     except Exception as e:
         logger.error(f"Failed to configure fallbacks for {model_name}: {e}", exc_info=True)
@@ -358,7 +357,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             agent_descriptions_list = []
                             for sa in sub_agents:
                                 is_master = str(sa[0]) == str(agent_id)
-                                role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                                role_tag = " [MASTER/GLOBAL - Greeting and default fallback agent]" if is_master else ""
                                 agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
                             agent_descriptions = "\n".join(agent_descriptions_list)
 
@@ -474,10 +473,21 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         c_key = decrypt_key(c_key)
                         mem_patch = await chat_repository.fetch_temporary_memory_patch(aid)
                         
-                        formatted_prompt = sys_prompt
+                        header_instruction = (
+                            "SYSTEM MANDATE: You possess access to workspace database search tools (search_knowledge_base).\n"
+                            "FOR ANY DOMAIN, TECHNICAL, DOCUMENT, OR KNOWLEDGE QUERY, YOU MUST CALL search_knowledge_base FIRST BEFORE ANSWERING.\n"
+                            "DO NOT ANSWER FROM GENERAL MEMORY WITHOUT CALLING search_knowledge_base FIRST.\n\n"
+                        )
+                        formatted_prompt = header_instruction + sys_prompt
                         if out_fmt:
                             formatted_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{out_fmt}"
-                        formatted_prompt += f"{mem_patch}\n\nCRITICAL INSTRUCTIONS:\n1. Provide natural, conversational, and direct answers without robotic introductions.\n2. Do NOT mention that you are an AI, an agent, or what tools you are using. Do not narrate your actions.\n3. Use the available tools iteratively if needed. You have tools for searching knowledge AND tools for taking actions. Format your final response beautifully in Markdown.\n4. EXTREMELY STRICT GROUNDING RULE: If the user asks for factual information and you cannot find the answer using your tools, you MUST reply ONLY with a brief apology stating you do not have that information, and then YOU MUST STOP."
+                        formatted_prompt += (
+                            f"{mem_patch}\n\nCRITICAL GROUNDING RULES:\n"
+                            f"1. ALWAYS EXECUTE search_knowledge_base FIRST for any factual/domain request.\n"
+                            f"2. Base your response strictly on the search_knowledge_base output. If search_knowledge_base returns 'No related documents found', reply: 'I searched the workspace knowledge base database, but no relevant information was found.'\n"
+                            f"3. Do NOT invent facts or answer ungrounded questions from parametric memory when database tools are present.\n"
+                            f"4. Format response in clean Markdown without exposing tool call names or raw JSON."
+                        )
                         
                         lang_map = {
                             "en": "English", "es": "Spanish", "fr": "French", "de": "German",
@@ -496,7 +506,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         
                         @tool
                         async def search_knowledge_base(query: str) -> str:
-                            """Search the internal knowledge base for documents."""
+                            """Search the workspace database / RAG knowledge base for uploaded documents, files, and domain information. ALWAYS invoke this tool first before answering domain or factual questions."""
                             logger.info(f"🔍 Knowledge base search triggered for query: '{query}'")
                             hyde_query = rag_engine.generate_hyde_query(query, llm_inst)
                             logger.debug(f"Generated HyDE query: '{hyde_query}'")
@@ -516,11 +526,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         seen.add(item[0])
                                         best.append(item)
                                         
-                            logger.debug("Executing rerank & MMR filtering steps...")
-                            best = rag_engine.rerank_documents(query, best, top_k=10)
-                            best = rag_engine.apply_mmr(query, best, top_k=5)
+                            best = rag_engine.rerank_documents(query, best, top_k=8)
+                            best = rag_engine.apply_mmr(query, best, top_k=3)
                             logger.info(f"Retrieved {len(best)} matching document passages.")
-                            docs = "\n---\n".join([decrypt_key(m[0]) or m[0] for m in best]) if best else "No related documents found."
+                            raw_docs = [decrypt_key(m[0]) or m[0] for m in best]
+                            docs = "\n---\n".join(raw_docs) if raw_docs else "No related documents found."
+                            if len(docs) > 4000:
+                                docs = docs[:4000] + "\n...[truncated for token limits]"
                             return docs
 
                         @tool
@@ -962,7 +974,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                 agent_descriptions_list = []
                 for sa in sub_agents:
                     is_master = str(sa[0]) == str(master_agent_id)
-                    role_tag = " [MASTER/GLOBAL - Default fallback for general knowledge & uploaded files]" if is_master else ""
+                    role_tag = " [MASTER/GLOBAL - Greeting and default fallback agent]" if is_master else ""
                     agent_descriptions_list.append(f"ID: {sa[0]} | Name: {sa[1]}{role_tag} | Description: {sa[2]}")
                 agent_descriptions = "\n".join(agent_descriptions_list)
 
