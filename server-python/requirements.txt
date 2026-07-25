@@ -1,29 +1,115 @@
+# ==============================================================================
+# BLINKBOT PYTHON DEPENDENCY CONFIGURATION (requirements.txt)
+# ==============================================================================
+# This file lists the external libraries required to install, build, and run 
+# the server application. Each dependency is annotated below to explain its 
+# role in the architecture.
+
+# --- Web Scraping & Ingestion ---
+# beautifulsoup4: HTML parser used in `custom_rag.py` to strip scripts/tags and extract clean text from URLs.
 beautifulsoup4==4.14.3
+
+# --- Core Web Framework ---
+# fastapi: The ASGI web framework powering the backend application's API routers and server endpoints.
 fastapi==0.136.3
+
+# --- Document Processing ---
+# pymupdf: High-performance PDF parser used in `custom_rag.py` to extract text and layouts from documents.
 pymupdf
+
+# --- LangChain Ecosystem (LLM Integrations & Agents) ---
+# langchain_groq: Groq integration for LangChain, used for Llama3 execution.
 langchain_groq==1.1.2
+# langchain_openai: OpenAI integration for LangChain, supporting GPT models.
 langchain_openai==1.2.2
+# langchain-community: Third-party integrations for LangChain workflows.
 langchain-community
+
+# --- Database & Postgres Connection ---
+# psycopg2: PostgreSQL adapter for Python, manages the database connection pools in `database.py`.
 psycopg2==2.9.12
+
+# --- Input Validation & Serialization ---
+# pydantic: Input validation schemas used in FastAPI routers to enforce typing constraints.
 pydantic==2.13.4
+
+# --- Environment Configurations ---
+# python-dotenv: Loads database secrets, API keys, and port numbers from `.env` files.
 python-dotenv==1.2.2
+
+# --- Word Document Processing ---
+# python_docx: Parses docx files into raw text strings during document uploads.
 python_docx==1.2.0
+
+# --- HTTP Request Client ---
+# Requests: Synchronous HTTP library used to fetch target page HTML text during URL scraping.
 Requests==2.34.2
+
+# --- Local AI & Embedding Models ---
+# sentence_transformers: Loads and runs SentenceTransformer and CrossEncoder models locally for embedding and reranking.
 sentence_transformers
+
+# --- Mathematical Operations ---
+# numpy: Matrix and array calculations used for Cosine Similarity, MMR diversity, and vector computations.
 numpy
+
+# --- WSGI / ASGI Web Servers ---
+# gunicorn: Production process manager for ASGI web servers.
 gunicorn
+# uvicorn: The high-performance ASGI server that loads and runs the FastAPI app instance.
 uvicorn==0.48.0
+
+# --- Payment Gateways ---
+# razorpay: Razorpay client SDK used to create orders and verify checkout signatures in `api/billing.py`.
 razorpay==1.4.1
+
+# --- File Upload Form Handling ---
+# python-multipart: Enables FastAPI to receive multipart form-data (e.g. file uploads in document endpoints).
 python-multipart>=0.0.5
+
+# --- Generative AI SDK ---
+# google-genai: Google GenAI client SDK, used to access Gemini models.
 google-genai
+
+# --- Security & Symmetric Encryption ---
+# cryptography: Used for symmetric Fernet encryption/decryption of API keys in `core/security.py`.
 cryptography
+
+# --- Async HTTP Client ---
+# httpx: Asynchronous HTTP request client.
 httpx==0.27.0
+
+# --- Background Task Scheduler ---
+# apscheduler: Scheduler used to run cleanups (like deleting old chat logs) on background threads.
 apscheduler==3.11.2
+
+# --- Two-Factor Authentication (2FA) ---
+# pyotp: Generates and verifies time-based one-time passwords (TOTP) for 2FA.
 pyotp==2.10.0
+# qrcode: Generates QR codes representing TOTP setup strings.
 qrcode==8.2
+
+# --- Rate Limiter ---
+# slowapi: Rate limiter used in `api/auth.py` and `api/documents.py` to prevent DDoS or spam.
 slowapi
+
+# --- Web Search Tool ---
+# duckduckgo-search: Executed by agents to query search engine index pages for external research.
 duckduckgo-search
+
+# --- Database ORM ---
+# SQLAlchemy: SQL toolkit and Object Relational Mapper for PostgreSQL queries.
 SQLAlchemy==2.0.31
+
+# --- Code Interpreter Tool ---
+# e2b_code_interpreter: Secure sandboxed environment for execution of dynamic Python code by agents.
 e2b_code_interpreter==1.0.3
+
+# --- Single Sign-On (SSO) OAuth Client ---
+# fastapi-sso: Provides helper logic to manage third-party SSO flows (like GitHub login) in `api/oauth.py`.
 fastapi-sso==0.16.0
+
+# --- Embeddings Integration ---
+# langchain-huggingface: Integrates HuggingFace local model embeddings with LangChain workflows.
 langchain-huggingface==0.0.3
+

@@ -1,17 +1,52 @@
 """
-Main Application Entrypoint.
-Responsibility: Bootstraps the FastAPI application, configures CORS, mounts all 
-the individual feature routers, sets up global middleware/exception handlers, 
-and manages background tasks (like data cleanup). 
+================================================================================
+FASTAPI BOOTSTRAPPER & SYSTEM LIFE LIFECYCLE CONTROLLER (main.py)
+================================================================================
+
+OVERVIEW & ARCHITECTURE:
+This module acts as the core entrypoint and orchestrator for the modular Python backend 
+application. It coordinates starting up server tasks, registering API endpoints, 
+applying middleware security, scheduling database cleanups, and gracefully shutting down resources.
+
+KEY COMPONENT WORKFLOWS:
+1. Application Lifecycle Management (lifespan):
+   - Initializes logs directories and starts the cron scheduler.
+   - Triggers concurrent, thread-safe background loading of heavy sentence transformer models.
+   - Restores interrupted database ingestion states (resume pending document uploads).
+   - Syncs agent settings and prompt structures into database records.
+   - Cleans up thread log files and shuts down schedulers upon exit.
+2. Custom Security Middleware:
+   - Permissive Widget CORS Middleware: Chatbots can be embedded as widgets on any 
+     website. This intercepts preflight and actual requests on widget paths, injecting 
+     wildcard `Access-Control-Allow-Origin: *` headers.
+   - Logging Context Middleware: Extracts client IPs and bearer JWT claims, injecting 
+     them into thread-local ContextVars before executing request blocks.
+3. Utility Services (TTS & STT):
+   - Text-to-Speech (TTS): Receives text and returns an in-memory MP3 BytesIO stream.
+   - Speech-to-Text (STT): Receives audio files, saves them to temporary files, 
+     transcribes them using Groq's Whisper API, and ensures cleanup.
+4. Database Maintenance Cron:
+   - Launches a background thread worker using `APScheduler` to delete chat data 
+     older than 30 days every day at midnight.
+
+BEGINNER SYSTEM ARCHITECTURE CONCEPTS:
+- CORS: Cross-Origin Resource Sharing is a browser security protocol that prevents 
+  websites on one domain (e.g. your dashboard) from making requests to another (the API server) 
+  unless explicitly allowed by headers.
+- Middleware: Interceptor functions running sequentially before and after every single API call.
+- Lifespan: An async context manager control block that executes logic exactly once when the 
+  server starts up, yields control, and runs cleanup code when the server stops.
 """
+
 import os
 import tempfile
 import logging
 import shutil
 from contextlib import asynccontextmanager
 from utils.logger import cleanup_department_loggers
-
 from dotenv import load_dotenv
+
+# Load local system environment variables.
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -23,14 +58,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 from apscheduler.schedulers.background import BackgroundScheduler
 from database import get_db_connection
-
 from fastapi.staticfiles import StaticFiles
 from core.dependencies import UPLOAD_DIR
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request, Response
 
-# Import routers (These are like sub-applications handling specific feature sets)
-from api import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, connectors
+# Import all modular feature routers from the api package.
+from api import (
+    documents, analytics, admin, billing, chat, chat_history, workspaces, 
+    agents, chatbots, settings, feedback, notifications, meta_agent, 
+    demo, connectors, auth, oauth, models
+)
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 
+# Set up module logger.
 logger = logging.getLogger(__name__)
+
+# Configure standard console and file handlers.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -40,122 +85,186 @@ logging.basicConfig(
     ]
 )
 
+# Initialize main FastAPI application.
 app = FastAPI(title="Custom BlinkBot Backend")
+
 
 # ==========================================
 # LOADER.IO VERIFICATION
 # ==========================================
+
 @app.get("/loaderio-9c2c52496e408f1ec4033fadcc17a9b7.txt", response_class=PlainTextResponse)
-def loaderio_verify():
+def loaderio_verify() -> str:
+    """
+    Returns the verification token string required by Loader.io.
+
+    Purpose:
+        Used by the Loader.io load testing platform to verify domain ownership.
+
+    Parameters:
+        None.
+
+    Returns:
+        str: Loader.io verification token.
+    """
+    # Return the verification token text.
     return "loaderio-9c2c52496e408f1ec4033fadcc17a9b7"
 
-# Initialize Groq client for Speech-to-Text capabilities
+
+# ==========================================
+# CLIENT API CLIENTS
+# ==========================================
+
+# Initialize the Groq API client for transcription features.
 try:
     groq_client = Groq()
 except Exception as e:
+    # Log warning and set to None if setup fails (e.g. key is missing).
     logger.warning(f"Groq client initialization failed: {e}")
     groq_client = None
 
-# ==========================================
-# CORS CONFIGURATION (Cross-Origin Resource Sharing)
-# ==========================================
-# Browsers block frontend apps from calling APIs on different domains for security.
-# We must explicitly list the URLs allowed to talk to this backend.
 
+# ==========================================
+# CORS MIDDLEWARE & CONFIGURATION
+# ==========================================
+
+# Fetch permitted frontend client URLs. Fall back to local developer targets if undefined.
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 admin_url = os.getenv("ADMIN_URL", "http://localhost:5174")
 
-# Split by comma if multiple URLs are provided, and strip whitespace
+# Parse comma-separated origin URLs, stripping whitespace.
 allow_origins = [url.strip() for url in frontend_url.split(",")] if frontend_url != "*" else ["*"]
 admin_origins = [url.strip() for url in admin_url.split(",")] if admin_url != "*" else ["*"]
 
+# Consolidate origins lists.
 if "*" in allow_origins or "*" in admin_origins:
     allow_origins = ["*"]
 else:
+    # Add admin URLs to the main origins list.
     allow_origins.extend(admin_origins)
-    # Always allow local development ports
-    allow_origins.extend(["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"])
+    # Append local development ports to simplify local developer workflows.
+    allow_origins.extend([
+        "http://localhost:5173", "http://127.0.0.1:5173", 
+        "http://localhost:5174", "http://127.0.0.1:5174"
+    ])
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi import Request, Response
 
 class PublicCORSMiddleware(BaseHTTPMiddleware):
     """
-    Custom Middleware for Public Widget API Endpoints.
-    Why? The chat widget needs to be embeddable on ANY website, not just our frontend.
-    This intercepts requests to `/api/widget` and `/api/v1` and injects permissive CORS headers (*).
+    Middleware that bypasses CORS restrictions for widget endpoints.
+
+    Purpose:
+        Widget routes (like `/api/widget/*` or `/api/chatbots/*`) are designed to be embedded 
+        on third-party customer websites. This middleware overrides standard CORS restrictions 
+        by returning permissive headers for these paths.
     """
-    async def dispatch(self, request: Request, call_next):
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        """
+        Intercepts incoming requests, applying permissive CORS policies where needed.
+
+        Parameters:
+            request (Request): The incoming HTTP request.
+            call_next (Callable): Function to continue executing the request pipeline.
+
+        Returns:
+            Response: The HTTP response with appropriate CORS headers.
+        """
+        # If the request targets widget or chatbot routes, apply permissive headers.
         if request.url.path.startswith("/api/widget") or request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/chatbots/"):
-            # Handle Preflight requests (OPTIONS) which browsers send before the actual request
+            # Intercept preflight (OPTIONS) requests and return immediately with success.
             if request.method == "OPTIONS":
                 return Response(status_code=200, headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "*",
                     "Access-Control-Allow-Headers": "*",
                 })
-            # Let the actual request process, then attach the permissive header to the response
+            # Continue executing the request.
             response = await call_next(request)
+            # Append wildcard origin permissions to the response headers.
             response.headers["Access-Control-Allow-Origin"] = "*"
             return response
-        # If it's a normal API request, just pass it through to the standard CORSMiddleware
+            
+        # For non-widget requests, continue standard execution.
         return await call_next(request)
+
 
 class LoggingContextMiddleware(BaseHTTPMiddleware):
     """
-    Custom Middleware to inject Client IP and authenticated User ID into logging context variables.
+    Middleware that updates logging context variables with request details.
+
+    Purpose:
+        Extracts the client IP and User ID from the request headers
+        and sets them in thread-local ContextVars so they are logged with each line.
     """
-    async def dispatch(self, request: Request, call_next):
-        # 1. Extract client IP
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        """
+        Extracts client details and logs them with the request.
+
+        Parameters:
+            request (Request): The incoming HTTP request.
+            call_next (Callable): Function to continue executing the request pipeline.
+
+        Returns:
+            Response: The HTTP response.
+        """
+        # 1. Extract the client's IP.
         client_ip = request.client.host if request.client else "-"
+        # Parse 'x-forwarded-for' header if requests pass through reverse proxies (e.g. Nginx, Cloudflare).
         if "x-forwarded-for" in request.headers:
             client_ip = request.headers["x-forwarded-for"].split(",")[0].strip()
             
-        # 2. Try to extract User ID from authorization header
+        # 2. Extract the User ID from the Bearer JWT token if present.
         user_id = "-"
         auth_header = request.headers.get("authorization")
         if auth_header and auth_header.lower().startswith("bearer "):
             token = auth_header[7:].strip()
             try:
+                # Decrypt the token signature.
                 from core.auth import JWT_SECRET, ALGORITHM
                 import jwt
                 payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+                # Extract the subject (sub) claim.
                 user_id = payload.get("sub", "-")
             except Exception:
+                # Catch decryption errors silently (e.g. expired tokens).
                 pass
 
-        # Set context variables
+        # Set the context variables.
         from utils.logger import user_id_var, client_ip_var
         token_user = user_id_var.set(user_id)
         token_ip = client_ip_var.set(client_ip)
         
         try:
+            # Continue request execution.
             response = await call_next(request)
             return response
         finally:
+            # Reset context variables to clean up resources after the request completes.
             user_id_var.reset(token_user)
             client_ip_var.reset(token_ip)
 
+
+# Register middlewares in reverse order of execution.
 app.add_middleware(PublicCORSMiddleware)
 app.add_middleware(LoggingContextMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
-    # If we allow all origins (*), we cannot allow credentials (cookies/sessions) for security reasons
+    # If using wildcard origin permissions (*), allow_credentials must be False.
     allow_credentials=False if "*" in allow_origins else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-from api import documents, analytics, admin, billing, chat, chat_history, workspaces, agents, chatbots, settings, feedback, notifications, meta_agent, demo, auth, oauth, models
-from slowapi.errors import RateLimitExceeded
-from slowapi import _rate_limit_exceeded_handler
 
 # ==========================================
 # MOUNT ROUTERS
 # ==========================================
-# Attach all the feature-specific endpoints to the main app instance.
+
+# Attach modular routers to the main application instance.
 app.include_router(documents.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
@@ -175,64 +284,99 @@ app.include_router(connectors.router)
 app.include_router(models.router)
 app.include_router(oauth.router, prefix="/api/auth", tags=["OAuth Native Integrations"])
 
+
 # ==========================================
 # RATE LIMITING & STATIC FILES
 # ==========================================
-# Configure Rate Limiter (prevents spam/DDoS by limiting requests per IP/User)
+
+# Set up the slowapi rate limiter.
 app.state.limiter = auth.limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Mount uploads directory so files (like user avatars or document previews) can be served directly via URL
+# Mount the static uploads directory to serve files (e.g. avatars, document previews) directly.
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
 
 # ==========================================
 # UTILITY ENDPOINTS (TTS & STT)
 # ==========================================
 
 class TTSRequest(BaseModel):
-    text: str
-    language: str = "en"
+    """
+    Validation schema for Text-to-Speech generation.
+    """
+    text: str # Text string to convert to speech
+    language: str = "en" # Target language code (defaults to English 'en')
+
 
 @app.post("/api/tts")
-async def generate_tts(req: TTSRequest):
+async def generate_tts(req: TTSRequest) -> StreamingResponse:
     """
-    Text-to-Speech Generation using Google TTS.
-    Data Flow: Text -> gTTS Engine -> In-Memory Byte Stream -> HTTP Streaming Response
+    Generates speech audio from text using Google TTS (gTTS).
+
+    Parameters:
+        req (TTSRequest): Contains the input text and target language parameters.
+
+    Returns:
+        StreamingResponse: Stream of the generated MP3 file content.
+
+    Errors / Exceptions:
+        - Raises 500 Internal Server Error if audio generation fails.
     """
     try:
+        # Generate the audio transcription.
         tts = gTTS(text=req.text, lang=req.language, slow=False)
-        # We use a BytesIO stream instead of saving to a physical file to save disk I/O and speed up the response
+        # Use an in-memory BytesIO stream instead of writing to disk to improve response speed.
         fp = BytesIO()
         tts.write_to_fp(fp)
-        fp.seek(0) # Reset stream pointer to the beginning before sending
+        # Reset the stream pointer back to the beginning before returning the response.
+        fp.seek(0)
         return StreamingResponse(fp, media_type="audio/mpeg")
     except Exception as e:
         logger.error(f"Error generating TTS: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/stt")
-async def speech_to_text(file: UploadFile = File(...), language: str = Form(None)):
+async def speech_to_text(file: UploadFile = File(...), language: str = Form(None)) -> dict:
     """
-    Speech-to-Text Transcription using Groq's Whisper API.
+    Transcribes audio to text using Groq's Whisper API.
+
+    Parameters:
+        file (UploadFile): The uploaded audio file.
+        language (str, optional): Target language code override.
+
+    Returns:
+        dict: The transcribed text string.
+
+    Side Effects:
+        - Writes and deletes a temporary audio file on disk.
+
+    Errors / Exceptions:
+        - Raises 500 if the Groq client is unconfigured or transcription fails.
+        - Raises 400 Bad Request if the uploaded file is not an audio format.
     """
+    # Verify the Groq client is initialized.
     if not groq_client:
         raise HTTPException(status_code=500, detail="Groq client is not configured")
         
+    # Verify the uploaded file type.
     if not file.content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="File must be an audio format")
         
-    # Edge Case Handled: Groq's API requires a physical file path or a proper file object. 
-    # We save the incoming upload to a temporary file, process it, and guarantee its deletion in the `finally` block.
+    # Save the upload stream to a temporary file on disk as required by the Groq API.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         temp_audio.write(await file.read())
         temp_audio_path = temp_audio.name
         
     try:
+        # Open and send the temporary file to Groq.
         with open(temp_audio_path, "rb") as f:
             kwargs = {
                 "file": (file.filename, f.read()),
                 "model": "whisper-large-v3"
             }
+            # Inject language configuration if provided.
             if language and language != "auto":
                 kwargs["language"] = language
                 
@@ -242,9 +386,10 @@ async def speech_to_text(file: UploadFile = File(...), language: str = Form(None
         logger.error(f"Error processing audio: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Crucial: Always clean up temporary files to prevent disk space exhaustion over time.
+        # Crucial: Always delete temporary files to avoid disk exhaustion.
         if os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
+
 
 # ==========================================
 # BACKGROUND TASKS (CRON JOBS)
@@ -252,13 +397,26 @@ async def speech_to_text(file: UploadFile = File(...), language: str = Form(None
 
 def cleanup_old_chat_data():
     """
-    Periodic task to maintain database hygiene and comply with data retention policies.
-    Deletes any chat sessions older than 30 days.
+    Deletes chat sessions older than 30 days.
+
+    Purpose:
+        Maintains database hygiene and complies with data retention policies.
+        Runs daily via the background scheduler.
+
+    Parameters:
+        None.
+
+    Returns:
+        None.
+
+    Side Effects / State Changes:
+        - Deletes matching rows from `chat_sessions` and `chat_messages` tables.
     """
     logger.info("Running automatic cleanup of old chat data (>30 days)")
     conn = None
     cursor = None
     try:
+        # Get a connection and execute cleanup.
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM chat_sessions WHERE created_at < NOW() - INTERVAL '30 days'")
@@ -268,42 +426,63 @@ def cleanup_old_chat_data():
         if conn:
             conn.rollback()
     finally:
+        # Close connection and cursor.
         if cursor: cursor.close()
         if conn: conn.close()
 
-# Use APScheduler to run the cleanup task in the background
+
+# Initialize the background scheduler.
 scheduler = BackgroundScheduler()
-# Run daily at midnight
+# Schedule the cleanup task to run daily at midnight.
 scheduler.add_job(cleanup_old_chat_data, 'cron', hour=0, minute=0)
 
-# Modern FastAPI lifespan context manager
+
+# ==========================================
+# APPLICATION LIFECYCLE MANAGEMENT
+# ==========================================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # On startup: Automatically create the logs/ directory if it doesn't exist
+    """
+    FastAPI Lifespan context manager.
+
+    Purpose:
+        Coordinates startup and shutdown tasks.
+        Startup tasks: creates the logs directory, starts the scheduler, 
+        pre-loads models in the background, initializes tables, resumes 
+        interrupted uploads, and configures default prompts.
+        Shutdown tasks: stops the scheduler, closes log file handles,
+        and deletes temporary directories.
+    """
+    # ------------------------------------------
+    # STARTUP TASKS
+    # ------------------------------------------
     os.makedirs("logs", exist_ok=True)
+    # Start the cron scheduler.
     scheduler.start()
     
-    # Start concurrent background loading of models
+    # Pre-load embedding and reranking models in a background thread.
     try:
         from core.dependencies import warm_up_models_background
         warm_up_models_background()
     except Exception as e:
         logger.error(f"Failed to trigger model pre-loading in background: {e}")
 
+    # Initialize the ai_models database table.
     try:
         from db.model_repository import init_ai_models_table
         await init_ai_models_table()
     except Exception as e:
         logger.error(f"Failed to initialize ai_models table: {e}")
         
-    # Auto-resume any interrupted document ingestion tasks on startup
+    # Auto-resume interrupted document ingestion tasks.
     try:
         from handlers.document_processor import resume_interrupted_uploads
         await resume_interrupted_uploads()
     except Exception as e:
         logger.error(f"Failed to resume interrupted uploads on startup: {e}")
 
-    # Synchronize default settings & system prompts for Network Manager and General Assistant
+    # Synchronize default settings & system prompts for Network Manager and General Assistant core agents.
     try:
         from database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
@@ -332,20 +511,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to update core agents settings on startup: {e}")
 
+    # Yield control to allow the application to process requests.
     yield
 
-    # On shutdown: Explicitly close all active file handlers and completely purge logs directory
+    # ------------------------------------------
+    # SHUTDOWN TASKS
+    # ------------------------------------------
+    # Stop scheduler background threads.
     scheduler.shutdown()
+    # Close log file handles.
     cleanup_department_loggers()
+    # Delete the local logs directory.
     if os.path.exists("logs"):
         shutil.rmtree("logs", ignore_errors=True)
 
-# Register the lifespan context manager
+
+# Bind the lifespan context manager to the FastAPI application instance.
 app.router.lifespan_context = lifespan
+
 
 if __name__ == "__main__":
     import uvicorn
 
     logger.info("🚀 Starting Modular BlinkBot Server on Port 8000...")
-    # reload=True is useful for development, auto-restarting the server on file changes.
+    # Run the server. reload=True enables hot-reloads on file changes.
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

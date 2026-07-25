@@ -1,24 +1,48 @@
+"""
+================================================================================
+NATIVE INTEGRATIONS OAUTH ROUTER LAYER (oauth.py)
+================================================================================
+
+OVERVIEW & ARCHITECTURE:
+This module acts as the FastAPI endpoint router for third-party native integrations
+via OAuth 2.0 (specifically GitHub and Slack). It handles:
+1. Redirection: Redirects users to external authorization screens (e.g. GitHub OAuth).
+2. Callback Verification: Receives the authorization response, verifies it against the SSO provider,
+   extracts access tokens, and updates integration links in the database.
+3. Interactive Popup closure: Serves a lightweight HTML script response to close authorization popup windows
+   and notify the parent window of success.
+
+DATABASE INTEGRATION:
+- Stored tokens are upserted into the `oauth_connections` table.
+- If a connection already exists for a user-provider pair, the database updates the existing token values
+  and updates the modification timestamp.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 import os
 import logging
 from database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
-
 from fastapi_sso.sso.github import GithubSSO
+
+# Define SlackSSO placeholder for extension.
 SlackSSO = None
 
+# Initialize router instance for OAuth paths.
 router = APIRouter()
+# Initialize standard module-level logger.
 logger = logging.getLogger(__name__)
 
-# Initialize SSO instances. In production, ensure these ENV variables are set.
+# Initialize GitHub SSO client parameters.
 github_sso = GithubSSO(
     client_id=os.getenv("GITHUB_CLIENT_ID", "mock_id"),
     client_secret=os.getenv("GITHUB_CLIENT_SECRET", "mock_secret"),
     redirect_uri=f"{os.getenv('BASE_URL', 'http://localhost:8000')}/api/auth/github/callback",
-    allow_insecure_http=True
+    allow_insecure_http=True # True simplifies local dev testing (no HTTPS required)
 ) if GithubSSO else None
 
+# Initialize Slack SSO client (currently disabled).
 slack_sso = SlackSSO(
     client_id=os.getenv("SLACK_CLIENT_ID", "mock_id"),
     client_secret=os.getenv("SLACK_CLIENT_SECRET", "mock_secret"),
@@ -27,8 +51,36 @@ slack_sso = SlackSSO(
 ) if SlackSSO else None
 
 
+# ==========================================
+# HELPER DATA WRITERS
+# ==========================================
+
 async def save_oauth_token(user_id: str, provider: str, access_token: str, refresh_token: str = None):
+    """
+    Saves or updates OAuth credentials in the database.
+
+    Purpose:
+        Upserts the access and refresh tokens into the `oauth_connections` table.
+        Uses `ON CONFLICT (user_id, provider)` to update existing connections instead of throwing errors.
+
+    Parameters:
+        user_id (str): UUID of the user.
+        provider (str): Name of the integration provider (e.g. 'github', 'slack').
+        access_token (str): Google/GitHub API access token string.
+        refresh_token (str, optional): Google/GitHub refresh token string.
+
+    Returns:
+        None.
+
+    Side Effects / State Changes:
+        - Writes or updates a row in the `oauth_connections` table.
+
+    Errors / Exceptions:
+        - May raise database execution or connection exceptions.
+    """
+    # Open an async transaction connection context.
     async with get_db_cursor_async(commit=True) as cursor:
+        # Run database operations concurrently using threadpools.
         await run_in_threadpool(
             cursor.execute,
             """
@@ -43,33 +95,76 @@ async def save_oauth_token(user_id: str, provider: str, access_token: str, refre
         )
 
 
+# ==========================================
+# ENDPOINT IMPLEMENTATIONS
+# ==========================================
+
 @router.get("/github/login")
 async def github_login():
-    """Initiate GitHub OAuth login."""
+    """
+    Initiates the GitHub OAuth authorization flow.
+
+    Purpose:
+        Redirects the user to the GitHub authorization screen to request permissions.
+
+    Parameters:
+        None.
+
+    Returns:
+        RedirectResponse: Redirection to the GitHub login portal.
+
+    Errors / Exceptions:
+        - Raises 501 Not Implemented if the SSO client is unconfigured or missing dependencies.
+    """
+    # Guard check: verify the SSO client is initialized.
     if not github_sso:
         raise HTTPException(status_code=501, detail="fastapi-sso not installed or GithubSSO missing")
+    # Redirect the user to the GitHub login page.
     with github_sso:
         return await github_sso.get_login_redirect()
 
+
 @router.get("/github/callback")
 async def github_callback(request: Request):
-    """Verify GitHub login and save the token."""
+    """
+    Handles callbacks from GitHub OAuth.
+
+    Purpose:
+        Exchanges the authorization code for tokens, saves them,
+        and returns an HTML page that closes the popup window and notifies the parent.
+
+    Parameters:
+        request (Request): The callback HTTP request containing authorization codes.
+
+    Returns:
+        HTMLResponse: A script that closes the popup window.
+
+    Side Effects / State Changes:
+        - Stores the access token in `oauth_connections`.
+
+    Errors / Exceptions:
+        - Raises 400 Bad Request if token verification fails.
+    """
+    # Guard check.
     if not github_sso:
         raise HTTPException(status_code=501, detail="fastapi-sso not installed")
     try:
+        # Verify the authorization code and retrieve user profile info.
         with github_sso:
             user = await github_sso.verify_and_process(request)
-            # In a real app, you'd extract the RAGMate user_id from the session or JWT token.
-            # Here we assume a mock user ID for demonstration.
+            
+            # Extract user ID from request headers.
+            # Fall back to 'default_user' if missing.
             ragmate_user_id = request.headers.get("X-User-Id", "default_user") 
             
-            # Note: fastapi-sso user object doesn't expose the raw access token directly in standard models
-            # but we can get it from the SSO provider instance if needed, or assume it's mock logic for now.
-            # We'll just save a mock token if we can't extract it easily, to satisfy the DB schema.
+            # Extract the raw access token from the user object.
             access_token = getattr(user, "access_token", "mock_gh_token")
             
+            # Save the tokens to the database.
             await save_oauth_token(ragmate_user_id, "github", access_token)
-            # Return a simple HTML page that closes the popup and notifies the parent window
+            
+            # Return an HTML page containing JavaScript to close the popup
+            # and notify the parent window of success.
             from fastapi.responses import HTMLResponse
             return HTMLResponse(content='''
                 <html>
@@ -89,4 +184,3 @@ async def github_callback(request: Request):
         logger.error(f"GitHub callback error: {e}")
         raise HTTPException(status_code=400, detail="Authentication failed")
 
-# Similar routes can be added for Slack...

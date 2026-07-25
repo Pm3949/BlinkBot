@@ -1,3 +1,39 @@
+"""
+================================================================================
+LANGGRAPH MULTI-AGENT STATE MACHINE ORCHESTRATOR (graph_orchestrator.py)
+================================================================================
+
+OVERVIEW & ARCHITECTURE:
+This module manages the execution of multi-agent networks using LangGraph state machines.
+It compiles a supervisor-based agent network routing requests to specialized sub-agents.
+
+KEY ARCHITECTURAL CONCEPTS:
+1. Graph State (`GraphState`):
+   Defines the shared memory state of the graph. It tracks the full message history 
+   (dynamically accumulated via `operator.add`), the currently executing agent 
+   (`active_agent_id`), the display name of the active agent (`routed_agent_name`), 
+   and the next target node identifier (`next_agent`).
+2. Supervisor Routing Node (`supervisor_node`):
+   Acts as the central network traffic controller. If a sub-agent has finished generating a 
+   response, it returns "FINISH". Otherwise, it queries a router LLM (configured with JSON format outputs) 
+   to determine which sub-agent ID should process the user query.
+3. Agent Execution Node (`agent_node`):
+   Dynamically fetches the LLM client, system prompt instructions, embedding model config, and 
+   available tools for the chosen active agent. Includes a fallback retry layer that truncates 
+   messages if API/rate-limit exceptions (like HTTP 413 Payload Too Large) are encountered.
+4. Tool Execution Node (`tool_node`):
+   Invokes tool execution for agents utilizing LangGraph's prebuilt `ToolNode`.
+5. Conditional State Routing (`router_edge`, `agent_edge`):
+   Directs the state machine path. Coordinates transitioning from the supervisor to specialists,
+   triggering tool actions, or ending execution.
+
+BEGINNER GRAPH CONCEPTS:
+- StateGraph: A state machine framework where nodes represent execution steps (code functions) 
+  and edges represent transition logic mapping paths between steps.
+- operator.add: A reducer function. When a node returns messages, Pydantic appends them to 
+  the existing list instead of overwriting the history.
+"""
+
 import operator
 import os
 import asyncio
@@ -8,29 +44,63 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.language_models.chat_models import BaseChatModel
 
+
 class GraphState(TypedDict):
+    """
+    TypedDict representing the state properties carried across graph execution nodes.
+    """
+    # Message logs. Annotated with operator.add to append new messages to history.
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    active_agent_id: Optional[str]
-    routed_agent_name: Optional[str]
-    next_agent: Optional[str]
+    active_agent_id: Optional[str] # UUID of the agent currently executing.
+    routed_agent_name: Optional[str] # Human-readable name of the active agent.
+    next_agent: Optional[str] # Target indicator defining the next node path ('FINISH' or Agent ID).
+
 
 def build_multi_agent_graph(
     master_agent_id: str,
     gateway_name: str,
     sub_agents: List[tuple],
     router_llm: BaseChatModel,
-    llm_factory: Callable[[str], BaseChatModel], # get_llm(active_agent_id) -> (llm, system_prompt, embed_model, web_search_enabled)
-    tools_factory: Callable[[str, str, bool, BaseChatModel], List[Callable]], # get_tools(active_agent_id, embed_model, web_search_enabled, llm) -> [tools]
+    llm_factory: Callable[[str], BaseChatModel], 
+    tools_factory: Callable[[str, str, bool, BaseChatModel], List[Callable]], 
 ):
     """
-    Builds a LangGraph state machine representing a Supervisor Agent that routes to specialized Sub-Agents.
+    Compiles a LangGraph state machine.
+
+    Purpose:
+        Builds a multi-agent supervisor graph that routes messages to sub-agents,
+        handles tool calls, and handles payload recovery.
+
+    Parameters:
+        master_agent_id (str): UUID of the root supervisor coordinator agent.
+        gateway_name (str): Name of the entrypoint coordinator agent.
+        sub_agents (list of tuples): All agents in the network. Each tuple contains:
+                                     (agent_id, name, backstory/description).
+        router_llm (BaseChatModel): The LLM client running supervisor routing logic.
+        llm_factory (Callable): Async function returning (llm, system_prompt, embed_model, web_search_enabled) for an agent.
+        tools_factory (Callable): Function returning a list of executable tool functions for an agent.
+
+    Returns:
+        CompiledStateGraph: The compiled state graph.
     """
+    # Instantiate the StateGraph with the state schema.
     workflow = StateGraph(GraphState)
     
-    # 1. Supervisor Node
-    async def supervisor_node(state: GraphState):
-        # Enforce loop termination: if the last message in state history is an AIMessage,
-        # it means a specialist agent has generated a response. We must yield control to the user.
+    # ------------------------------------------
+    # 1. SUPERVISOR ROUTING NODE
+    # ------------------------------------------
+    async def supervisor_node(state: GraphState) -> dict:
+        """
+        Determines the next agent path.
+
+        Parameters:
+            state (GraphState): Current conversation state.
+
+        Returns:
+            dict: Updated state properties indicating the next node.
+        """
+        # Loop prevention check: if the last message in history was generated by an AIMessage,
+        # it means a specialist agent has completed its response. Stop and return the output.
         if state["messages"]:
             last_msg = state["messages"][-1]
             if getattr(last_msg, "type", None) == "ai" or isinstance(last_msg, AIMessage):
@@ -40,6 +110,7 @@ def build_multi_agent_graph(
                     "next_agent": "FINISH"
                 }
                 
+        # If there are no sub-agents in the project, route directly to the master agent.
         if not sub_agents or len(sub_agents) <= 1:
             return {
                 "active_agent_id": master_agent_id, 
@@ -47,6 +118,7 @@ def build_multi_agent_graph(
                 "next_agent": master_agent_id
             }
             
+        # Format the descriptions list to prompt the supervisor.
         agent_descriptions_list = []
         for sa in sub_agents:
             is_master = str(sa[0]) == str(master_agent_id)
@@ -60,33 +132,39 @@ def build_multi_agent_graph(
             )
         agent_descriptions = "\n".join(agent_descriptions_list)
         
+        # Load the supervisor routing instructions template.
         from prompts.routing_prompts import SUPERVISOR_LOOP_PROMPT
         supervisor_prompt = SUPERVISOR_LOOP_PROMPT.format(agent_descriptions=agent_descriptions)
         
         try:
+            # Bind JSON object configuration to the router LLM.
             router_llm_json = router_llm.bind(response_format={"type": "json_object"})
-            # Append history messages after System instruction prompt
+            # Assemble messages, placing instructions first.
             messages = [SystemMessage(content=supervisor_prompt)] + list(state["messages"])
+            # Invoke the model.
             routing_response = await router_llm_json.ainvoke(messages)
             content = routing_response.content.strip()
             
-            # Clean markdown code fences
+            # Clean markdown code fences if generated by the LLM.
             if content.startswith("```json"):
                 content = content[7:]
             if content.endswith("```"):
                 content = content[:-3]
             content = content.strip()
             
+            # Parse the JSON response.
             parsed = json.loads(content)
             next_step = parsed.get("next", "FINISH").strip()
         except Exception as e:
+            # Fall back to ending the execution loop on errors.
             print(f"Routing failed: {e}")
             next_step = "FINISH"
             
+        # Match the next_step ID with the list of sub-agents.
         chosen_agent = next((sa for sa in sub_agents if str(sa[0]).lower() == next_step.lower()), None)
         
         if chosen_agent:
-            # If the chosen agent is the master agent, we still run it, but label it with gateway_name
+            # Route to the matching sub-agent.
             name = gateway_name if str(chosen_agent[0]).lower() == master_agent_id.lower() else chosen_agent[1]
             return {
                 "active_agent_id": chosen_agent[0], 
@@ -94,6 +172,7 @@ def build_multi_agent_graph(
                 "next_agent": chosen_agent[0]
             }
             
+        # If routing back to the master coordinator.
         if next_step.lower() == master_agent_id.lower():
             return {
                 "active_agent_id": master_agent_id,
@@ -101,30 +180,48 @@ def build_multi_agent_graph(
                 "next_agent": master_agent_id
             }
             
+        # Default fallback to exit.
         return {
             "active_agent_id": master_agent_id, 
             "routed_agent_name": gateway_name,
             "next_agent": "FINISH"
         }
 
-    # 2. Agent Execution Node
-    async def agent_node(state: GraphState):
+    # ------------------------------------------
+    # 2. AGENT EXECUTION NODE
+    # ------------------------------------------
+    async def agent_node(state: GraphState) -> dict:
+        """
+        Executes a specialist agent's generation step.
+
+        Parameters:
+            state (GraphState): Current conversation state.
+
+        Returns:
+            dict: Updated message history containing the agent's response.
+        """
+        # Determine the target agent.
         active_agent_id = state.get("active_agent_id") or master_agent_id
         
-        # Dynamically fetch LLM and tools for the chosen active agent
+        # Load the configuration settings for the target agent.
         llm, sys_prompt, embed_model, web_search_enabled = await llm_factory(active_agent_id)
+        # Load tools for the target agent.
         tools = tools_factory(active_agent_id, embed_model, web_search_enabled, llm)
         
+        # Bind tools to the model if configured.
         if tools:
             llm_with_tools = llm.bind_tools(tools)
         else:
             llm_with_tools = llm
             
+        # Filter out system messages from history to append the active agent's system prompt.
         msgs = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
+        # Inject the active system prompt at the beginning of the list.
         msgs.insert(0, SystemMessage(content=sys_prompt))
             
         try:
             response = None
+            # Stream the generation response.
             async for chunk in llm_with_tools.astream(msgs):
                 if response is None:
                     response = chunk
@@ -132,54 +229,87 @@ def build_multi_agent_graph(
                     response += chunk
             print("AGENT RESPONSE:", response)
         except Exception as e:
+            # Error Recovery Layer: If token/context limit errors are caught (e.g. HTTP 413 Payload Too Large),
+            # truncate message contents and retry generation.
             err_str = str(e).lower()
             if "413" in err_str or "rate_limit" in err_str or "too large" in err_str or "failed to call a function" in err_str or "tool" in err_str or "400" in err_str:
                 print(f"API/Rate Limit Error caught: {e}. Retrying with payload truncation...")
                 truncated_msgs = []
                 for m in msgs:
+                    # Truncate content to 2000 characters if it exceeds the limit.
                     if hasattr(m, "content") and isinstance(m.content, str) and len(m.content) > 2000:
                         truncated_msgs.append(m.__class__(content=m.content[:2000] + "\n...[truncated for token limits]"))
                     else:
                         truncated_msgs.append(m)
                 response = None
+                # Retry generation using the truncated history.
                 async for chunk in llm.astream(truncated_msgs):
                     if response is None:
                         response = chunk
                     else:
                         response += chunk
             else:
+                # Re-raise non-payload exceptions.
                 raise e
                 
         return {"messages": [response]}
 
-    # 3. Tool Execution Node
-    async def tool_node(state: GraphState):
+    # ------------------------------------------
+    # 3. TOOL EXECUTION NODE
+    # ------------------------------------------
+    async def tool_node(state: GraphState) -> dict:
+        """
+        Executes pending tool calls.
+
+        Parameters:
+            state (GraphState): Current conversation state.
+
+        Returns:
+            dict: Results of tool execution.
+        """
         active_agent_id = state.get("active_agent_id") or master_agent_id
         llm, _, embed_model, web_search_enabled = await llm_factory(active_agent_id)
+        # Fetch the tools.
         tools = tools_factory(active_agent_id, embed_model, web_search_enabled, llm)
         
+        # Initialize and invoke the prebuilt ToolNode executor.
         tool_executor = ToolNode(tools)
         return await tool_executor.ainvoke(state)
         
-    def router_edge(state: GraphState):
+    # ------------------------------------------
+    # CONDITIONAL TRANSITIONS & EDGES
+    # ------------------------------------------
+    def router_edge(state: GraphState) -> str:
+        """
+        Directs execution from the supervisor node.
+        """
         next_agent = state.get("next_agent")
         if not next_agent or next_agent == "FINISH":
             return END
         return "agent"
 
-    def agent_edge(state: GraphState):
+    def agent_edge(state: GraphState) -> str:
+        """
+        Directs execution after an agent generation step.
+        """
         last_message = state["messages"][-1]
+        # If the agent generated tool calls, transition to the tools node.
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             return "tools"
+        # Otherwise, return control to the supervisor.
         return "supervisor"
 
+    # Add execution nodes to the graph.
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", tool_node)
     
+    # Configure graph paths.
     workflow.set_entry_point("supervisor")
     workflow.add_conditional_edges("supervisor", router_edge, {"agent": "agent", END: END})
     workflow.add_conditional_edges("agent", agent_edge, {"tools": "tools", "supervisor": "supervisor"})
     workflow.add_edge("tools", "agent")
     
+    # Compile the workflow.
     return workflow.compile()
+

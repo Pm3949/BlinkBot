@@ -1,11 +1,35 @@
 """
-Data Validation Schemas (Pydantic Models).
-Responsibility: Defines the exact structure and types of data expected in API requests.
-FastAPI uses these models to automatically validate incoming JSON data. If a client 
-sends incorrect data types (e.g., a string instead of an int), FastAPI will automatically 
-reject the request with a helpful 422 Error before it ever reaches our route handlers.
+================================================================================
+DATA VALIDATION SCHEMAS & PYDANTIC CONSTRAINTS LAYER (schemas.py)
+================================================================================
+
+OVERVIEW & ARCHITECTURE:
+This module contains the global collection of data validation models for the application. 
+By utilizing Pydantic's `BaseModel` and Python's type hinting syntax, it enforces strong 
+typing constraints, validation, and sanitization on all incoming request payloads.
+
+KEY ARCHITECTURAL BENEFITS:
+1. Automated Request Validation:
+   FastAPI parses incoming HTTP JSON requests, compares them against these schemas, 
+   coerces data types where safe (e.g. converting a string "100" to an integer 100), 
+   and automatically rejects malformed formats with HTTP 422 Unprocessable Entity 
+   errors before route handlers are invoked.
+2. Self-Documenting OpenAPI/Swagger Specifications:
+   Pydantic models compile automatically into JSON Schema objects, generating 
+   interactive API documentations at `/docs`.
+3. Strict-Type Enums:
+   Uses Python's native `Enum` to enforce strict type categories for notifications 
+   (e.g., prohibiting random strings and restricting inputs to specific allowed categories).
+
+BEGINNER COMPONENTS BREAKDOWN:
+- BaseModel: The base class for defining data models in Pydantic. Any custom model 
+  must inherit from it.
+- Optional[T]: Indicates that a field can accept the declared type T or be omitted 
+  (meaning it can have a value of `None`).
+- Enum: A set of symbolic names bound to unique, constant values. Useful for defining 
+  a strict list of options.
 """
-# server-python/schemas.py
+
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 from enum import Enum
@@ -15,39 +39,74 @@ from enum import Enum
 # ==========================================
 
 class ChatRequest(BaseModel):
-    """Schema for a standard internal chat with an agent."""
-    agent_id: Optional[str] = None
-    message: Optional[str] = None
-    # History is a list of dictionaries (e.g., [{"role": "user", "content": "hi"}])
-    history: Optional[List[Dict[str, str]]] = []
-    language: Optional[str] = None
+    """
+    Data validation schema for standard chat queries.
+    """
+    agent_id: Optional[str] = None # UUID of the target agent executing the response.
+    message: Optional[str] = None # The user query text.
+    # List of past chat message logs represented as dictionaries.
+    # Example format: [{"role": "user", "content": "Hello!"}]
+    history: Optional[List[Dict[str, str]]] = [] 
+    language: Optional[str] = None # Target language ISO code (e.g., 'en', 'es') for translator logic.
+
 
 class WidgetChatRequest(BaseModel):
-    """Schema for a chat request coming from an embedded public website widget."""
-    chatbot_id: str
-    message: str
-    history: Optional[List[Dict[str, str]]] = []
-    language: Optional[str] = None
+    """
+    Data validation schema for requests initiated from public iframe widgets.
+    """
+    chatbot_id: str # UUID of the backing chatbot configuration block.
+    message: str # The user message string.
+    history: Optional[List[Dict[str, str]]] = [] # Session conversation logs.
+    language: Optional[str] = None # Target translation language code.
+
 
 class URLRequest(BaseModel):
-    """Schema for requesting ingestion of a specific webpage URL by an agent."""
-    agent_id: str
-    url: str
+    """
+    Data validation schema for triggering scraper ingestion on web page URLs.
+    """
+    agent_id: str # UUID of the target agent to link the scraped knowledge to.
+    url: str # Web URL string to scrape.
+
 
 class ConnectorRequest(BaseModel):
-    """Schema for simulating a data connection sync (e.g. Google Drive, Slack) for an agent."""
-    agent_id: str
-    connector_id: str
+    """
+    Data validation schema for syncing data sources (like Google Drive).
+    """
+    agent_id: str # Target agent UUID.
+    connector_id: str # Unique identifier for the third-party provider integration block.
+
 
 # ==========================================
 # BILLING & SUBSCRIPTION SCHEMAS
 # ==========================================
 
 class CheckoutRequest(BaseModel):
-    """Initial request to start a checkout process."""
+    """
+    Data validation schema for initiating a subscription checkout.
+    """
+    plan_tier: str # Name of the tier (e.g., 'starter', 'professional').
+    billing_cycle: str # Cycle duration ('monthly', 'yearly').
+    
+    # Defaults representing quotas for basic tier plans.
+    workspaces_limit: int = 1 # Maximum workspaces allowed.
+    agents_limit: int = 1 # Maximum RAG agents allowed.
+    agent_messages_limit: int = 500 # Maximum messages allowed per month.
+    storage_mb_limit: int = 100 # Maximum storage allocation in megabytes.
+    chatbots_limit: int = 1 # Maximum embeddable widgets allowed.
+    chatbot_messages_limit: int = 500 # Maximum widget responses allowed per month.
+
+
+class RazorpayVerifyRequest(BaseModel):
+    """
+    Data validation schema for verifying Razorpay checkouts.
+    """
     plan_tier: str
     billing_cycle: str
-    # Default limits for the basic plan
+    razorpay_order_id: str # ID generated by Razorpay during order creation.
+    razorpay_payment_id: str # Transaction ID generated upon successful checkout charge.
+    # HMAC-SHA256 signature calculated by Razorpay, verified to prevent payment spoofing.
+    razorpay_signature: str 
+    
     workspaces_limit: int = 1
     agents_limit: int = 1
     agent_messages_limit: int = 500
@@ -55,38 +114,30 @@ class CheckoutRequest(BaseModel):
     chatbots_limit: int = 1
     chatbot_messages_limit: int = 500
 
-class RazorpayVerifyRequest(BaseModel):
-    """Schema for verifying a completed Razorpay transaction webhook/callback."""
-    plan_tier: str
-    billing_cycle: str
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    # Signature is crucial to verify the payment wasn't spoofed by the client
-    razorpay_signature: str
-    workspaces_limit: int = 1
-    agents_limit: int = 1
-    agent_messages_limit: int = 500
-    storage_mb_limit: int = 100
-    chatbots_limit: int = 1
-    chatbot_messages_limit: int = 500
 
 # ==========================================
 # WORKSPACE SCHEMAS
 # ==========================================
 
 class WorkspaceCreate(BaseModel):
-    """Schema to create a new workspace."""
-    name: str
-    email: str
-    user_name: str
+    """
+    Data validation schema for creating a new workspace.
+    """
+    name: str # The name of the workspace.
+    email: str # Owner's email.
+    user_name: str # Owner's display name.
+
 
 class InviteRequest(BaseModel):
-    """Schema to invite a new team member to a workspace."""
-    email: str
-    role: str
-    workspace_id: str
-    workspace_name: str
-    invited_by_name: str
+    """
+    Data validation schema for workspace invitations.
+    """
+    email: str # Invitee's email.
+    role: str # Target workspace role ('admin', 'member').
+    workspace_id: str # UUID of the workspace.
+    workspace_name: str # Name of the workspace.
+    invited_by_name: str # Display name of the team member sending the invite.
+
 
 # ==========================================
 # NOTIFICATION SCHEMAS
@@ -94,65 +145,91 @@ class InviteRequest(BaseModel):
 
 class NotificationType(str, Enum):
     """
-    Enums strict-type the notification types. 
-    If a developer tries to create a notification of type 'user_banned', Pydantic will throw an error 
-    because it's not in this predefined list.
+    String Enum listing all valid notification types.
     """
-    feedback_new = "feedback_new"
-    feedback_in_progress = "feedback_in_progress"
-    feedback_resolved = "feedback_resolved"
-    feedback_reopened = "feedback_reopened"
+    feedback_new = "feedback_new" # Triggered when a user submits downvote feedback.
+    feedback_in_progress = "feedback_in_progress" # Triggered when a ticket is assigned.
+    feedback_resolved = "feedback_resolved" # Triggered when a ticket is marked resolved.
+    feedback_reopened = "feedback_reopened" # Triggered if verification fails.
     
-    document_uploaded = "document_uploaded"
-    document_processed_success = "document_processed_success"
-    document_processing_failed = "document_processing_failed"
-    document_deleted = "document_deleted"
+    document_uploaded = "document_uploaded" # Triggered when file upload initiates.
+    document_processed_success = "document_processed_success" # Triggered when parsing and embedding complete.
+    document_processing_failed = "document_processing_failed" # Triggered on ingestion error.
+    document_deleted = "document_deleted" # Triggered when a file is deleted.
     
-    agent_created = "agent_created"
-    agent_setting_updated = "agent_setting_updated"
-    agent_prompt_updated = "agent_prompt_updated"
+    agent_created = "agent_created" # Triggered when a new agent is created.
+    agent_setting_updated = "agent_setting_updated" # Triggered on configuration updates.
+    agent_prompt_updated = "agent_prompt_updated" # Triggered on system prompt modifications.
     
-    team_member_added = "team_member_added"
-    system_alert = "system_alert"
+    team_member_added = "team_member_added" # Triggered when a member joins.
+    system_alert = "system_alert" # System warnings.
+
 
 class NotificationCreate(BaseModel):
-    """Schema to create a new internal app notification."""
-    workspace_id: str
-    title: str
-    message: str
-    type: NotificationType
+    """
+    Data validation schema for generating a workspace notification.
+    """
+    workspace_id: str # UUID of the parent workspace to distribute the alert to.
+    title: str # Short header title of the notification alert.
+    message: str # Detailed description text.
+    type: NotificationType # Strict category code validator.
+
 
 # ==========================================
 # AUTHENTICATION SCHEMAS
 # ==========================================
 
 class UserRegister(BaseModel):
-    email: str
-    password: str
+    """
+    Data validation schema for user registration.
+    """
+    email: str # Email address.
+    password: str # Password.
+
 
 class VerifyOTP(BaseModel):
-    """Schema for verifying the One-Time Password sent to email during registration."""
+    """
+    Data validation schema for One-Time Password verification.
+    """
     email: str
-    otp: str
+    otp: str # OTP string sent to the email.
+
 
 class UserLogin(BaseModel):
+    """
+    Data validation schema for user login.
+    """
     email: str
     password: str
 
+
 class ForgotPassword(BaseModel):
+    """
+    Data validation schema for password reset requests.
+    """
     email: str
+
 
 class ResetPassword(BaseModel):
-    """Schema for the final step of password reset containing the secure token."""
+    """
+    Data validation schema for completing password resets.
+    """
     email: str
-    token: str
-    new_password: str
+    token: str # Reset verification token.
+    new_password: str # The new password.
+
 
 class Verify2FA(BaseModel):
-    """Schema for setting up Two-Factor Authentication."""
-    totp_code: str
+    """
+    Data validation schema for configuring 2FA.
+    """
+    totp_code: str # The 6-digit authenticator app code.
+
 
 class Login2FA(BaseModel):
-    """Schema for providing the authenticator code during login if 2FA is enabled."""
-    user_id: str
-    totp_code: str
+    """
+    Data validation schema for logging in with 2FA.
+    """
+    user_id: str # UUID of the user.
+    totp_code: str # The 6-digit verification code.
+

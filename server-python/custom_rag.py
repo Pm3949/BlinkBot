@@ -1,127 +1,240 @@
 """
-Core Engine for Retrieval-Augmented Generation (RAG).
-Responsibility: Handles the end-to-end pipeline of converting raw files/URLs into
-searchable vector embeddings, and provides a custom hybrid search mechanism to
-retrieve relevant document chunks based on a user's query.
+================================================================================
+CUSTOM RETRIEVAL-AUGMENTED GENERATION (RAG) PIPELINE CORE (custom_rag.py)
+================================================================================
+
+OVERVIEW & ARCHITECTURE:
+This module contains the primary engine logic that enables Retrieval-Augmented 
+Generation (RAG) capabilities in the RAGMate application without requiring external 
+large framework orchestrators (like LangChain). It handles the end-to-end processing:
+1. File & Data Ingestion:
+   - Parses document files (PDF, DOCX, CSV, TXT) and web page URLs.
+   - Implements optical character recognition (OCR) fallback routines for scanned PDFs or images.
+2. Context Segmentation (Chunking):
+   - Implements naive chunk splitting, sentence-based semantic chunk boundary segmentations, 
+     and paragraph layout grouping.
+3. Dense Vectorization & Embeddings:
+   - Manages and caches SentenceTransformer models to convert text chunks into float arrays.
+4. Advanced Retrieval Systems:
+   - Hybrid Search: Combines cosine vector similarity (dense retrieval) with basic lexical 
+     matching term frequencies (sparse retrieval).
+   - HyDE (Hypothetical Document Embeddings): Expands query keywords by using LLM completions 
+     to generate a hypothetical answer, then vectorize it.
+   - Cross-Encoder Reranking: Reranks documents against query contexts.
+   - MMR (Maximal Marginal Relevance): Deduplicates search contexts to return diverse result sets.
+
+BEGINNER ALGORITHM BREAKDOWN:
+- Vector Embeddings: An AI model converts text words into a list of numbers (e.g. 384 dimensions). 
+  This acts as coordinates in semantic space. The closeness of two vectors implies conceptual similarity.
+- Cosine Similarity: Calculated as `(A . B) / (||A|| * ||B||)`. It measures the angle between 
+  two vectors. If the angle is 0, they are semantically identical.
+- MMR: Selects items that are relevant to the query but are mathematically distinct from 
+  each other to ensure we don't present the same information repeatedly to the LLM.
 """
 
 import csv
-import fitz  # PyMuPDF for fast PDF parsing
+import fitz  # PyMuPDF library for fast PDF text and structural parsing
 import logging
 import math
 import re
 import requests
-import docx
+import docx  # python-docx library to parse Microsoft Word files
 import os
 from dotenv import load_dotenv
 from collections import Counter
 
-# from langchain_google_genai import GoogleGenerativeAIEmbeddings
+# Load SentenceTransformer dynamically.
 from sentence_transformers import SentenceTransformer
+# HTML scraping parsing utility.
 from bs4 import BeautifulSoup
 
+# Load local system environment variables.
 load_dotenv()
 
+# Initialize module-level logger.
 logger = logging.getLogger(__name__)
+# Configure standard logging levels.
 logging.basicConfig(level=logging.INFO)
 
 
 class CustomRAGEngine:
     """
-    Initializes the engine.
-    We use a `models_cache` dictionary to keep embedding models in memory.
-    Why? Loading a model (even a small one like MiniLM) takes time and CPU/RAM.
-    By caching it, subsequent vectorization requests are instantaneous.
+    Main engine class coordinating file loading, vector embeddings, indexing, and retrieval.
     """
 
     def __init__(self):
-        """Initializes caches and keeps startup logging lightweight."""
+        """
+        Initializes cached model dictionaries to keep models in memory.
+
+        Purpose:
+            Heavy models (like transformer architectures) take time to load from disk.
+            Initializing caches in memory avoids reloading overhead on subsequent operations.
+
+        Parameters:
+            None.
+
+        Returns:
+            None.
+        """
         logger.info("🧠 Initializing Custom RAG Engine (Zero LangChain)...")
+        # Cache dictionary mapping model names to loaded SentenceTransformer instances.
         self.models_cache = {}
+        # Cache dictionary mapping model names to loaded CrossEncoder instances.
         self.reranker_cache = {}
         logger.info("✅ Custom Engine Ready!")
 
-    def _get_model(self, model_name: str):
+    def _get_model(self, model_name: str) -> SentenceTransformer:
         """
-        Singleton-pattern-like loader for embedding models.
-        Dynamically loads a model from HuggingFace on the first run and returns it
-        from the cache on subsequent calls.
+        Retrieves or downloads a SentenceTransformer model.
+
+        Purpose:
+            Implements a singleton-like loader to reuse loaded embedding models.
+
+        Parameters:
+            model_name (str): The HuggingFace name of the model (e.g., 'all-MiniLM-L6-v2').
+
+        Returns:
+            SentenceTransformer: The loaded model instance.
+
+        Side Effects / State Changes:
+            - Downloads model files if missing.
+            - Adds the loaded model to the `models_cache` dictionary.
+
+        Errors / Exceptions:
+            - Raises RuntimeError if model loading fails.
         """
+        # If the model is not in the cache, load it.
         if model_name not in self.models_cache:
             logger.info("📥 Downloading/Loading embedding model: %s...", model_name)
             try:
+                # Load the model.
                 self.models_cache[model_name] = SentenceTransformer(model_name)
             except Exception as exc:
-                # Critical error handling: If the model fails to load, the entire RAG pipeline is broken.
+                # Raise a critical runtime error if the model fails to load.
                 raise RuntimeError(
                     f"Failed to load embedding model '{model_name}': {exc}"
                 ) from exc
+        # Return the cached model.
         return self.models_cache[model_name]
 
     def _get_reranker_model(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         """
-        Singleton-pattern-like loader for CrossEncoder reranker models.
+        Retrieves or downloads a CrossEncoder reranker model.
+
+        Purpose:
+            Implements a singleton-like loader to reuse loaded reranker models.
+
+        Parameters:
+            model_name (str): The HuggingFace name of the reranker model.
+
+        Returns:
+            CrossEncoder or None: The loaded reranker model, or None if loading fails.
+
+        Side Effects / State Changes:
+            - Downloads model files if missing.
+            - Adds the loaded model to the `reranker_cache` dictionary.
         """
+        # If the model is not in the cache, load it.
         if model_name not in self.reranker_cache:
             logger.info("📥 Downloading/Loading reranker model: %s...", model_name)
             try:
+                # Import CrossEncoder inside the method to reduce startup import overhead.
                 from sentence_transformers import CrossEncoder
                 self.reranker_cache[model_name] = CrossEncoder(model_name)
             except Exception as exc:
                 logger.error(f"Failed to load reranker model '{model_name}': {exc}")
                 return None
+        # Return the cached reranker model.
         return self.reranker_cache[model_name]
 
     # ==========================================
     # 1. RAW DATA EXTRACTION (PDF PARSING)
     # ==========================================
+
     def extract_text_from_pdf(self, file_path: str) -> str:
         """
-        Extracts raw text from PDFs.
-        Edge Case Handled: Some PDFs are just scanned images (no selectable text).
-        If PyMuPDF extracts less than 50 characters on a page, we assume it's a scan
-        and fallback to Optical Character Recognition (OCR) using Tesseract.
+        Extracts raw text from a PDF file.
+
+        Purpose:
+            Reads structural text from a PDF, falling back to OCR (pytesseract)
+            if a page contains mostly image data (like scanned printouts).
+
+        Parameters:
+            file_path (str): Local path to the PDF file.
+
+        Returns:
+            str: The extracted text.
+
+        Side Effects:
+            - Spawns OCR sub-processes if scanned images are encountered.
+
+        Errors / Exceptions:
+            - Logs failures and returns extracted structural text if OCR fails.
         """
         logger.info("Extracting text from PDF: %s", file_path)
+        # Open the PDF file using PyMuPDF.
         doc = fitz.open(file_path)
         full_text = ""
         try:
+            # Import OCR libraries inside the method to reduce startup import overhead.
             import pytesseract
             from PIL import Image
 
+            # Loop through each page in the PDF.
             for page in doc:
+                # Extract text using PyMuPDF's built-in parser.
                 text = page.get_text("text").strip()
-                # If page has very little text, it might be a scanned image. Fall back to OCR!
+                
+                # Scanned Page Fallback: If build-in extraction returns very little text (< 50 chars),
+                # assume it is a scanned image page and run OCR.
                 if len(text) < 50:
                     logger.info(
                         "Page %s has very little text. Attempting OCR fallback...",
                         page.number,
                     )
                     try:
-                        # Convert the PDF page to a high-res image (200 DPI is a sweet spot for OCR accuracy vs speed)
-                        pix = page.get_pixmap(dpi=200)  # Good DPI for OCR
+                        # Convert the page to an image. 200 DPI balances OCR speed and character recognition accuracy.
+                        pix = page.get_pixmap(dpi=200)
+                        # Load raw image bytes into PIL.
                         img = Image.frombytes(
                             "RGB", [pix.width, pix.height], pix.samples
                         )
-                        # Run the image through Tesseract to guess the text
+                        # Execute optical character recognition using Tesseract.
                         ocr_text = pytesseract.image_to_string(img)
+                        # Append the OCR results to the existing text.
                         text = text + "\n" + ocr_text
                     except Exception as e:
                         logger.error("OCR Failed for PDF page %s: %s", page.number, e)
+                # Accumulate the text.
                 full_text += text + "\n"
         finally:
+            # Ensure the document handle is closed.
             doc.close()
 
+        # Return the accumulated text.
         return full_text
 
     def extract_text_from_image(self, file_path: str) -> str:
-        """Runs Optical Character Recognition (OCR) on an image file."""
+        """
+        Extracts text from image files.
+
+        Parameters:
+            file_path (str): Local path to the image file.
+
+        Returns:
+            str: The extracted text.
+
+        Errors / Exceptions:
+            - Raises Exception if OCR fails.
+        """
         logger.info("Extracting text from Image via OCR: %s", file_path)
         try:
             import pytesseract
             from PIL import Image
 
+            # Open the image using PIL.
             img = Image.open(file_path)
+            # Run OCR on the image.
             return pytesseract.image_to_string(img)
         except Exception as e:
             logger.error("OCR Failed for image: %s", e)
@@ -129,14 +242,27 @@ class CustomRAGEngine:
 
     def extract_text_from_file(self, file_path: str, filename: str) -> str:
         """
-        The main router for file ingestion.
-        Determines the file type by its extension and delegates to the appropriate extractor.
+        Extracts text from files based on their extension.
+
+        Parameters:
+            file_path (str): Local path to the file.
+            filename (str): The filename, including the extension.
+
+        Returns:
+            str: The extracted text.
+
+        Errors / Exceptions:
+            - Raises ValueError if the format is unsupported or the filename is invalid.
+            - Raises Exception for file read errors.
         """
+        # Validate that the filename contains an extension.
         if not filename or "." not in filename:
             raise ValueError("Filename must include a valid extension")
+        # Extract the extension suffix in lowercase.
         ext = filename.split(".")[-1].lower()
 
         try:
+            # Route by file extension.
             if ext == "pdf":
                 return self.extract_text_from_pdf(file_path)
 
@@ -144,23 +270,27 @@ class CustomRAGEngine:
                 return self.extract_text_from_image(file_path)
 
             elif ext == "txt":
-                # Explicitly defining utf-8 encoding to prevent UnicodeDecodeErrors on special characters
+                # Open with UTF-8 encoding to prevent parsing failures on special characters.
                 with open(file_path, "r", encoding="utf-8") as f:
                     return f.read()
 
             elif ext == "docx":
+                # Open the Microsoft Word document.
                 doc = docx.Document(file_path)
+                # Combine paragraph texts, filtering out empty entries.
                 return "\n".join(
                     [para.text for para in doc.paragraphs if para.text.strip()]
                 )
 
             elif ext == "csv":
                 rows = []
+                # Open the CSV file.
                 with open(file_path, newline="", encoding="utf-8") as f:
                     reader = csv.reader(f)
                     for row in reader:
-                        # Combine CSV columns into a readable format for the LLM (e.g., "Col1 | Col2 | Col3")
+                        # Format columns (e.g. "Col1 | Col2 | Col3") to help the LLM identify fields.
                         rows.append(" | ".join(row))
+                # Return the combined CSV rows.
                 return "\n".join(rows)
 
             else:
@@ -170,30 +300,39 @@ class CustomRAGEngine:
 
     def extract_text_from_url(self, url: str) -> str:
         """
-        Fetches a webpage and extracts clean, readable text.
-        Data Flow: Raw HTML -> Remove scripts/styles -> Extract visible text -> Clean whitespace.
+        Scrapes text content from a web page URL.
+
+        Parameters:
+            url (str): The web page URL to scrape.
+
+        Returns:
+            str: Cleaned text content.
+
+        Errors / Exceptions:
+            - Raises Exception if request or scraping fails.
         """
         try:
             logger.info("🌐 Scraping URL: %s...", url)
-            # Edge Case Handled: Spoofing the User-Agent. Many sites block default Python `requests`
-            # to prevent bot scraping. Pretending to be a Chrome browser bypasses basic protections.
+            # Use a realistic User-Agent to bypass basic bot blockers.
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
+            # Fetch the page content. Timeout prevents hanging requests.
             response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()  # Throws an exception if we get a 404, 403, 500, etc.
+            # Raise an error if the request returned a non-200 status code.
+            response.raise_for_status()
 
-            # Parse the HTML content
+            # Parse the HTML content.
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # Remove tags that contain structural or behavioral data, not contextual content.
+            # Remove structural, script, footer, header, and navigation tags.
             for script in soup(["script", "style", "nav", "footer", "header"]):
                 script.decompose()
 
-            # Extract text, putting a space between HTML blocks to avoid words merging together
+            # Extract clean visible text, inserting spaces to prevent words from merging.
             text = soup.get_text(separator=" ", strip=True)
 
-            # Regex to collapse multiple spaces, tabs, or newlines into a single space
+            # Use regex to replace consecutive spaces, tabs, and newlines with a single space.
             clean_text = re.sub(r"\s+", " ", text)
             return clean_text
 
@@ -201,54 +340,61 @@ class CustomRAGEngine:
             raise Exception(f"Failed to extract text from URL: {str(e)}")
 
     # ==========================================
-    # 2. CUSTOM CHUNK ALGORITHM
+    # 2. CUSTOM CHUNK ALGORITHMS
     # ==========================================
-    # Why chunking? LLMs have a "context window" (token limit). We can't feed a 500-page book
-    # into the prompt at once. We must break it down into chunks, embed them, and retrieve only the relevant ones.
 
-    # ---------------------------------------------------------
-    # CHUNKING STRATEGY 1: NAIVE SLIDING WINDOW (Legacy)
-    # ---------------------------------------------------------
     def chunk_text_naive(
         self, text: str, chunk_size: int = 1000, overlap: int = 200
     ) -> list:
         """
-        Splits text purely by character count.
-        Pros: Fast and guarantees specific chunk sizes.
-        Cons: Might cut a sentence or word perfectly in half, losing semantic meaning.
-        The `overlap` ensures context isn't completely lost at the boundaries.
+        Splits text by character count with a sliding window.
+
+        Purpose:
+            Simple chunking algorithm.
+            Using an overlap preserves context at chunk boundaries.
+
+        Parameters:
+            text (str): Input text.
+            chunk_size (int): Max character count per chunk.
+            overlap (int): Overlap character count.
+
+        Returns:
+            list of str: Text chunks.
         """
         logger.info("Chunking text (Size: %s, Overlap: %s)...", chunk_size, overlap)
         chunks = []
         start = 0
         text_length = len(text)
 
+        # Loop through the text by chunk_size minus overlap.
         while start < text_length:
-            # Defining the end of the current chunk
             end = start + chunk_size
-
-            # Extract the substring
             chunk = text[start:end]
             chunks.append(chunk)
-
-            # Step forward, but overlap with the previous chunk to maintain boundary context
             start += chunk_size - overlap
 
+        # Filter out empty chunks and return.
         return [c for c in chunks if c]
 
-    # ---------------------------------------------------------
-    # CHUNKING STRATEGY 2: SENTENCE WINDOW (Semantic)
-    # ---------------------------------------------------------
     def chunk_text_sentence(
         self, text: str, sentences_per_chunk: int = 6, overlap: int = 2
     ) -> list:
         """
-        A much smarter approach. Groups full sentences together so context is preserved.
+        Splits text into chunks at sentence boundaries.
+
+        Purpose:
+            Groups complete sentences together, preserving semantic coherence.
+
+        Parameters:
+            text (str): Input text.
+            sentences_per_chunk (int): Number of sentences per chunk.
+            overlap (int): Number of overlapping sentences between chunks.
+
+        Returns:
+            list of str: Text chunks.
         """
-        # Regex Magic Explained:
-        # `(?<=[.!?])\s+(?=[A-Z])` splits on punctuation followed by space and a capital letter.
-        # `(?<!\bMr)` are Negative Lookbehinds. They prevent splitting on common abbreviations.
-        # Without this, "Mr. Smith went home." would split into ["Mr", "Smith went home."]
+        # Split text on punctuation followed by spaces and uppercase letters.
+        # Negative lookbehinds prevent splitting on abbreviations (e.g. 'Mr.').
         sentences = re.split(
             r"(?<!\bMr)(?<!\bDr)(?<!\bMs)(?<!\bMrs)(?<!\bProf)(?<=[.!?])\s+(?=[A-Z])",
             text,
@@ -257,43 +403,50 @@ class CustomRAGEngine:
 
         chunks = []
         i = 0
+        # Group sentences into chunks with a sliding window.
         while i < len(sentences):
-            # Join the next 'N' sentences together
             chunk = " ".join(sentences[i : i + sentences_per_chunk])
             chunks.append(chunk)
-            # Move forward, but keep 'overlap' number of sentences
             i += sentences_per_chunk - overlap
 
-        # Filter out tiny, useless chunks (less than 10 chars)
+        # Filter out very small chunks.
         return [c for c in chunks if len(c) > 10]
 
-    # ---------------------------------------------------------
-    # CHUNKING STRATEGY 3: PARAGRAPH / RECURSIVE
-    # ---------------------------------------------------------
     def chunk_text_paragraph(self, text: str, max_length: int = 1200) -> list:
         """
-        Splits text by natural paragraph breaks (\n\n), accumulating paragraphs until
-        the chunk hits a maximum character limit. Excellent for well-formatted documents.
+        Splits text on paragraph boundaries.
+
+        Purpose:
+            Keeps paragraphs together, combining consecutive paragraphs
+            until they hit a maximum character limit.
+
+        Parameters:
+            text (str): Input text.
+            max_length (int): Max character count per chunk.
+
+        Returns:
+            list of str: Text chunks.
         """
-        # Split the text into paragraphs (assuming double newline separates paragraphs)
+        # Split text on double newlines.
         paragraphs = text.split("\n\n")
         chunks = []
         current_chunk = ""
 
+        # Loop through paragraphs and combine them.
         for para in paragraphs:
             para = para.strip()
             if not para:
                 continue
-            # If adding this paragraph exceeds the limit, save the current chunk and start a new one.
+            # If adding this paragraph exceeds the limit, save the chunk and start a new one.
             if len(current_chunk) + len(para) > max_length and current_chunk:
                 chunks.append(current_chunk.strip())
                 current_chunk = para
             else:
+                # Add to the current chunk.
                 current_chunk += "\n\n" + para if current_chunk else para
 
-        # Don't forget to append the very last chunk!
+        # Append the last chunk if it contains data.
         if current_chunk:
-            # Accumulate text
             chunks.append(current_chunk.strip())
 
         return chunks
@@ -301,24 +454,24 @@ class CustomRAGEngine:
     # ==========================================
     # 3. DIRECT VECTORIZATION (EMBEDDINGS)
     # ==========================================
-    # ---------------------------------------------------------
-    # 1. VECTOR SEARCH (Meaning)
-    # ---------------------------------------------------------
+
     def vectorize(self, chunks: list, model_name: str = "all-MiniLM-L6-v2") -> list:
         """
-        Converts text chunks into dense mathematical vectors (arrays of floats).
-        These vectors capture the semantic meaning of the text. E.g., the vector for "Dog"
-        will be mathematically closer to "Puppy" than to "Car".
+        Converts text chunks into dense vector embeddings.
+
+        Parameters:
+            chunks (list of str): Input text chunks.
+            model_name (str): SentenceTransformer model name.
+
+        Returns:
+            list of list of float: Embeddings list.
         """
         logger.info("Generating vectors for %s chunks...", len(chunks))
-        # encode() returns a Numpy array. We convert it to a standard Python list of floats
-        # because databases like Supabase (pgvector) expect standard arrays/lists.
+        # Retrieve the embedding model.
         model = self._get_model(model_name)
+        # Generate embeddings and convert them to Python list of floats
+        # so databases like pgvector can process them.
         embeddings = model.encode(chunks).tolist()
-
-        # `model.encode()` returns a Numpy array natively.
-        # We must convert it to a standard Python list `.tolist()` because databases
-        # (like pgvector in Supabase) cannot process raw Numpy objects over API requests.
         return embeddings
 
     def hybrid_search(
@@ -331,40 +484,53 @@ class CustomRAGEngine:
         top_k: int = 5,
     ) -> list:
         """
-        Advanced retrieval: Combines Semantic Search (Vector Math) with Lexical Search (Keyword Matching).
-        Why? Semantic search is great for concepts ("capital of France"), but bad for exact matches
-        (like order numbers or specific names e.g., "Invoice #12345"). Hybrid search solves this.
+        Combines Semantic Search with Lexical (Keyword) Search.
 
-        `alpha` controls the weight. alpha=0.5 means 50% semantic, 50% keyword.
+        Purpose:
+            Implements hybrid retrieval. Semantic search matches concepts,
+            while lexical search matches exact keywords.
+            `alpha` controls weight: alpha=1.0 is purely semantic, alpha=0.0 is purely keyword.
+
+        Parameters:
+            query_text (str): Query string.
+            query_vector (list of float): Vector embedding of the query.
+            document_texts (list of str): Text content of documents.
+            document_vectors (list of list of float): Vector embeddings of documents.
+            alpha (float): Weights parameter (0.0 to 1.0).
+            top_k (int): Number of results to return.
+
+        Returns:
+            list of dict: Matching indices and scores sorted by relevance.
         """
         import numpy as np
 
+        # Handle empty document list.
         if not document_vectors:
             return []
 
         # --- Part 1: Semantic Scores (Cosine Similarity) ---
+        # Convert query and document vectors to numpy arrays.
         q_vec = np.array(query_vector)
-        # Calculate the magnitude (length) of the query vector
-        q_norm = np.linalg.norm(q_vec)
-
         doc_vecs = np.array(document_vectors)
-        # Calculate magnitudes for all document vectors at once (axis=1)
+        
+        # Calculate magnitudes (norms).
+        q_norm = np.linalg.norm(q_vec)
         doc_norms = np.linalg.norm(doc_vecs, axis=1)
 
-        # Edge Case Handled: Avoid Division by Zero.
-        # If an empty string was embedded, its norm might be 0. We change 0 to a tiny number (1e-10).
+        # Avoid division by zero: replace 0 norms with a tiny float.
         doc_norms[doc_norms == 0] = 1e-10
         q_norm = q_norm if q_norm != 0 else 1e-10
 
-        # Dot product calculates the angle between the query vector and doc vectors.
+        # Calculate dot products.
         dot_products = np.dot(doc_vecs, q_vec)
-        # Cosine Similarity formula: (A . B) / (||A|| * ||B||)
+        # Cosine similarity formula: (A . B) / (||A|| * ||B||).
         semantic_scores = dot_products / (doc_norms * q_norm)
 
-        # --- Part 2: Keyword Scores (Simple Term Frequency) ---
-        # Very basic lexical search: Count how many query words exist in the document chunk.
+        # --- Part 2: Keyword Scores (Term Frequency) ---
+        # Extract keywords from the query.
         query_words = set(re.findall(r"\w+", query_text.lower()))
         keyword_scores = []
+        # Count matching query words in each document chunk.
         for doc in document_texts:
             doc_lower = doc.lower()
             score = sum(1 for w in query_words if w in doc_lower)
@@ -372,19 +538,19 @@ class CustomRAGEngine:
 
         keyword_scores = np.array(keyword_scores)
         max_kw = np.max(keyword_scores)
-        # Normalize keyword scores to be between 0 and 1, so they can be mathematically added to semantic scores.
+        # Normalize keyword scores to scale between 0.0 and 1.0.
         if max_kw > 0:
             keyword_scores = keyword_scores / max_kw
 
         # --- Part 3: Combine Scores ---
-        # Weighted sum of both algorithms.
+        # Weighted sum of semantic and keyword scores.
         final_scores = (alpha * semantic_scores) + ((1 - alpha) * keyword_scores)
 
-        # --- Part 4: Sort and return top K ---
-        # argsort() sorts ascending. We reverse it `[::-1]` to get highest scores first,
-        # then take the top `top_k` results.
+        # --- Part 4: Sort and Return Top K ---
+        # Get indices sorted by score in descending order.
         top_indices = np.argsort(final_scores)[::-1][:top_k]
 
+        # Build and return results list.
         results = []
         for idx in top_indices:
             results.append({"chunk_index": int(idx), "score": float(final_scores[idx])})
@@ -393,49 +559,65 @@ class CustomRAGEngine:
 
     def rerank_documents(self, query: str, documents: list, top_k: int = 5, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list:
         """
-        Re-ranks a list of documents against a query using a CrossEncoder model.
-        Expects `documents` to be a list of tuples or lists where the first element is the document text.
-        Returns the top_k ranked documents.
+        Reranks document chunks against a query using a CrossEncoder model.
+
+        Parameters:
+            query (str): Query string.
+            documents (list): Candidate documents (tuples/lists with text content at index 0).
+            top_k (int): Number of results to return.
+            model_name (str): CrossEncoder model name.
+
+        Returns:
+            list: Reranked documents.
         """
         if not documents:
             return []
             
+        # Retrieve the CrossEncoder model.
         reranker = self._get_reranker_model(model_name)
+        # Fallback if the model fails to load.
         if not reranker:
-            # Fallback to the original order if reranker fails to load
             logger.warning("Reranker failed to load, falling back to original search order.")
             return documents[:top_k]
             
         logger.info(f"Reranking {len(documents)} chunks...")
         
-        # Prepare inputs for the CrossEncoder: list of [query, doc_text] pairs
-        # We assume doc[0] contains the text. We decrypt it if necessary or assume it's raw text.
-        # However, the decryption happens *after* retrieval in chat_handler. 
-        # But wait! We need to decrypt the text BEFORE reranking, otherwise the CrossEncoder sees gibberish.
+        # Import decrypt_key to decrypt documents before scoring them.
         from core.security import decrypt_key
         
         pairs = []
+        # Prepare inputs for the CrossEncoder: [query, doc_text] pairs.
         for doc in documents:
             decrypted_text = decrypt_key(doc[0]) or doc[0]
             pairs.append([query, decrypted_text])
             
-        # Score pairs
+        # Generate relevance scores.
         scores = reranker.predict(pairs)
         
-        # Combine documents with their new scores
+        # Pair documents with their scores.
         doc_scores = list(zip(documents, scores))
         
-        # Sort by score descending
+        # Sort documents by score in descending order.
         doc_scores.sort(key=lambda x: x[1], reverse=True)
         
-        # Return the original document structures for the top_k
+        # Return the sorted documents list.
         return [doc for doc, score in doc_scores[:top_k]]
 
     def generate_hyde_query(self, query: str, llm) -> str:
         """
-        Generates a Hypothetical Document Embeddings (HyDE) query.
-        It uses the LLM to write a hypothetical answer to the query, and then returns
-        the original query combined with the hypothetical answer to be vectorized.
+        Generates a Hypothetical Document Embeddings (HyDE) query expansion.
+
+        Purpose:
+            Uses an LLM to generate a hypothetical answer to the query.
+            Vectorizing this answer can yield better retrieval results
+            because it matches the semantic structure of document answers.
+
+        Parameters:
+            query (str): Original query.
+            llm: Large Language Model instance.
+
+        Returns:
+            str: Original query appended with the hypothetical response.
         """
         logger.info("Generating HyDE query expansion...")
         prompt = f"""You are an expert answering questions. 
@@ -444,13 +626,15 @@ Please write a short, hypothetical answer to the following question. Do not incl
 Question: {query}
 Answer:"""
         try:
+            # Call the LLM to generate the hypothetical answer.
             response = llm.invoke(prompt)
             hypothetical_answer = response.content.strip()
-            # Combine the original query with the hypothetical answer
+            # Combine the original query with the generated response.
             return f"{query}\n{hypothetical_answer}"
         except Exception as e:
             logger.error(f"HyDE generation failed: {e}")
-            return query # Fallback to original query
+            # Fall back to the original query if LLM generation fails.
+            return query
 
     def apply_mmr(
         self,
@@ -461,9 +645,22 @@ Answer:"""
         model_name: str = "all-MiniLM-L6-v2",
     ) -> list:
         """
-        Maximal Marginal Relevance (MMR)
-        Balances relevance to the query with diversity among the selected documents.
-        `documents` is expected to be a list of tuples/lists where doc[0] is the text content.
+        Applies Maximal Marginal Relevance (MMR) to select diverse results.
+
+        Purpose:
+            Balances query relevance (similarity to query) with diversity
+            (dissimilarity from already selected documents).
+            This prevents returning repetitive chunks.
+
+        Parameters:
+            query (str): Query string.
+            documents (list): Candidate documents (tuples/lists with text content at index 0).
+            top_k (int): Number of results to return.
+            lambda_mult (float): Relevance weight parameter (0.0 to 1.0).
+            model_name (str): SentenceTransformer model name.
+
+        Returns:
+            list: Diverse subset of documents.
         """
         import numpy as np
         from core.security import decrypt_key
@@ -471,28 +668,28 @@ Answer:"""
         if not documents:
             return []
 
-        # If there are fewer docs than top_k, just return them
+        # If candidates count is less than top_k, no diversity filtering is needed.
         if len(documents) <= top_k:
             return documents
 
         logger.info(f"Applying MMR to {len(documents)} candidate chunks...")
 
-        # 1. Extract and decrypt text
+        # 1. Extract and decrypt candidate text.
         texts = [decrypt_key(doc[0]) or doc[0] for doc in documents]
 
-        # 2. Get embeddings for query and all candidates
+        # 2. Vectorize the query and all candidates.
         query_embedding = np.array(self.vectorize([query], model_name=model_name)[0])
         doc_embeddings = np.array(self.vectorize(texts, model_name=model_name))
 
-        # Calculate Query-Document Similarities
+        # Calculate magnitudes.
         q_norm = np.linalg.norm(query_embedding) or 1e-10
         doc_norms = np.linalg.norm(doc_embeddings, axis=1)
         doc_norms[doc_norms == 0] = 1e-10
 
+        # Calculate Query-Document similarities.
         sim_to_query = np.dot(doc_embeddings, query_embedding) / (doc_norms * q_norm)
 
-        # Calculate Document-Document Similarities
-        # (N, D) dot (D, N) -> (N, N)
+        # Calculate Document-Document similarity matrix.
         sim_matrix = np.dot(doc_embeddings, doc_embeddings.T)
         norm_matrix = np.outer(doc_norms, doc_norms)
         sim_matrix = sim_matrix / norm_matrix
@@ -500,33 +697,36 @@ Answer:"""
         selected_indices = []
         unselected_indices = list(range(len(documents)))
 
-        # 3. Iteratively select documents
+        # 3. Iteratively select documents to maximize MMR.
         while len(selected_indices) < top_k and unselected_indices:
             if not selected_indices:
-                # First document is simply the one with highest relevance to query
+                # The first document selected is the one most relevant to the query.
                 best_idx = unselected_indices[np.argmax(sim_to_query[unselected_indices])]
             else:
-                # For subsequent documents, calculate MMR score
                 best_idx = None
                 max_mmr_score = -float("inf")
 
+                # Calculate the MMR score for each unselected document.
                 for idx in unselected_indices:
-                    # Relevance to query
+                    # Relevance value.
                     relevance = sim_to_query[idx]
                     
-                    # Maximum similarity to any ALREADY selected document
+                    # Redundancy value (max similarity to any already selected document).
                     redundancy = np.max(sim_matrix[idx, selected_indices])
                     
-                    # MMR Formula
+                    # MMR Formula: lambda * relevance - (1 - lambda) * redundancy.
                     mmr_score = lambda_mult * relevance - (1 - lambda_mult) * redundancy
                     
                     if mmr_score > max_mmr_score:
                         max_mmr_score = mmr_score
                         best_idx = idx
 
+            # Add selected index and remove from candidate pool.
             selected_indices.append(best_idx)
             unselected_indices.remove(best_idx)
 
+        # Return documents at selected indices.
         return [documents[i] for i in selected_indices]
+
 
 
