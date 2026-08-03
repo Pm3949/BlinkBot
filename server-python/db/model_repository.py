@@ -121,7 +121,7 @@ async def init_ai_models_table():
         # Add column for custom model API key storage.
         await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS api_key TEXT;")
         # Link custom models to the creator's user account with CASCADE deletion rules.
-        await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;")
+        await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.users(id) ON DELETE CASCADE;")
         # Drop unique constraints on model_id to allow different users to register the same model_id.
         await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models DROP CONSTRAINT IF EXISTS ai_models_model_id_key;")
 

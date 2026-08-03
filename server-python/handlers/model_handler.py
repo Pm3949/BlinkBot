@@ -381,7 +381,19 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
             # Fall back to testing basic text completion
             response = await llm.ainvoke([HumanMessage(content="Respond with: OK")])
             
-        text_out = getattr(response, "content", str(response)).strip()
+        content = getattr(response, "content", str(response))
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    parts.append(part["text"])
+                elif isinstance(part, str):
+                    parts.append(part)
+                else:
+                    parts.append(str(part))
+            text_out = "".join(parts).strip()
+        else:
+            text_out = str(content).strip()
         
         capability_msg = " (Supports Tool & RAG Execution)" if has_tool_support else " (Text Only - Limited Tool Support)"
         return {

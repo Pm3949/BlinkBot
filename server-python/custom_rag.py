@@ -628,7 +628,19 @@ Answer:"""
         try:
             # Call the LLM to generate the hypothetical answer.
             response = llm.invoke(prompt)
-            hypothetical_answer = response.content.strip()
+            content = response.content
+            if isinstance(content, list):
+                parts = []
+                for part in content:
+                    if isinstance(part, dict) and "text" in part:
+                        parts.append(part["text"])
+                    elif isinstance(part, str):
+                        parts.append(part)
+                    else:
+                        parts.append(str(part))
+                hypothetical_answer = "".join(parts).strip()
+            else:
+                hypothetical_answer = str(content).strip()
             # Combine the original query with the generated response.
             return f"{query}\n{hypothetical_answer}"
         except Exception as e:

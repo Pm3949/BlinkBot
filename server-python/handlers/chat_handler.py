@@ -53,6 +53,19 @@ from utils.logger import get_department_logger
 # Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
 
+def _get_content_string(content) -> str:
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and "text" in part:
+                parts.append(part["text"])
+            elif isinstance(part, str):
+                parts.append(part)
+            else:
+                parts.append(str(part))
+        return "".join(parts)
+    return str(content) if content is not None else ""
+
 def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs):
     """
     Spins up a customized LangChain LLM instance based on selected parameters.
@@ -468,13 +481,25 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 logger.info("Sending routing prompt to supervisor/router LLM...")
                                 router_llm_json = router_llm.bind(response_format={"type": "json_object"})
                                 routing_response = router_llm_json.invoke(routing_prompt)
-                                content = routing_response.content.strip()
+                                content = routing_response.content
+                                if isinstance(content, list):
+                                    parts = []
+                                    for part in content:
+                                        if isinstance(part, dict) and "text" in part:
+                                            parts.append(part["text"])
+                                        elif isinstance(part, str):
+                                            parts.append(part)
+                                        else:
+                                            parts.append(str(part))
+                                    content = "".join(parts).strip()
+                                else:
+                                    content = str(content).strip()
                                 
-                                if content.startswith("```json"):
-                                    content = content[7:]
-                                if content.endswith("```"):
-                                    content = content[:-3]
-                                content = content.strip()
+                                # Extract JSON block cleanly by finding the first '{' and last '}'
+                                first_brace = content.find("{")
+                                last_brace = content.rfind("}")
+                                if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                                    content = content[first_brace:last_brace + 1]
                                 
                                 try:
                                     parsed = json.loads(content)
@@ -744,10 +769,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         kind = event["event"]
                         
                         if kind == "on_chat_model_stream":
+                            # Skip streaming chunks from the supervisor model
+                            if "supervisor" in event.get("tags", []) or event.get("metadata", {}).get("langgraph_node") == "supervisor":
+                                continue
                             chunk = event["data"]["chunk"]
                             if chunk.content:
+                                chunk_str = _get_content_string(chunk.content)
                                 await agent_connection_manager.send_json(
-                                    {"type": "text_chunk", "content": chunk.content}, client_id
+                                    {"type": "text_chunk", "content": chunk_str}, client_id
                                 )
                                 
                         elif kind == "on_tool_start":
@@ -996,9 +1025,10 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                             logger.info("Streaming model response...")
                             for chunk in llm.stream(prompt):
                                 if chunk.content:
-                                    full_response += chunk.content
+                                    chunk_str = _get_content_string(chunk.content)
+                                    full_response += chunk_str
                                     await agent_connection_manager.send_json(
-                                        {"type": "text_chunk", "content": chunk.content}, client_id
+                                        {"type": "text_chunk", "content": chunk_str}, client_id
                                     )
                             await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         except Exception as exc:
@@ -1122,14 +1152,25 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                 try:
                     router_llm_json = router_llm.bind(response_format={"type": "json_object"})
                     routing_response = router_llm_json.invoke(routing_prompt)
-                    content = routing_response.content.strip()
+                    content = routing_response.content
+                    if isinstance(content, list):
+                        parts = []
+                        for part in content:
+                            if isinstance(part, dict) and "text" in part:
+                                parts.append(part["text"])
+                            elif isinstance(part, str):
+                                parts.append(part)
+                            else:
+                                parts.append(str(part))
+                        content = "".join(parts).strip()
+                    else:
+                        content = str(content).strip()
 
-                    # Strip stray markdown fences
-                    if content.startswith("```json"):
-                        content = content[7:]
-                    if content.endswith("```"):
-                        content = content[:-3]
-                    content = content.strip()
+                    # Extract JSON block cleanly by finding the first '{' and last '}'
+                    first_brace = content.find("{")
+                    last_brace = content.rfind("}")
+                    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                        content = content[first_brace:last_brace + 1]
 
                     try:
                         parsed = json.loads(content)
@@ -1272,8 +1313,9 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                 logger.info("Streaming model response...")
                 for chunk in llm.stream(prompt):
                     if chunk.content:
-                        full_response += chunk.content
-                        yield chunk.content
+                        chunk_str = _get_content_string(chunk.content)
+                        full_response += chunk_str
+                        yield chunk_str
 
                 try:
                     logger.debug("Saving generated response message in history repository...")
