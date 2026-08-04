@@ -392,3 +392,70 @@ async def create_project_tool(project_id: str, payload: ToolCreate, current_user
     # Create the tool using the handler.
     return await handle_create_project_tool(project_id, payload.name, payload.config)
 
+
+class PromptOptimizeRequest(BaseModel):
+    draft_prompt: str
+    llm_provider: Optional[str] = "groq"
+    llm_model: Optional[str] = "llama-3.3-70b-versatile"
+    custom_api_key: Optional[str] = ""
+
+
+@router.post("/api/agents/optimize-prompt")
+async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Optimizes a draft system prompt using an LLM.
+    """
+    logger.info("Starting system prompt optimization...")
+    from handlers.chat_handler import create_resilient_llm_instance
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    from prompts.optimizer_prompts import PROMPT_OPTIMIZER_SYSTEM_INSTRUCTION
+    system_instruction = PROMPT_OPTIMIZER_SYSTEM_INSTRUCTION
+
+    try:
+        # Create LLM instance
+        llm = await create_resilient_llm_instance(
+            provider=payload.llm_provider,
+            model_name=payload.llm_model,
+            api_key=payload.custom_api_key or None,
+            user_id=current_user["sub"]
+        )
+
+        messages = [
+            SystemMessage(content=system_instruction),
+            HumanMessage(content=f"Draft Prompt: {payload.draft_prompt}")
+        ]
+
+        response = await llm.ainvoke(messages)
+        content = response.content
+
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    parts.append(part["text"])
+                elif isinstance(part, str):
+                    parts.append(part)
+                else:
+                    parts.append(str(part))
+            content = "".join(parts)
+        elif isinstance(content, dict):
+            content = content.get("text", str(content))
+
+        optimized_text = content.strip()
+
+        # Clean code block indicators if model generated them
+        if optimized_text.startswith("```"):
+            lines = optimized_text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            optimized_text = "\n".join(lines).strip()
+
+        return {"optimized_prompt": optimized_text}
+    except Exception as e:
+        logger.error(f"Error optimizing prompt: {e}", exc_info=True)
+        return {"optimized_prompt": payload.draft_prompt}
+
+

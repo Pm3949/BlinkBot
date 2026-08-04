@@ -284,6 +284,35 @@ export default function AgentSettingsPage() {
 
   const { data: globalConnections = [] } = useProjectTools(agent?.project_id);
   const [activeTab, setActiveTab] = useState("identity");
+  const [isOptimizing, setIsOptimizing] = useState(false);
+
+  const handleOptimizePrompt = async () => {
+    if (!formData.system_prompt.trim()) {
+      toast.error("Please enter a draft prompt to optimize.");
+      return;
+    }
+    setIsOptimizing(true);
+    try {
+      const response = await fetch(`${API_URL}/api/agents/optimize-prompt`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          draft_prompt: formData.system_prompt,
+          llm_provider: formData.provider,
+          llm_model: formData.model,
+          custom_api_key: formData.api_key || ""
+        })
+      });
+      if (!response.ok) throw new Error("Failed to optimize prompt");
+      const data = await response.json();
+      updateField("system_prompt", data.optimized_prompt);
+      toast.success("Prompt optimized successfully!");
+    } catch (err) {
+      toast.error("Failed to optimize prompt. Please try again.");
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     name: agent?.name || "",
@@ -739,7 +768,27 @@ export default function AgentSettingsPage() {
 
                   <div className="space-y-5 bg-card p-6 rounded-2xl border border-border shadow-sm">
                     <div>
-                      <label className="block text-sm font-semibold mb-1">System Prompt</label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-semibold">System Prompt</label>
+                        <button
+                          type="button"
+                          onClick={handleOptimizePrompt}
+                          disabled={isOptimizing}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all"
+                        >
+                          {isOptimizing ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Optimizing...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Optimize Prompt
+                            </>
+                          )}
+                        </button>
+                      </div>
                       <p className="text-[13px] text-muted-foreground mb-3">The core instructions, personality, and rules for this agent.</p>
                       <textarea
                         value={formData.system_prompt}

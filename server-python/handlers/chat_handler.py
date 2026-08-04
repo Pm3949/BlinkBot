@@ -480,7 +480,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             try:
                                 logger.info("Sending routing prompt to supervisor/router LLM...")
                                 router_llm_json = router_llm.bind(response_format={"type": "json_object"})
-                                routing_response = router_llm_json.invoke(routing_prompt)
+                                routing_response = await router_llm_json.ainvoke(routing_prompt)
                                 content = routing_response.content
                                 if isinstance(content, list):
                                     parts = []
@@ -568,6 +568,16 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         )
                         continue
 
+                    # Preprocess user query using Intent Analyzer & Query Optimizer
+                    from utils.intent_analyzer import analyze_and_optimize_query
+                    temp_llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
+                    analysis = await analyze_and_optimize_query(message, temp_llm)
+                    
+                    logger.info(f"Intent Analyzer Result - Intent: {analysis['intent']}, Sentiment: {analysis['sentiment']}")
+                    logger.info(f"Query Optimizer expanded query: '{message}' -> '{analysis['optimized_query']}'")
+                    
+                    optimized_message = analysis["optimized_query"]
+
                     # 3. LangGraph Multi-Agent Setup
                     logger.debug("Setting up LangGraph multi-agent orchestrator...")
                     from graph_orchestrator import build_multi_agent_graph
@@ -599,6 +609,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             "FOR ANY DOMAIN, TECHNICAL, DOCUMENT, OR KNOWLEDGE QUERY, YOU MUST CALL search_knowledge_base FIRST BEFORE ANSWERING.\n"
                             "DO NOT ANSWER FROM GENERAL MEMORY WITHOUT CALLING search_knowledge_base FIRST.\n\n"
                         )
+                        if analysis.get("sentiment") == "frustrated":
+                            sys_prompt += "\n\n[SYSTEM NOTE: The user is currently frustrated. Adopt an extremely empathetic, helpful, and apologetic tone, and prioritize offering escalation options.]"
                         formatted_prompt = header_instruction + sys_prompt
                         if out_fmt:
                             formatted_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{out_fmt}"
@@ -629,7 +641,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         async def search_knowledge_base(query: str) -> str:
                             """Search the workspace database / RAG knowledge base for uploaded documents, files, and domain information. ALWAYS invoke this tool first before answering domain or factual questions."""
                             logger.info(f"🔍 Knowledge base search triggered for query: '{query}'")
-                            hyde_query = rag_engine.generate_hyde_query(query, llm_inst)
+                            hyde_query = await rag_engine.generate_hyde_query(query, llm_inst)
                             logger.debug(f"Generated HyDE query: '{hyde_query}'")
                             q_vec = rag_engine.vectorize([hyde_query], model_name=emb_model)[0]
                             
@@ -759,7 +771,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             msgs.append(HumanMessage(content=msg.get("content", "")))
                         else:
                             msgs.append(AIMessage(content=msg.get("content", "")))
-                    msgs.append(HumanMessage(content=message))
+                    msgs.append(HumanMessage(content=optimized_message))
                     
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
@@ -945,8 +957,19 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     logger.debug("Creating resilient LLM instance...")
                     llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
+                    # Preprocess user query using Intent Analyzer & Query Optimizer
+                    from utils.intent_analyzer import analyze_and_optimize_query
+                    analysis = await analyze_and_optimize_query(message, llm)
+                    logger.info(f"Widget Intent Analyzer - Intent: {analysis['intent']}, Sentiment: {analysis['sentiment']}")
+                    logger.info(f"Widget Query Optimizer: '{message}' -> '{analysis['optimized_query']}'")
+                    
+                    optimized_message = analysis["optimized_query"]
+                    
+                    if analysis.get("sentiment") == "frustrated":
+                        system_prompt += "\n\n[SYSTEM NOTE: The user is currently frustrated. Adopt an extremely empathetic, helpful, and apologetic tone, and prioritize offering escalation options.]"
+
                     logger.info("Generating HyDE vector search query...")
-                    hyde_query = rag_engine.generate_hyde_query(message, llm)
+                    hyde_query = await rag_engine.generate_hyde_query(optimized_message, llm)
                     query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
 
                     # Fetch relevant document chunks
@@ -1006,7 +1029,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     PREVIOUS CHAT HISTORY:
                     {history_text}
 
-                    CURRENT USER INPUT: {message}
+                    CURRENT USER INPUT: {optimized_message}
                     """
 
                     # Add target output language formatting
@@ -1023,7 +1046,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         full_response = ""
                         try:
                             logger.info("Streaming model response...")
-                            for chunk in llm.stream(prompt):
+                            async for chunk in llm.astream(prompt):
                                 if chunk.content:
                                     chunk_str = _get_content_string(chunk.content)
                                     full_response += chunk_str
@@ -1151,7 +1174,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
 
                 try:
                     router_llm_json = router_llm.bind(response_format={"type": "json_object"})
-                    routing_response = router_llm_json.invoke(routing_prompt)
+                    routing_response = await router_llm_json.ainvoke(routing_prompt)
                     content = routing_response.content
                     if isinstance(content, list):
                         parts = []
@@ -1220,9 +1243,20 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         logger.debug("Creating resilient LLM instance...")
         llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
 
+        # Preprocess user query using Intent Analyzer & Query Optimizer
+        from utils.intent_analyzer import analyze_and_optimize_query
+        analysis = await analyze_and_optimize_query(message, llm)
+        logger.info(f"API v1 Intent Analyzer - Intent: {analysis['intent']}, Sentiment: {analysis['sentiment']}")
+        logger.info(f"API v1 Query Optimizer: '{message}' -> '{analysis['optimized_query']}'")
+        
+        optimized_message = analysis["optimized_query"]
+        
+        if analysis.get("sentiment") == "frustrated":
+            system_prompt += "\n\n[SYSTEM NOTE: The user is currently frustrated. Adopt an extremely empathetic, helpful, and apologetic tone, and prioritize offering escalation options.]"
+
         # Vector RAG search
         logger.debug("Generating HyDE vector search query...")
-        hyde_query = rag_engine.generate_hyde_query(message, llm)
+        hyde_query = await rag_engine.generate_hyde_query(optimized_message, llm)
         query_vector = rag_engine.vectorize([hyde_query], model_name=embed_model)[0]
         
         logger.debug("Executing database vector document matches search...")
@@ -1288,7 +1322,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
         PREVIOUS CHAT HISTORY:
         {history_text}
 
-        CURRENT USER INPUT: {message}
+        CURRENT USER INPUT: {optimized_message}
         """
 
         lang_map = {
@@ -1311,7 +1345,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                     yield prefix
 
                 logger.info("Streaming model response...")
-                for chunk in llm.stream(prompt):
+                async for chunk in llm.astream(prompt):
                     if chunk.content:
                         chunk_str = _get_content_string(chunk.content)
                         full_response += chunk_str

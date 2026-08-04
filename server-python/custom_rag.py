@@ -603,7 +603,7 @@ class CustomRAGEngine:
         # Return the sorted documents list.
         return [doc for doc, score in doc_scores[:top_k]]
 
-    def generate_hyde_query(self, query: str, llm) -> str:
+    async def generate_hyde_query(self, query: str, llm) -> str:
         """
         Generates a Hypothetical Document Embeddings (HyDE) query expansion.
 
@@ -627,7 +627,7 @@ Question: {query}
 Answer:"""
         try:
             # Call the LLM to generate the hypothetical answer.
-            response = llm.invoke(prompt)
+            response = await llm.ainvoke(prompt)
             content = response.content
             if isinstance(content, list):
                 parts = []

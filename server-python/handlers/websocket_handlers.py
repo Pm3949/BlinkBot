@@ -19,7 +19,7 @@ instantiates global singleton instances for each:
      to broadcast real-time event updates to all logged-in teammates.
 """
 
-from fastapi import WebSocket  # Import standard FastAPI WebSocket protocols
+from fastapi import WebSocket, WebSocketDisconnect  # Import standard FastAPI WebSocket protocols
 
 # Logging utilities
 from utils.logger import get_department_logger
@@ -86,6 +86,9 @@ class AgentConnectionManager:
             try:
                 # Transmit payload async
                 await self.active_connections[client_id].send_json(message)
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket client {client_id} disconnected while sending message.")
+                self.disconnect(client_id)
             except Exception as e:
                 # Catch communication failures, log details, and clean up connection entries
                 logger.error(f"Failed to send JSON message to client {client_id}: {str(e)}", exc_info=True)
@@ -173,6 +176,9 @@ class UploadStatusManager:
                         "detail": detail,
                         "progress": progress
                     })
+                except WebSocketDisconnect:
+                    logger.info(f"Upload WebSocket client disconnected in session {session_key}.")
+                    disconnected_sockets.append(ws)
                 except Exception as e:
                     # Catch failures and add to clean up list
                     logger.error(f"Error dispatching status to socket in session {session_key}: {str(e)}")
@@ -256,6 +262,9 @@ class NotificationWebSocketManager:
                 try:
                     await ws.send_json(notification)
                     logger.debug(f"Workspace alert successfully dispatched to socket.")
+                except WebSocketDisconnect:
+                    logger.info(f"Notification WebSocket client disconnected in workspace {workspace_id}.")
+                    disconnected.append(ws)
                 except Exception as e:
                     # Catch failures and add to clean up list
                     logger.error(f"Error dispatching workspace alert to socket: {str(e)}")
