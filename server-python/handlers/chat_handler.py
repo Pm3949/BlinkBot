@@ -339,18 +339,26 @@ def create_webhook_tool(endpoint, project_tools_dict):
                     logger.info(f"✅ WEBHOOK RESPONSE STATUS: {response.status}")
                     try:
                         resp = await response.json()
-                        logger.info(f"📄 WEBHOOK RESPONSE JSON: {json_lib.dumps(resp)}")
-                        return json_lib.dumps(resp)
+                        resp_str = json_lib.dumps(resp)
                     except Exception:
-                        text_resp = await response.text()
-                        logger.info(f"📄 WEBHOOK RESPONSE TEXT: {text_resp}")
-                        return text_resp
+                        resp_str = await response.text()
+                    
+                    logger.info(f"📄 WEBHOOK RESPONSE: {resp_str[:500]}...")
+                    if len(resp_str) > 2000:
+                        truncated_resp = resp_str[:2000]
+                        return (
+                            f"{truncated_resp}\n\n"
+                            f"[OUTPUT TRUNCATED: The webhook response was {len(resp_str)} characters, which exceeds the 2,000 character context limit. "
+                            "Please instruct the agent to use pagination query parameters if more details are needed.]"
+                        )
+                    return resp_str
         except Exception as e:
             logger.error(f"❌ Error executing webhook {name}: {str(e)}", exc_info=True)
             return f"Error executing {name}: {str(e)}"
             
     execute_webhook.name = name
     execute_webhook.description = description
+    execute_webhook.requires_approval = endpoint.get("requires_approval", False)
     return execute_webhook
 
 
@@ -382,12 +390,270 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
     logger.info(f"WebSocket client connected to agent chat. Client ID: {client_id}")
     await agent_connection_manager.connect(websocket, client_id)
+    paused_state = {
+        "graph": None,
+        "config": None,
+        "last_tool_calls": None,
+        "gateway_name": None,
+        "agent_id": None,
+        "llm_factory": None,
+        "tools_factory": None
+    }
+
+    async def run_stream(inputs, config, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory):
+        tool_calling_runs = set()
+        async for event in active_graph.astream_events(inputs, config=config, version="v2"):
+            kind = event["event"]
+            run_id = event.get("run_id")
+            
+            if kind == "on_chat_model_stream":
+                if "supervisor" in event.get("tags", []) or event.get("metadata", {}).get("langgraph_node") == "supervisor":
+                    continue
+                
+                chunk = event["data"]["chunk"]
+                if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                    tool_calling_runs.add(run_id)
+                    continue
+                    
+                if run_id in tool_calling_runs:
+                    continue
+                    
+                if chunk.content:
+                    chunk_str = _get_content_string(chunk.content)
+                    await agent_connection_manager.send_json(
+                        {"type": "text_chunk", "content": chunk_str}, client_id
+                    )
+                    
+            elif kind == "on_chat_model_end":
+                output = event["data"].get("output")
+                if output:
+                    usage = getattr(output, "usage_metadata", None)
+                    if not usage and isinstance(output, dict):
+                        usage = output.get("usage_metadata")
+                    if not usage:
+                        llm_output = getattr(output, "llm_output", None) or (output.get("llm_output") if isinstance(output, dict) else None)
+                        if llm_output:
+                            usage = llm_output.get("token_usage") or llm_output.get("usage")
+                    if usage:
+                        prompt_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
+                        if total_tokens > 0:
+                            cost = (prompt_tokens * 0.0000006) + (completion_tokens * 0.0000018)
+                            try:
+                                async with get_db_cursor_async(commit=True) as cursor:
+                                    await run_in_threadpool(
+                                        cursor.execute,
+                                        """
+                                        INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                                        VALUES (%s, %s, %s, %s, %s, %s)
+                                        """,
+                                        (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
+                                    )
+                            except Exception as db_err:
+                                logger.error(f"Failed to log token usage: {db_err}")
+                                
+            elif kind == "on_tool_start":
+                t_name = event["name"]
+                if t_name == "search_knowledge_base":
+                    status_msg = "Searching Knowledge Base..."
+                elif t_name == "search_web":
+                    status_msg = "Searching the Web..."
+                else:
+                    action_name = t_name.replace("_", " ").title()
+                    status_msg = f"Running action: {action_name}..."
+                await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
+                
+            elif kind == "on_tool_end":
+                await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                
+            elif kind == "on_chain_end" and event["name"] == "supervisor":
+                output = event["data"].get("output", {})
+                if isinstance(output, dict):
+                    routed_name = output.get("routed_agent_name")
+                    routed_id = output.get("active_agent_id")
+                    if routed_id:
+                        await agent_connection_manager.send_json(
+                            {
+                                "type": "routing_decision",
+                                "agent_id": str(routed_id),
+                                "agent_name": routed_name
+                            },
+                            client_id
+                        )
+                    if routed_name and routed_name != active_gateway_name:
+                        await agent_connection_manager.send_json(
+                            {"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_name}]*\n\n"}, client_id
+                        )
+        
+        state = await active_graph.aget_state(config)
+        if state.next and "tools" in state.next:
+            last_msg = state.values["messages"][-1]
+            if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                current_agent_id = state.values.get("active_agent_id") or active_agent_id
+                _, _, embed_model, web_search_enabled = await active_llm_factory(current_agent_id)
+                tools = active_tools_factory(current_agent_id, embed_model, web_search_enabled, None)
+                
+                requires_app = False
+                for tc in last_msg.tool_calls:
+                    tool_obj = next((t for t in tools if t.name == tc["name"]), None)
+                    if tool_obj and getattr(tool_obj, "requires_approval", False):
+                        requires_app = True
+                        await agent_connection_manager.send_json({
+                            "type": "approval_required",
+                            "payload": {
+                                "tool_name": tc["name"],
+                                "tool_call_id": tc["id"],
+                                "arguments": tc["args"]
+                            }
+                        }, client_id)
+                
+                if requires_app:
+                    paused_state["graph"] = active_graph
+                    paused_state["config"] = config
+                    paused_state["gateway_name"] = active_gateway_name
+                    paused_state["last_tool_calls"] = last_msg.tool_calls
+                    paused_state["agent_id"] = active_agent_id
+                    paused_state["llm_factory"] = active_llm_factory
+                    paused_state["tools_factory"] = active_tools_factory
+                    await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                    return
+                
+                await run_stream(None, config, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
+            else:
+                # Prune older checkpoints on this specific thread to keep DB size light
+                thread_id = config["configurable"]["thread_id"]
+                try:
+                    async with get_db_cursor_async(commit=True) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            """
+                            DELETE FROM langgraph_writes
+                            WHERE thread_id = %s AND checkpoint_id NOT IN (
+                                SELECT checkpoint_id
+                                FROM langgraph_checkpoints
+                                WHERE thread_id = %s
+                                ORDER BY created_at DESC
+                                LIMIT 5
+                            );
+                            """,
+                            (thread_id, thread_id)
+                        )
+                        await run_in_threadpool(
+                            cursor.execute,
+                            """
+                            DELETE FROM langgraph_checkpoints
+                            WHERE thread_id = %s AND checkpoint_id NOT IN (
+                                SELECT checkpoint_id
+                                FROM langgraph_checkpoints
+                                WHERE thread_id = %s
+                                ORDER BY created_at DESC
+                                LIMIT 5
+                            );
+                            """,
+                            (thread_id, thread_id)
+                        )
+                except Exception as clean_err:
+                    logger.error(f"Error pruning checkpoints: {clean_err}")
+
+                await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+        else:
+            # Prune older checkpoints on this specific thread to keep DB size light
+            thread_id = config["configurable"]["thread_id"]
+            try:
+                async with get_db_cursor_async(commit=True) as cursor:
+                    await run_in_threadpool(
+                        cursor.execute,
+                        """
+                        DELETE FROM langgraph_writes
+                        WHERE thread_id = %s AND checkpoint_id NOT IN (
+                            SELECT checkpoint_id
+                            FROM langgraph_checkpoints
+                            WHERE thread_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT 5
+                        );
+                        """,
+                        (thread_id, thread_id)
+                    )
+                    await run_in_threadpool(
+                        cursor.execute,
+                        """
+                        DELETE FROM langgraph_checkpoints
+                        WHERE thread_id = %s AND checkpoint_id NOT IN (
+                            SELECT checkpoint_id
+                            FROM langgraph_checkpoints
+                            WHERE thread_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT 5
+                        );
+                        """,
+                        (thread_id, thread_id)
+                    )
+            except Exception as clean_err:
+                logger.error(f"Error pruning checkpoints: {clean_err}")
+
+            await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+
     try:
         while True:
             data = await websocket.receive_json()
             logger.debug(f"Received WebSocket data payload from client {client_id}")
             
-            if data.get("type") == "chat_request":
+            if data.get("type") == "tool_approval_response":
+                payload = data.get("payload", {})
+                decision = payload.get("decision")
+                tool_call_id = payload.get("tool_call_id")
+                
+                if not paused_state["config"]:
+                    logger.warning("Received tool_approval_response but no paused execution was found.")
+                    continue
+                
+                # Fetch paused items
+                graph = paused_state["graph"]
+                config = paused_state["config"]
+                gateway_name = paused_state["gateway_name"]
+                last_tool_calls = paused_state["last_tool_calls"]
+                active_agent_id = paused_state["agent_id"]
+                active_llm_factory = paused_state["llm_factory"]
+                active_tools_factory = paused_state["tools_factory"]
+                
+                # Clear paused state
+                paused_state["config"] = None
+                paused_state["graph"] = None
+                paused_state["gateway_name"] = None
+                paused_state["last_tool_calls"] = None
+                paused_state["agent_id"] = None
+                paused_state["llm_factory"] = None
+                paused_state["tools_factory"] = None
+                
+                try:
+                    if decision == "reject":
+                        logger.info(f"User rejected tool call: {tool_call_id}")
+                        tool_messages = []
+                        for tc in last_tool_calls:
+                            tool_messages.append(ToolMessage(
+                                content="Tool execution rejected by user.",
+                                tool_call_id=tc["id"],
+                                name=tc["name"]
+                            ))
+                        await graph.aupdate_state(config, {"messages": tool_messages})
+                    else:
+                        logger.info(f"User approved tool call: {tool_call_id}")
+                        
+                    logger.info("Resuming LangGraph multi-agent stream execution after human-in-the-loop review...")
+                    await run_stream(None, config, graph, gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
+                    
+                except Exception as exc:
+                    logger.error("Chat generation failed during resume", exc_info=True)
+                    await agent_connection_manager.send_json(
+                        {"type": "error", "content": str(exc)}, client_id
+                    )
+                continue
+                
+            elif data.get("type") == "chat_request":
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
                 message = req_data.get("message")
@@ -604,22 +870,19 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         c_key = decrypt_key(c_key)
                         mem_patch = await chat_repository.fetch_temporary_memory_patch(aid)
                         
-                        header_instruction = (
-                            "SYSTEM MANDATE: You possess access to workspace database search tools (search_knowledge_base).\n"
-                            "FOR ANY DOMAIN, TECHNICAL, DOCUMENT, OR KNOWLEDGE QUERY, YOU MUST CALL search_knowledge_base FIRST BEFORE ANSWERING.\n"
-                            "DO NOT ANSWER FROM GENERAL MEMORY WITHOUT CALLING search_knowledge_base FIRST.\n\n"
-                        )
+                        from prompts.base_prompts import HEADER_INSTRUCTION
                         if analysis.get("sentiment") == "frustrated":
                             sys_prompt += "\n\n[SYSTEM NOTE: The user is currently frustrated. Adopt an extremely empathetic, helpful, and apologetic tone, and prioritize offering escalation options.]"
-                        formatted_prompt = header_instruction + sys_prompt
+                        formatted_prompt = HEADER_INSTRUCTION + sys_prompt
                         if out_fmt:
                             formatted_prompt += f"\n\nCRITICAL FORMATTING INSTRUCTIONS:\n{out_fmt}"
                         formatted_prompt += (
                             f"{mem_patch}\n\nCRITICAL GROUNDING RULES:\n"
-                            f"1. ALWAYS EXECUTE search_knowledge_base FIRST for any factual/domain request.\n"
-                            f"2. Base your response strictly on the search_knowledge_base output. If search_knowledge_base returns 'No related documents found', reply: 'I searched the workspace knowledge base database, but no relevant information was found.'\n"
-                            f"3. Do NOT invent facts or answer ungrounded questions from parametric memory when database tools are present.\n"
-                            f"4. Format response in clean Markdown without exposing tool call names or raw JSON."
+                            f"1. Use the appropriate tool (e.g. search_knowledge_base, search_web, SQL/database tools, custom APIs) to gather facts before answering.\n"
+                            f"2. Base your response strictly on the tool output. If the search returns no results, politely inform the user.\n"
+                            f"3. Do NOT invent facts or answer ungrounded questions from parametric memory when tools are present.\n"
+                            f"4. Format response in clean Markdown without exposing tool call names or raw JSON.\n"
+                            f"5. CRITICAL: When calling tools, you MUST NOT write any conversational text, explanations, or responses. Generate ONLY the tool call. Do not say 'Let me check' or try to answer the question before the tool returns."
                         )
                         
                         lang_map = {
@@ -775,52 +1038,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
-                    
-                    # 4. Stream response and tool-execution updates back to WebSocket client
-                    async for event in graph.astream_events(inputs, version="v2"):
-                        kind = event["event"]
-                        
-                        if kind == "on_chat_model_stream":
-                            # Skip streaming chunks from the supervisor model
-                            if "supervisor" in event.get("tags", []) or event.get("metadata", {}).get("langgraph_node") == "supervisor":
-                                continue
-                            chunk = event["data"]["chunk"]
-                            if chunk.content:
-                                chunk_str = _get_content_string(chunk.content)
-                                await agent_connection_manager.send_json(
-                                    {"type": "text_chunk", "content": chunk_str}, client_id
-                                )
-                                
-                        elif kind == "on_tool_start":
-                            t_name = event["name"]
-                            status_msg = "Searching Knowledge Base..." if t_name == "search_knowledge_base" else "Searching the Web..."
-                            await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
-                            
-                        elif kind == "on_tool_end":
-                            await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                            
-                        elif kind == "on_chain_end" and event["name"] == "supervisor":
-                            output = event["data"].get("output", {})
-                            if isinstance(output, dict):
-                                routed_name = output.get("routed_agent_name")
-                                routed_id = output.get("active_agent_id")
-                                if routed_id:
-                                    await agent_connection_manager.send_json(
-                                        {
-                                            "type": "routing_decision",
-                                            "agent_id": str(routed_id),
-                                            "agent_name": routed_name
-                                        },
-                                        client_id
-                                    )
-                                if routed_name and routed_name != gateway_name:
-                                    await agent_connection_manager.send_json(
-                                        {"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_name}]*\n\n"}, client_id
-                                    )
-
-                    await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
-                    logger.info("LangGraph streaming generation complete.")
+                    config = {"configurable": {"thread_id": f"{client_id}_{agent_id}"}}
+                    await run_stream(inputs, config, graph, gateway_name, agent_id, llm_factory, tools_factory)
 
                 except Exception as exc:
                     logger.error("Chat generation failed", exc_info=True)

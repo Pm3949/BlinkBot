@@ -367,5 +367,7 @@ def build_multi_agent_graph(
     )
     workflow.add_edge("tools", "agent")
 
-    # Compile the workflow.
-    return workflow.compile()
+    # Compile the workflow with postgres checkpointer and tool interruption breakpoint.
+    from utils.postgres_saver import PostgresCheckpointSaver
+    checkpointer = PostgresCheckpointSaver()
+    return workflow.compile(checkpointer=checkpointer, interrupt_before=["tools"])

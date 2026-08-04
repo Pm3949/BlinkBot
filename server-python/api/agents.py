@@ -459,3 +459,154 @@ async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: di
         return {"optimized_prompt": payload.draft_prompt}
 
 
+class ToolDescriptionRequest(BaseModel):
+    tool_name: str
+    path: str
+    method: str
+    payload_format: Optional[str] = ""
+    expected_output: Optional[str] = ""
+    llm_provider: Optional[str] = "groq"
+    llm_model: Optional[str] = "llama-3.3-70b-versatile"
+    custom_api_key: Optional[str] = ""
+
+
+@router.post("/api/agents/generate-tool-description")
+async def generate_tool_description(payload: ToolDescriptionRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Generates a concise tool instruction description using LLM based on tool specifications.
+    """
+    logger.info("Generating dynamic tool description...")
+    from handlers.chat_handler import create_resilient_llm_instance
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    system_instruction = (
+        "You are an expert developer assistant. Your task is to write a highly detailed, concise, and informative "
+        "one-sentence or two-sentence description (instruction for an LLM agent) explaining what this API tool does and when/why to call it.\n"
+        "Output ONLY the plain text description. Do not include markdown codeblocks, prefix labels, quotes, or extra text."
+    )
+
+    try:
+        llm = await create_resilient_llm_instance(
+            provider=payload.llm_provider,
+            model_name=payload.llm_model,
+            api_key=payload.custom_api_key or None,
+            user_id=current_user["sub"]
+        )
+
+        user_content = (
+            f"Tool Name: {payload.tool_name}\n"
+            f"Path: {payload.path}\n"
+            f"Method: {payload.method}\n"
+            f"Payload Format: {payload.payload_format}\n"
+            f"Expected Output: {payload.expected_output}"
+        )
+
+        messages = [
+            SystemMessage(content=system_instruction),
+            HumanMessage(content=user_content)
+        ]
+
+        response = await llm.ainvoke(messages)
+        description = response.content
+
+        if isinstance(description, list):
+            parts = []
+            for part in description:
+                if isinstance(part, dict) and "text" in part:
+                    parts.append(part["text"])
+                elif isinstance(part, str):
+                    parts.append(part)
+                else:
+                    parts.append(str(part))
+            description = "".join(parts)
+        elif isinstance(description, dict):
+            description = description.get("text", str(description))
+
+        description = description.strip()
+        # Clean quotes
+        if description.startswith('"') and description.endswith('"'):
+            description = description[1:-1].strip()
+        elif description.startswith("'") and description.endswith("'"):
+            description = description[1:-1].strip()
+
+        return {"description": description}
+    except Exception as e:
+        logger.error(f"Error generating tool description: {e}", exc_info=True)
+        return {"description": f"Use this tool to interact with {payload.tool_name} at {payload.path}."}
+
+
+@router.get("/api/agents/{agent_id}/analytics")
+async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Get token usage and cost metrics for a specific agent.
+    """
+    from database import get_db_cursor_async
+    from fastapi.concurrency import run_in_threadpool
+    try:
+        user_id = current_user["sub"]
+        async with get_db_cursor_async(commit=False) as cursor:
+            # Query cumulative metrics
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                SELECT 
+                    COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens,
+                    COALESCE(SUM(completion_tokens), 0) as total_completion_tokens,
+                    COALESCE(SUM(total_tokens), 0) as total_tokens,
+                    COALESCE(SUM(estimated_cost), 0.000000) as total_cost
+                FROM token_usages
+                WHERE user_id = %s AND agent_id = %s
+                """,
+                (user_id, agent_id)
+            )
+            totals = await run_in_threadpool(cursor.fetchone)
+            
+            # Query daily metrics for charts (last 30 days)
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                SELECT 
+                    DATE(created_at) as date,
+                    SUM(prompt_tokens) as daily_prompt,
+                    SUM(completion_tokens) as daily_completion,
+                    SUM(total_tokens) as daily_tokens,
+                    SUM(estimated_cost) as daily_cost,
+                    COUNT(*) as daily_calls
+                FROM token_usages
+                WHERE user_id = %s AND agent_id = %s AND created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY DATE(created_at)
+                ORDER BY DATE(created_at) ASC
+                """,
+                (user_id, agent_id)
+            )
+            daily_rows = await run_in_threadpool(cursor.fetchall)
+            
+            return {
+                "totals": {
+                    "prompt_tokens": totals[0],
+                    "completion_tokens": totals[1],
+                    "total_tokens": totals[2],
+                    "estimated_cost": float(totals[3])
+                },
+                "daily": [
+                    {
+                        "date": str(r[0]),
+                        "prompt_tokens": r[1],
+                        "completion_tokens": r[2],
+                        "tokens": r[3],
+                        "cost": float(r[4]),
+                        "calls": r[5]
+                    }
+                    for r in daily_rows
+                ]
+            }
+    except Exception as e:
+        logger.error(f"Error fetching token analytics: {e}", exc_info=True)
+        return {
+            "totals": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0},
+            "daily": []
+        }
+
+
+
+

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, BarChart2, TrendingUp, DollarSign, Activity } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw } from "lucide-react";
@@ -13,6 +13,8 @@ import { useProjectTools } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector, useUpdateUrl, useProcessText, useUpdateText, useUpdateFile, useSyncConnector } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
 
 import { toast } from "sonner";
 import { getAuthHeaders } from "../lib/api";
@@ -314,6 +316,110 @@ export default function AgentSettingsPage() {
     }
   };
 
+  const [generatingDescriptionIdx, setGeneratingDescriptionIdx] = useState(null);
+
+  const handleGenerateDescription = async (idx) => {
+    const ep = formData.endpoints[idx];
+    if (!ep.name || !ep.name.trim()) {
+      toast.error("Please provide at least the Endpoint Name to generate a description.");
+      return;
+    }
+    setGeneratingDescriptionIdx(idx);
+    try {
+      const response = await fetch(`${API_URL}/api/agents/generate-tool-description`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          tool_name: ep.name,
+          path: ep.path || "",
+          method: ep.method || "GET",
+          payload_format: ep.payload_format || "",
+          expected_output: ep.expected_output || "",
+          llm_provider: formData.provider,
+          llm_model: formData.model,
+          custom_api_key: formData.api_key || ""
+        })
+      });
+      if (!response.ok) throw new Error("Failed to generate description");
+      const data = await response.json();
+      const newEps = [...formData.endpoints];
+      newEps[idx].description = data.description;
+      updateField("endpoints", newEps);
+      toast.success("Description generated successfully!");
+    } catch (err) {
+      toast.error("Failed to generate description. Please try again.");
+    } finally {
+      setGeneratingDescriptionIdx(null);
+    }
+  };
+
+  const [analytics, setAnalytics] = useState(null);
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
+
+  const fetchAnalytics = async () => {
+    if (!selectedAgentId) return;
+    setIsAnalyticsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/agents/${selectedAgentId}/analytics`, {
+        headers: getAuthHeaders()
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAnalytics(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch analytics:", error);
+    } finally {
+      setIsAnalyticsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "analytics") {
+      fetchAnalytics();
+    }
+  }, [activeTab, selectedAgentId]);
+
+  const dailyDataWithCumulative = useMemo(() => {
+    if (!analytics || !analytics.daily) return [];
+    let runningSum = 0;
+    return analytics.daily.map(day => {
+      runningSum += day.cost;
+      return {
+        ...day,
+        cumulative_cost: runningSum
+      };
+    });
+  }, [analytics]);
+
+  const totalCalls = useMemo(() => {
+    if (!analytics || !analytics.daily) return 0;
+    return analytics.daily.reduce((sum, day) => sum + (day.calls || 0), 0);
+  }, [analytics]);
+
+  const avgCostPerQuery = useMemo(() => {
+    if (!analytics || !analytics.totals || totalCalls === 0) return 0;
+    return analytics.totals.estimated_cost / totalCalls;
+  }, [analytics, totalCalls]);
+
+  const [validationErrors, setValidationErrors] = useState({});
+
+  const prefillPayloadTemplate = (idx) => {
+    const newEps = [...formData.endpoints];
+    const method = newEps[idx].method || "GET";
+    if (method === "GET" || method === "DELETE") {
+      newEps[idx].payload_format = JSON.stringify({ id: "{id}" }, null, 2);
+      newEps[idx].expected_output = JSON.stringify({ success: true, data: { status: "active" } }, null, 2);
+    } else {
+      newEps[idx].payload_format = JSON.stringify({ name: "John Doe", email: "john@example.com" }, null, 2);
+      newEps[idx].expected_output = JSON.stringify({ status: "success", id: 123 }, null, 2);
+    }
+    updateField("endpoints", newEps);
+    toast.success("Sample template pre-filled!");
+  };
+
+
+
   const [formData, setFormData] = useState({
     name: agent?.name || "",
     description: agent?.description || "",
@@ -425,10 +531,61 @@ export default function AgentSettingsPage() {
   });
 
   const handleSave = () => {
+    setValidationErrors({});
+
     if (!formData.name.trim()) {
       toast.error("Agent name is required.");
       return;
     }
+
+    const errors = {};
+
+    // Validate API Endpoints
+    const endpoints = formData.endpoints || [];
+    for (let i = 0; i < endpoints.length; i++) {
+      const ep = endpoints[i];
+      if (!ep.name || !ep.name.trim()) {
+        toast.error(`API Endpoint #${i + 1}: Name is required.`);
+        errors[`endpoint_${i}_name`] = true;
+      }
+      if (!ep.path || !ep.path.trim()) {
+        toast.error(`API Endpoint "${ep.name || 'Unnamed'}": Path is required.`);
+        errors[`endpoint_${i}_path`] = true;
+      }
+      if (!agent?.project_id && (!ep.base_url || !ep.base_url.trim())) {
+        toast.error(`API Endpoint "${ep.name || 'Unnamed'}": Base URL is required.`);
+        errors[`endpoint_${i}_base_url`] = true;
+      }
+      if (agent?.project_id && (!ep.connection_id || !ep.connection_id.trim())) {
+        toast.error(`API Endpoint "${ep.name || 'Unnamed'}": API Connection is required.`);
+        errors[`endpoint_${i}_connection_id`] = true;
+      }
+      if (!ep.description || !ep.description.trim()) {
+        toast.error(`API Endpoint "${ep.name || 'Unnamed'}": Description is required.`);
+        errors[`endpoint_${i}_description`] = true;
+      }
+    }
+
+    // Validate Databases
+    const dbs = formData.databases || [];
+    for (let i = 0; i < dbs.length; i++) {
+      const db = dbs[i];
+      if (!db.name || !db.name.trim()) {
+        toast.error(`Database #${i + 1}: Name is required.`);
+        errors[`database_${i}_name`] = true;
+      }
+      if (!db.connection_string || !db.connection_string.trim()) {
+        toast.error(`Database "${db.name || 'Unnamed'}": Connection String is required.`);
+        errors[`database_${i}_connection_string`] = true;
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+
+
 
     // If API key was typed, also save it to common DB user_settings so Models page and all agents benefit
     if (selectedModel?.requiresKey && formData.api_key?.trim() && formData.provider) {
@@ -508,6 +665,7 @@ export default function AgentSettingsPage() {
                   { id: "identity", label: "Identity", icon: Bot },
                   { id: "behavior", label: "Behavior", icon: Brain },
                   { id: "model", label: "Model & AI", icon: Sparkles },
+                  { id: "analytics", label: "Cost & Analytics", icon: BarChart2 },
                 ]
               : [
                   { id: "identity", label: "Identity", icon: Bot },
@@ -518,6 +676,7 @@ export default function AgentSettingsPage() {
                   { id: "integrations", label: "Integrations", icon: Blocks },
                   { id: "databases", label: "Databases", icon: Database },
                   { id: "code-interpreter", label: "Code Interpreter", icon: Terminal },
+                  { id: "analytics", label: "Cost & Analytics", icon: BarChart2 },
                 ];
 
             return settingsTabs.map((tab) => (
@@ -852,12 +1011,21 @@ export default function AgentSettingsPage() {
                             className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
                             onClick={() => setExpandedEndpoints(prev => ({...prev, [idx]: !prev[idx]}))}
                           >
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <span className={`px-2 py-0.5 text-xs font-bold rounded-md ${ep.method === 'GET' ? 'bg-blue-100 text-blue-700' : ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                                 {ep.method || 'GET'}
                               </span>
                               <span className="font-semibold">{ep.name || 'Unnamed Endpoint'}</span>
                               <span className="text-muted-foreground text-sm truncate max-w-[200px]">{ep.path}</span>
+                              {ep.name && (
+                                <span className="text-xs text-muted-foreground/90 flex items-center gap-1.5 bg-muted/70 px-2.5 py-1 rounded-xl border border-border/80 ml-2">
+                                  <Terminal size={12} className="text-primary shrink-0" />
+                                  <span className="text-[11px] font-medium text-foreground">Backend Tool:</span>
+                                  <code className="font-mono text-primary font-bold text-[11px]">
+                                    {ep.name.replace(/[\s-]/g, "_")}
+                                  </code>
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <Button
@@ -884,7 +1052,7 @@ export default function AgentSettingsPage() {
                               <div className="grid grid-cols-2 gap-4 mb-4">
                             {agent?.project_id ? (
                               <div>
-                                <label className="block text-sm font-semibold mb-1">API Connection</label>
+                                <label className="block text-sm font-semibold mb-1">API Connection <span className="text-red-500">*</span></label>
                                 <Select
                                   value={ep.connection_id}
                                   onValueChange={(val) => {
@@ -893,7 +1061,7 @@ export default function AgentSettingsPage() {
                                     updateField("endpoints", newEps);
                                   }}
                                 >
-                                  <SelectTrigger className="w-full bg-background rounded-xl">
+                                  <SelectTrigger className={`w-full bg-background rounded-xl ${validationErrors[`endpoint_${idx}_connection_id`] ? "border-red-500 ring-2 ring-red-500/20" : ""}`}>
                                     <SelectValue placeholder="Select Connection" />
                                   </SelectTrigger>
                                   <SelectContent>
@@ -908,7 +1076,7 @@ export default function AgentSettingsPage() {
                               </div>
                             ) : (
                               <div>
-                                <label className="block text-sm font-semibold mb-1">Base URL</label>
+                                <label className="block text-sm font-semibold mb-1">Base URL <span className="text-red-500">*</span></label>
                                 <input
                                   type="text"
                                   value={ep.base_url || ""}
@@ -918,29 +1086,44 @@ export default function AgentSettingsPage() {
                                     updateField("endpoints", newEps);
                                   }}
                                   placeholder="https://api.example.com"
-                                  className="w-full bg-background border border-border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none"
+                                  className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_base_url`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
                                 />
                               </div>
                             )}
+                             <div>
+                               <label className="block text-sm font-semibold mb-1">Endpoint Name <span className="text-red-500">*</span></label>
+                               <input
+                                 type="text"
+                                 value={ep.name}
+                                 onChange={(e) => {
+                                   const newEps = [...formData.endpoints];
+                                   newEps[idx].name = e.target.value;
+                                   updateField("endpoints", newEps);
+                                 }}
+                                 placeholder="e.g. Get User Data"
+                                 className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_name`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
+                               />
+                             </div>
+                          </div>
+
+                          <div className="flex items-center justify-between bg-muted/20 border border-border/50 p-4 rounded-xl mb-4">
                             <div>
-                              <label className="block text-sm font-semibold mb-1">Endpoint Name</label>
-                              <input
-                                type="text"
-                                value={ep.name}
-                                onChange={(e) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].name = e.target.value;
-                                  updateField("endpoints", newEps);
-                                }}
-                                placeholder="e.g. Get User Data"
-                                className="w-full bg-background border border-border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none"
-                              />
+                              <label className="text-sm font-semibold block">Require User Approval</label>
+                              <span className="text-xs text-muted-foreground">If enabled, the agent will pause and ask for confirmation before executing this tool.</span>
                             </div>
+                            <Switch
+                              checked={ep.requires_approval || false}
+                              onCheckedChange={(val) => {
+                                const newEps = [...formData.endpoints];
+                                newEps[idx].requires_approval = val;
+                                updateField("endpoints", newEps);
+                              }}
+                            />
                           </div>
 
                           <div className="grid grid-cols-[1fr_3fr] gap-4 mb-4">
                             <div>
-                              <label className="block text-sm font-semibold mb-1">Method</label>
+                              <label className="block text-sm font-semibold mb-1">Method <span className="text-red-500">*</span></label>
                               <Select
                                 value={ep.method}
                                 onValueChange={(val) => {
@@ -961,7 +1144,7 @@ export default function AgentSettingsPage() {
                               </Select>
                             </div>
                             <div>
-                              <label className="block text-sm font-semibold mb-1">Path</label>
+                              <label className="block text-sm font-semibold mb-1">Path <span className="text-red-500">*</span></label>
                               <input
                                 type="text"
                                 value={ep.path}
@@ -978,7 +1161,27 @@ export default function AgentSettingsPage() {
 
                           <div className="space-y-4">
                             <div>
-                              <label className="block text-sm font-semibold mb-1">Description (Instructions for Agent)</label>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-sm font-semibold">Description (Instructions for Agent) <span className="text-red-500">*</span></label>
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDescription(idx)}
+                                  disabled={generatingDescriptionIdx === idx}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all"
+                                >
+                                  {generatingDescriptionIdx === idx ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                      Generating...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="w-3 h-3" />
+                                      AI Generate
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                               <input
                                 type="text"
                                 value={ep.description}
@@ -988,11 +1191,20 @@ export default function AgentSettingsPage() {
                                   updateField("endpoints", newEps);
                                 }}
                                 placeholder="Use this to fetch user data given a user ID."
-                                className="w-full bg-background border border-border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none"
+                                className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_description`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-semibold mb-1">Payload Format (JSON)</label>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-sm font-semibold">Payload Format (JSON)</label>
+                                <button
+                                  type="button"
+                                  onClick={() => prefillPayloadTemplate(idx)}
+                                  className="text-[11px] font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer"
+                                >
+                                  Load Sample Template
+                                </button>
+                              </div>
                               <textarea
                                 value={ep.payload_format}
                                 onChange={(e) => {
@@ -1359,11 +1571,20 @@ export default function AgentSettingsPage() {
                               className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
                               onClick={() => setExpandedDatabases(prev => ({...prev, [idx]: !prev[idx]}))}
                             >
-                              <div className="flex items-center gap-3">
-                                <Database className="w-4 h-4 text-primary" />
-                                <span className="font-semibold">{db.name || 'Unnamed Database'}</span>
-                                <span className="text-muted-foreground text-sm uppercase">{db.type}</span>
-                              </div>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                 <Database className="w-4 h-4 text-primary shrink-0" />
+                                 <span className="font-semibold">{db.name || 'Unnamed Database'}</span>
+                                 <span className="text-muted-foreground text-sm uppercase">{db.type}</span>
+                                 {db.name && (
+                                   <span className="text-xs text-muted-foreground/90 flex items-center gap-1.5 bg-muted/70 px-2.5 py-1 rounded-xl border border-border/80 ml-2">
+                                     <Terminal size={12} className="text-primary shrink-0" />
+                                     <span className="text-[11px] font-medium text-foreground">Backend Tool:</span>
+                                     <code className="font-mono text-primary font-bold text-[11px]">
+                                       execute_sql_{db.name.replace(/[\s-]/g, "_")}
+                                     </code>
+                                   </span>
+                                 )}
+                               </div>
                               <div className="flex items-center gap-2">
                                 <Button
                                   variant="ghost"
@@ -1387,22 +1608,22 @@ export default function AgentSettingsPage() {
                             {isExpanded && (
                               <div className="p-5 pt-2 border-t border-border/50 space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-semibold mb-1">Name <span className="text-red-500">*</span></label>
+                                      <input
+                                        type="text"
+                                        className={`w-full p-2.5 bg-background border rounded-xl text-sm ${validationErrors[`database_${idx}_name`] ? "border-red-500 ring-2 ring-red-500/20" : "border-input"}`}
+                                        placeholder="e.g. Production DB"
+                                        value={db.name}
+                                        onChange={(e) => {
+                                          const newDbs = [...formData.databases];
+                                          newDbs[idx].name = e.target.value;
+                                          updateField("databases", newDbs);
+                                        }}
+                                      />
+                                    </div>
                                   <div>
-                                    <label className="block text-sm font-semibold mb-1">Name</label>
-                                    <input
-                                      type="text"
-                                      className="w-full p-2.5 bg-background border border-input rounded-xl text-sm"
-                                      placeholder="e.g. Production DB"
-                                      value={db.name}
-                                      onChange={(e) => {
-                                        const newDbs = [...formData.databases];
-                                        newDbs[idx].name = e.target.value;
-                                        updateField("databases", newDbs);
-                                      }}
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm font-semibold mb-1">Type</label>
+                                    <label className="block text-sm font-semibold mb-1">Type <span className="text-red-500">*</span></label>
                                     <select
                                       className="w-full p-2.5 bg-background border border-input rounded-xl text-sm"
                                       value={db.type}
@@ -1418,10 +1639,10 @@ export default function AgentSettingsPage() {
                                   </div>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-semibold mb-1">Connection String</label>
+                                  <label className="block text-sm font-semibold mb-1">Connection String <span className="text-red-500">*</span></label>
                                   <input
                                     type="password"
-                                    className="w-full p-2.5 bg-background border border-input rounded-xl text-sm"
+                                    className={`w-full p-2.5 bg-background border rounded-xl text-sm ${validationErrors[`database_${idx}_connection_string`] ? "border-red-500 ring-2 ring-red-500/20" : "border-input"}`}
                                     placeholder="postgresql://user:pass@localhost:5432/dbname"
                                     value={db.connection_string}
                                     onChange={(e) => {
@@ -1454,6 +1675,124 @@ export default function AgentSettingsPage() {
                     </div>
                     <Switch checked={formData.code_interpreter_enabled} onCheckedChange={(val) => updateField("code_interpreter_enabled", val)} />
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'analytics' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div>
+                    <h3 className="text-2xl font-bold">Cost & Token Analytics</h3>
+                    <p className="text-muted-foreground text-sm mt-1">Monitor the token economics and API costs associated with this agent.</p>
+                  </div>
+
+                  {isAnalyticsLoading ? (
+                    <div className="flex items-center justify-center p-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    </div>
+                  ) : analytics ? (
+                    <div className="space-y-6">
+                      {/* Metric Cards Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm space-y-2">
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <span className="text-sm font-semibold">Total Usage Cost</span>
+                            <div className="p-2 rounded-xl bg-green-500/10 text-green-500">
+                              <DollarSign size={16} />
+                            </div>
+                          </div>
+                          <div className="text-3xl font-extrabold">${analytics.totals.estimated_cost.toFixed(4)}</div>
+                          <p className="text-[11px] text-muted-foreground">Based on typical model input/output rates.</p>
+                        </div>
+
+                        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm space-y-2">
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <span className="text-sm font-semibold">Total Tokens Consumed</span>
+                            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                              <TrendingUp size={16} />
+                            </div>
+                          </div>
+                          <div className="text-3xl font-extrabold">{analytics.totals.total_tokens.toLocaleString()}</div>
+                          <p className="text-[11px] text-muted-foreground">Prompt: {analytics.totals.prompt_tokens.toLocaleString()} | Completion: {analytics.totals.completion_tokens.toLocaleString()}</p>
+                        </div>
+
+                        <div className="bg-card border border-border p-5 rounded-2xl shadow-sm space-y-2">
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <span className="text-sm font-semibold">Cost per User Query</span>
+                            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
+                              <Activity size={16} />
+                            </div>
+                          </div>
+                          <div className="text-3xl font-extrabold">${avgCostPerQuery.toFixed(5)}</div>
+                          <p className="text-[11px] text-muted-foreground">Across a total of {totalCalls.toLocaleString()} LLM queries.</p>
+                        </div>
+                      </div>
+
+                      {analytics.daily.length === 0 ? (
+                        <div className="text-center p-12 border border-dashed border-border rounded-2xl text-muted-foreground text-sm">
+                          No usage logged yet. Start a chat session with this agent to begin cost tracking.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Token Burn Stacked Bar Chart */}
+                          <div className="bg-card border border-border p-6 rounded-2xl space-y-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-foreground">Token Burn Timeline</h4>
+                              <p className="text-xs text-muted-foreground">Visual breakdown of daily prompt and completion tokens.</p>
+                            </div>
+                            <div className="h-64 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={analytics.daily} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} />
+                                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} />
+                                  <Tooltip 
+                                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "12px" }}
+                                    labelStyle={{ fontWeight: "bold", color: "hsl(var(--foreground))" }}
+                                  />
+                                  <Legend verticalAlign="top" height={36} iconType="circle" />
+                                  <Bar dataKey="prompt_tokens" name="Prompt Tokens" stackId="a" fill="hsl(var(--primary))" radius={[0, 0, 0, 0]} />
+                                  <Bar dataKey="completion_tokens" name="Completion Tokens" stackId="a" fill="hsl(var(--primary) / 0.5)" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Cumulative Cost Area Chart */}
+                          <div className="bg-card border border-border p-6 rounded-2xl space-y-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-foreground">Cumulative Costs</h4>
+                              <p className="text-xs text-muted-foreground">Running accumulation of API cost metrics over time.</p>
+                            </div>
+                            <div className="h-64 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={dailyDataWithCumulative} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                  <defs>
+                                    <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="5%" stopColor="rgb(34, 197, 94)" stopOpacity={0.2}/>
+                                      <stop offset="95%" stopColor="rgb(34, 197, 94)" stopOpacity={0}/>
+                                    </linearGradient>
+                                  </defs>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} />
+                                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} tickFormatter={(value) => `$${value.toFixed(3)}`} />
+                                  <Tooltip 
+                                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "12px" }}
+                                    formatter={(value) => [`$${value.toFixed(5)}`, "Cumulative Cost"]}
+                                    labelStyle={{ fontWeight: "bold", color: "hsl(var(--foreground))" }}
+                                  />
+                                  <Area type="monotone" dataKey="cumulative_cost" stroke="rgb(34, 197, 94)" fillOpacity={1} fill="url(#colorCost)" strokeWidth={2} />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center p-8 border border-dashed border-border rounded-2xl text-muted-foreground">
+                      Could not fetch analytics. Please try again.
+                    </div>
+                  )}
                 </div>
               )}
 

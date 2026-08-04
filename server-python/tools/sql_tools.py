@@ -148,7 +148,15 @@ def create_sql_tools(connection_string: str, db_name: str) -> List[BaseTool]:
             return "Error: Only SELECT queries are permitted for safety."
         try:
             # Execute the query and return the results.
-            return db.run(query)
+            res = db.run(query)
+            if len(res) > 2000:
+                truncated_res = res[:2000]
+                return (
+                    f"{truncated_res}\n\n"
+                    f"[OUTPUT TRUNCATED: The result length was {len(res)} characters, which exceeds the 2,000 character context limit. "
+                    "If you need to view more rows, please re-run the query using SQL LIMIT and OFFSET for pagination.]"
+                )
+            return res
         except Exception as e:
             return f"Error executing query: {e}"
 

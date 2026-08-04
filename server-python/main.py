@@ -420,6 +420,8 @@ def cleanup_old_chat_data():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM chat_sessions WHERE created_at < NOW() - INTERVAL '30 days'")
+        cursor.execute("DELETE FROM langgraph_writes WHERE created_at < NOW() - INTERVAL '14 days'")
+        cursor.execute("DELETE FROM langgraph_checkpoints WHERE created_at < NOW() - INTERVAL '14 days'")
         conn.commit()
     except Exception as e:
         logger.error(f"Failed to cleanup old chat data: {e}")
