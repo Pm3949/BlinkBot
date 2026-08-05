@@ -30,6 +30,7 @@ from typing import Optional, List, Dict  # Strict Python type annotations
 import asyncio  # Asynchronous thread execution controls
 from fastapi import WebSocket, HTTPException, WebSocketDisconnect  # WebSocket protocols
 from fastapi.responses import StreamingResponse  # Server-Sent Events (SSE) streaming API
+from fastapi.concurrency import run_in_threadpool
 import aiohttp  # Async client to perform external HTTP calls (webhooks)
 import json  # JSON encoder/decoder utilities
 
@@ -42,7 +43,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
 
-# Local workspace imports
+from database import get_db_cursor_async
 from db import chat_repository
 from core.dependencies import rag_engine
 from core.security import decrypt_key
@@ -344,12 +345,11 @@ def create_webhook_tool(endpoint, project_tools_dict):
                         resp_str = await response.text()
                     
                     logger.info(f"📄 WEBHOOK RESPONSE: {resp_str[:500]}...")
-                    if len(resp_str) > 2000:
-                        truncated_resp = resp_str[:2000]
+                    if len(resp_str) > 8000:
+                        truncated_resp = resp_str[:8000]
                         return (
                             f"{truncated_resp}\n\n"
-                            f"[OUTPUT TRUNCATED: The webhook response was {len(resp_str)} characters, which exceeds the 2,000 character context limit. "
-                            "Please instruct the agent to use pagination query parameters if more details are needed.]"
+                            f"[OUTPUT TRUNCATED: Payload exceeded 8000 chars.]"
                         )
                     return resp_str
         except Exception as e:
@@ -358,7 +358,7 @@ def create_webhook_tool(endpoint, project_tools_dict):
             
     execute_webhook.name = name
     execute_webhook.description = description
-    execute_webhook.requires_approval = endpoint.get("requires_approval", False)
+    object.__setattr__(execute_webhook, "requires_approval", endpoint.get("requires_approval", False))
     return execute_webhook
 
 
@@ -451,7 +451,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
                                     )
                             except Exception as db_err:
-                                logger.error(f"Failed to log token usage: {db_err}")
+                                if "foreign key" in str(db_err).lower() or "violates foreign key constraint" in str(db_err).lower():
+                                    logger.warning("Skipping token log: Test user not found in DB.")
+                                else:
+                                    logger.error(f"Failed to log token usage: {db_err}")
                                 
             elif kind == "on_tool_start":
                 t_name = event["name"]
