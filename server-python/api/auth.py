@@ -20,6 +20,7 @@ DATA FLOW:
   SMTP email delivery, and JWT signature generation.
 """
 
+import os
 import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
@@ -77,8 +78,8 @@ async def google_login(request: Request, state: str = None):
     Errors / Exceptions:
         - None.
     """
-    # Extract the protocol and hostname (e.g. 'https://api.blinkbot.com') to formulate redirection URLs.
-    base_url = str(request.base_url).rstrip("/")
+    # Prioritize configured backend URL from environment to handle reverse proxy protocol and port correctly
+    base_url = os.getenv("BACKEND_URL") or os.getenv("BASE_URL") or str(request.base_url).rstrip("/")
     # Retrieve the Google consent screen redirection URL from the handler.
     auth_url = await handle_google_login(base_url, state)
     # Redirect the client's browser to the Google OAuth page.
@@ -109,8 +110,8 @@ async def google_callback(request: Request, code: str, state: str = None):
     Errors / Exceptions:
         - Raises 400 Bad Request if the authorization code is invalid or expired.
     """
-    # Format the root application URL.
-    base_url = str(request.base_url).rstrip("/")
+    # Prioritize configured backend URL from environment to handle reverse proxy protocol and port correctly
+    base_url = os.getenv("BACKEND_URL") or os.getenv("BASE_URL") or str(request.base_url).rstrip("/")
     # Get the full URL requested by Google to verify callback parameters.
     request_url = str(request.url)
     # Exchange the code for an access token and get the frontend redirect URL.
