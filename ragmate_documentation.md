@@ -64,8 +64,9 @@ Enterprises and teams need a streamlined, secure way to build and deploy special
 ## 3. Application Flow Diagram
 
 ### 3.1 Onboarding & Workspace Initialization
-1. A new user authenticates via Supabase Auth (Email/Password or Google OAuth).
-2. Upon row insertion into `auth.users`, a PostgreSQL trigger (`handle_new_user`) executes.
+1. A new user authenticates via the FastAPI backend (Email/Password or Google OAuth using dynamic origin state redirection).
+2. Upon successful authentication, the backend signs a custom JWT using the Supabase JWT secret to comply with Supabase database policies.
+3. Upon row insertion into `auth.users` (created by the API/SQL backend), a PostgreSQL trigger (`handle_new_user`) executes.
 3. The trigger automatically provisions a default personal Workspace (e.g., "John's Workspace") and inserts the user into `workspace_members` with 'Admin' privileges.
 
 ### 3.2 Agent Blueprint Creation (The Studio)
@@ -134,8 +135,9 @@ The application utilizes a **Premium Glassmorphism** aesthetic. The UI focuses o
 ## 6. Comprehensive Security & Access Control
 
 ### 6.1 Authentication
-- Managed by Supabase Auth (JWT). 
-- `AuthContext.jsx` acts as the source of truth for the client, securely managing tokens and executing automated workflows like claiming pending workspace invites upon login.
+- **Custom Backend Authentication**: Handled natively by the FastAPI backend (`server-python/api/auth.py` router and `server-python/handlers/auth_handler.py`).
+- **Supabase-Compatible JWT**: Upon registration/login, the backend signs a custom JWT with the `SUPABASE_JWT_SECRET` containing the required claims (e.g. `sub`, `role`, `aud` set to `"authenticated"`) to comply with Supabase Row Level Security (RLS) policies.
+- **Client Session Management**: `AuthContext.jsx` acts as the source of truth for the client, securely managing tokens and executing automated workflows like claiming pending workspace invites upon login.
 
 ### 6.2 Client-Side Route Guards
 The React router implements strict hierarchical access control wrappers:

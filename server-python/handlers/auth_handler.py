@@ -14,9 +14,9 @@ From top to bottom, the file executes as follows:
    database repositories for user data, and a department-scoped logger.
 3. OTP Generation helper: Randomly creates a secure 6-digit numeric OTP code.
 4. Google OAuth routines:
-   - `handle_google_login`: Prepares the URL to redirect users to Google's sign-in consent screen.
+   - `handle_google_login`: Prepares the URL to redirect users to Google's sign-in consent screen (preserves frontend origin via the `state` parameter).
    - `handle_google_callback`: Exchanges callback parameters for tokens, pulls profile emails,
-     verifies/registers the user, and signs a JWT authorization token.
+     verifies/registers the user, signs a JWT authorization token, and redirects back to the correct frontend origin.
 5. Email/Password flow:
    - `handle_register`: Registers new users, generates OTPs, and triggers verification emails.
    - `handle_verify_otp`: Checks user-submitted OTP codes and activates verified statuses.

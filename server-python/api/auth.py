@@ -7,7 +7,8 @@ OVERVIEW & ARCHITECTURE:
 This module acts as the FastAPI endpoint router for all authentication processes.
 It implements:
 1. Native Email/Password flows: Handles registration, OTP validation, logins, and resets.
-2. Google OAuth Integration: Redirects users to Google's consent screen and processes callbacks.
+2. Google OAuth Integration: Redirects users to Google's consent screen and processes callbacks,
+   supporting dynamic frontend redirection via the OAuth `state` parameter to handle both local development (localhost) and production environments securely.
 3. Two-Factor Authentication (2FA): Handles provisioning QR code URIs, TOTP verification, and disabling.
 4. Security Rate Limiting: Uses `slowapi` to restrict request frequency on authentication endpoints
    (e.g., limiting login attempts to prevent brute-force attacks).
