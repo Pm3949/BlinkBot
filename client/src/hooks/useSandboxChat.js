@@ -14,7 +14,7 @@ export function useSandboxChat() {
   const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
   const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
 
-  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
 
   const messages = useMemo(() => {
     if (!isTyping) return localMessages;
@@ -77,6 +77,8 @@ export function useSandboxChat() {
     messages,
     loading: isTyping,
     sendMessage,
-    clearSandbox
+    clearSandbox,
+    pendingApproval,
+    sendApprovalResponse
   };
 }

@@ -25,7 +25,7 @@ export function useChat() {
 
   const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
 
-  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -139,5 +139,7 @@ export function useChat() {
     renameSession,
     togglePinSession,
     deleteSession,
+    pendingApproval,
+    sendApprovalResponse,
   };
 }

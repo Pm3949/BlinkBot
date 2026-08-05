@@ -7,6 +7,7 @@ export const useAgentSocket = (url) => {
   const reconnectTimeoutRef = useRef(null);
   const [agentTextChunks, setAgentTextChunks] = useState('');
   const [agentStatus, setAgentStatus] = useState('');
+  const [pendingApproval, setPendingApproval] = useState(null);
   // Queue for messages that arrive before the socket is OPEN
   const pendingPayloadRef = useRef(null);
   // Ref to track accumulated text outside React state (avoids stale closure in stream_end)
@@ -81,6 +82,9 @@ export const useAgentSocket = (url) => {
               logs: data.content,
               payload: data
             });
+          } else if (data.type === 'approval_required') {
+            setPendingApproval(data.payload);
+            setAgentStatus('');
           } else if (data.type === 'stream_end') {
             const fullContent = textAccRef.current;
             textAccRef.current = '';
@@ -161,11 +165,26 @@ export const useAgentSocket = (url) => {
     setAgentStatus('');
   }, []);
 
+  const sendApprovalResponse = useCallback((decision, toolCallId) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: 'tool_approval_response',
+        payload: {
+          decision,
+          tool_call_id: toolCallId
+        }
+      }));
+      setPendingApproval(null);
+    }
+  }, []);
+
   return {
     isConnected,
     agentTextChunks,
     agentStatus,
     sendChatRequest,
-    clearTextChunks
+    clearTextChunks,
+    pendingApproval,
+    sendApprovalResponse
   };
 };
