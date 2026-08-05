@@ -56,7 +56,7 @@ limiter = Limiter(key_func=get_remote_address)
 # ==========================================
 
 @router.get("/google/login")
-async def google_login(request: Request):
+async def google_login(request: Request, state: str = None):
     """
     Initiates Google OAuth authorization flows.
 
@@ -65,6 +65,7 @@ async def google_login(request: Request):
 
     Parameters:
         request (Request): The incoming HTTP request.
+        state (str, optional): The state parameter to preserve frontend origin context.
 
     Returns:
         RedirectResponse: A redirect to the Google consent screen.
@@ -78,13 +79,13 @@ async def google_login(request: Request):
     # Extract the protocol and hostname (e.g. 'https://api.blinkbot.com') to formulate redirection URLs.
     base_url = str(request.base_url).rstrip("/")
     # Retrieve the Google consent screen redirection URL from the handler.
-    auth_url = await handle_google_login(base_url)
+    auth_url = await handle_google_login(base_url, state)
     # Redirect the client's browser to the Google OAuth page.
     return RedirectResponse(auth_url)
 
 
 @router.get("/google/callback")
-async def google_callback(request: Request, code: str):
+async def google_callback(request: Request, code: str, state: str = None):
     """
     Processes OAuth callbacks from Google.
 
@@ -95,6 +96,7 @@ async def google_callback(request: Request, code: str):
     Parameters:
         request (Request): The incoming callback HTTP request.
         code (str): The Google authorization code.
+        state (str, optional): The state parameter containing the frontend redirect URL.
 
     Returns:
         RedirectResponse: A redirect to the frontend application dashboard.
@@ -111,7 +113,7 @@ async def google_callback(request: Request, code: str):
     # Get the full URL requested by Google to verify callback parameters.
     request_url = str(request.url)
     # Exchange the code for an access token and get the frontend redirect URL.
-    redirect_url = await handle_google_callback(base_url, request_url, code)
+    redirect_url = await handle_google_callback(base_url, request_url, code, state)
     # Redirect the user to the frontend application.
     return RedirectResponse(redirect_url)
 

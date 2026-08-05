@@ -991,11 +991,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         # Load and mount code interpreter tools
                         if code_interpreter_enabled and str(aid) == str(agent_id):
                             from tools.code_tools import create_code_tools
-                            t_list.extend(create_code_tools())
+                            t_list.extend(create_code_tools(str(aid)))
                             
                         if str(aid) != str(agent_id) and code_interpreter_map.get(str(aid), False):
                             from tools.code_tools import create_code_tools
-                            t_list.extend(create_code_tools())
+                            t_list.extend(create_code_tools(str(aid)))
 
                         # Load and mount native app integrations (Slack, Gmail, etc.)
                         agent_native = native_integrations_map.get(str(aid), [])

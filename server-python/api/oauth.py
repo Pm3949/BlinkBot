@@ -184,3 +184,141 @@ async def github_callback(request: Request):
         logger.error(f"GitHub callback error: {e}")
         raise HTTPException(status_code=400, detail="Authentication failed")
 
+
+@router.get("/slack/login")
+async def slack_login():
+    """
+    Initiates the Slack OAuth authorization flow.
+    """
+    client_id = os.getenv("SLACK_CLIENT_ID", "mock_slack_id")
+    base_url = os.getenv("BASE_URL", "http://localhost:8000")
+    redirect_uri = f"{base_url}/api/auth/slack/callback"
+    slack_scopes = "chat:write,commands,channels:read,groups:read,im:read,mpim:read"
+    url = (
+        f"https://slack.com/oauth/v2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&user_scope={slack_scopes}"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/slack/callback")
+async def slack_callback(code: str, request: Request):
+    """
+    Handles callbacks from Slack OAuth.
+    """
+    client_id = os.getenv("SLACK_CLIENT_ID", "mock_slack_id")
+    client_secret = os.getenv("SLACK_CLIENT_SECRET", "mock_slack_secret")
+    base_url = os.getenv("BASE_URL", "http://localhost:8000")
+    redirect_uri = f"{base_url}/api/auth/slack/callback"
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://slack.com/api/oauth.v2.access",
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri
+                }
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.error(f"Slack OAuth token exchange failed: {data}")
+                raise HTTPException(status_code=400, detail=f"Slack authentication failed: {data.get('error')}")
+            access_token = data.get("access_token") or data.get("authed_user", {}).get("access_token")
+            ragmate_user_id = request.headers.get("X-User-Id", "default_user")
+            await save_oauth_token(ragmate_user_id, "slack", access_token)
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content='''
+                <html>
+                    <head><title>OAuth Success</title></head>
+                    <body>
+                        <script>
+                            if (window.opener) {
+                                window.opener.postMessage("oauth_success", "*");
+                            }
+                            window.close();
+                        </script>
+                        <p>Slack authentication successful! You can close this window.</p>
+                    </body>
+                </html>
+            ''')
+    except Exception as e:
+        logger.error(f"Slack callback error: {e}")
+        raise HTTPException(status_code=400, detail="Authentication failed")
+
+
+@router.get("/jira/login")
+async def jira_login():
+    """
+    Initiates the Jira OAuth authorization flow.
+    """
+    client_id = os.getenv("JIRA_CLIENT_ID", "mock_jira_id")
+    base_url = os.getenv("BASE_URL", "http://localhost:8000")
+    redirect_uri = f"{base_url}/api/auth/jira/callback"
+    scopes = "read:jira-work write:jira-work"
+    url = (
+        f"https://auth.atlassian.com/authorize"
+        f"?audience=api.atlassian.com"
+        f"&client_id={client_id}"
+        f"&scope={scopes}"
+        f"&redirect_uri={redirect_uri}"
+        f"&state=atlassian_auth"
+        f"&response_type=code"
+        f"&prompt=consent"
+    )
+    return RedirectResponse(url)
+
+
+@router.get("/jira/callback")
+async def jira_callback(code: str, request: Request):
+    """
+    Handles callbacks from Jira OAuth.
+    """
+    client_id = os.getenv("JIRA_CLIENT_ID", "mock_jira_id")
+    client_secret = os.getenv("JIRA_CLIENT_SECRET", "mock_jira_secret")
+    base_url = os.getenv("BASE_URL", "http://localhost:8000")
+    redirect_uri = f"{base_url}/api/auth/jira/callback"
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://auth.atlassian.com/oauth/token",
+                json={
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri
+                }
+            )
+            data = resp.json()
+            if "access_token" not in data:
+                logger.error(f"Jira OAuth token exchange failed: {data}")
+                raise HTTPException(status_code=400, detail="Jira authentication failed")
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
+            ragmate_user_id = request.headers.get("X-User-Id", "default_user")
+            await save_oauth_token(ragmate_user_id, "jira", access_token, refresh_token)
+            from fastapi.responses import HTMLResponse
+            return HTMLResponse(content='''
+                <html>
+                    <head><title>OAuth Success</title></head>
+                    <body>
+                        <script>
+                            if (window.opener) {
+                                window.opener.postMessage("oauth_success", "*");
+                            }
+                            window.close();
+                        </script>
+                        <p>Jira authentication successful! You can close this window.</p>
+                    </body>
+                </html>
+            ''')
+    except Exception as e:
+        logger.error(f"Jira callback error: {e}")
+        raise HTTPException(status_code=400, detail="Authentication failed")
+

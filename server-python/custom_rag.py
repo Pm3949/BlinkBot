@@ -293,6 +293,24 @@ class CustomRAGEngine:
                 # Return the combined CSV rows.
                 return "\n".join(rows)
 
+            elif ext in ["xlsx", "xls"]:
+                import pandas as pd
+                excel_file = pd.ExcelFile(file_path)
+                sheet_texts = []
+                for sheet in excel_file.sheet_names:
+                    df = pd.read_excel(file_path, sheet_name=sheet)
+                    rows = []
+                    rows.append(f"--- Sheet: {sheet} ---")
+                    # Convert headers
+                    headers = [str(c) for c in df.columns]
+                    rows.append(" | ".join(headers))
+                    # Convert rows
+                    for _, row in df.iterrows():
+                        row_vals = [str(val) for val in row.values]
+                        rows.append(" | ".join(row_vals))
+                    sheet_texts.append("\n".join(rows))
+                return "\n\n".join(sheet_texts)
+
             else:
                 raise ValueError(f"Unsupported file format: {ext}")
         except Exception as e:

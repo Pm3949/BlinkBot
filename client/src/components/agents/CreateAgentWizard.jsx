@@ -164,6 +164,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     api_key: "",
     language: "en",
     web_search_enabled: false,
+    code_interpreter_enabled: false,
   });
 
   const { data: activeModelsData } = useActiveModels();
@@ -240,7 +241,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
   };
 
   const nextStep = () => {
-    if (step < 4) setStep(step + 1);
+    if (step < 5) setStep(step + 1);
   };
 
   const prevStep = () => {
@@ -311,6 +312,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
       project_id: projectId,
       parent_agent_id: parentAgentId,
       web_search_enabled: formData.web_search_enabled,
+      code_interpreter_enabled: formData.code_interpreter_enabled,
     };
 
     try {
@@ -336,7 +338,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
 
         <div className="flex-1 overflow-y-auto flex flex-col p-8 bg-card">
           <div className="mb-8 flex items-center">
-            {[1, 2, 3, 4].map((item) => (
+            {[1, 2, 3, 4, 5].map((item) => (
               <div
                 key={item}
                 className="flex items-center flex-1"
@@ -361,7 +363,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
                   {step > item ? <Check size={16} /> : item}
                 </div>
 
-                {item !== 4 && (
+                {item !== 5 && (
                   <div
                     className={`
                     flex-1
@@ -600,6 +602,35 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
             {step === 4 && (
               <div className="animate-message">
                 <div className="flex items-center gap-3 mb-8">
+                  <Zap className="text-primary" />
+                  <h3 className="text-2xl font-bold">Capabilities & Tools</h3>
+                </div>
+
+                <div className="space-y-6">
+                  <div className={`p-6 border rounded-2xl bg-card transition-all duration-300 ${formData.code_interpreter_enabled ? 'border-primary ring-1 ring-primary/20 shadow-md' : 'border-border opacity-75'}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-4">
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 text-blue-500 shrink-0">
+                          <Code size={24} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-lg text-foreground">Python Code Sandbox (CSV Analyzer)</h4>
+                          <p className="text-sm text-muted-foreground mt-1">Allow the agent to run Python scripts in a secure sandbox VM to analyze CSV data, compute math, and generate charts.</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={formData.code_interpreter_enabled}
+                        onCheckedChange={(val) => updateField("code_interpreter_enabled", val)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && (
+              <div className="animate-message">
+                <div className="flex items-center gap-3 mb-8">
                   <Code className="text-primary" />
                   <h3 className="text-2xl font-bold">Model Settings</h3>
                 </div>
@@ -780,7 +811,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
             Back
           </button>
 
-          {step !== 4 ? (
+          {step !== 5 ? (
             <button
               onClick={nextStep}
               disabled={createAgentMutation.isPending}

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, BarChart2, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pencil, BarChart2, TrendingUp, DollarSign, Activity } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
-import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw } from "lucide-react";
+import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw, Wrench } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useEffect } from "react";
 import { useWorkspacePermissions, useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
@@ -157,6 +157,37 @@ export default function AgentSettingsPage() {
       const uploadPromises = files.map((file) => uploadMutation.mutateAsync({ agentId: selectedAgentId, file }));
       await Promise.all(uploadPromises);
       toast.success(files.length > 1 ? `${files.length} files uploaded` : "File uploaded");
+      
+      const hasCsv = files.some(f => f.name.toLowerCase().endsWith('.csv') || f.type === 'text/csv');
+      if (hasCsv && !formData.code_interpreter_enabled) {
+        toast("CSV uploaded, but Code Sandbox is disabled.", {
+          description: "The agent will not be able to execute Python code or parse CSV data without the Sandbox enabled.",
+          action: {
+            label: "Enable Sandbox",
+            onClick: () => {
+              updateField("code_interpreter_enabled", true);
+              const payload = {
+                name: formData.name.trim(),
+                description: formData.description.trim(),
+                llm_provider: formData.provider,
+                llm_model: formData.model,
+                embedding_model: formData.embedding_model,
+                chunk_strategy: formData.chunk_strategy,
+                system_prompt: formData.system_prompt.trim(),
+                output_format: formData.output_format.trim(),
+                api_key: selectedModel?.requiresKey ? formData.api_key.trim() : null,
+                language: formData.language,
+                web_search_enabled: formData.web_search_enabled,
+                code_interpreter_enabled: true,
+                databases: formData.databases,
+                native_integrations: formData.native_integrations,
+                endpoints: formData.endpoints,
+              };
+              updateAgentMutation.mutate(payload);
+            }
+          }
+        });
+      }
     } catch (e) {
       toast.error(e.message || "Failed to upload.");
     } finally {
@@ -287,6 +318,7 @@ export default function AgentSettingsPage() {
   const { data: globalConnections = [] } = useProjectTools(agent?.project_id);
   const [activeTab, setActiveTab] = useState("identity");
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [toolsSubView, setToolsSubView] = useState("hub");
 
   const handleOptimizePrompt = async () => {
     if (!formData.system_prompt.trim()) {
@@ -605,6 +637,9 @@ export default function AgentSettingsPage() {
       api_key: selectedModel?.requiresKey ? formData.api_key.trim() : null,
       language: formData.language,
       web_search_enabled: formData.web_search_enabled,
+      code_interpreter_enabled: formData.code_interpreter_enabled,
+      databases: formData.databases,
+      native_integrations: formData.native_integrations,
       endpoints: formData.endpoints,
     };
 
@@ -672,10 +707,7 @@ export default function AgentSettingsPage() {
                   { id: "behavior", label: "Behavior", icon: Brain },
                   { id: "model", label: "Model & AI", icon: Sparkles },
                   { id: "knowledge-base", label: "Knowledge Base", icon: Library },
-                  { id: "endpoints", label: "API Endpoints", icon: Network },
-                  { id: "integrations", label: "Integrations", icon: Blocks },
-                  { id: "databases", label: "Databases", icon: Database },
-                  { id: "code-interpreter", label: "Code Interpreter", icon: Terminal },
+                  { id: "tools", label: "Tools", icon: Wrench },
                   { id: "analytics", label: "Cost & Analytics", icon: BarChart2 },
                 ];
 
@@ -976,299 +1008,487 @@ export default function AgentSettingsPage() {
                 </div>
               )}
 
-              {activeTab === 'endpoints' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-2xl font-bold">API Endpoints</h3>
-                      <p className="text-muted-foreground text-sm mt-1">Configure specific API endpoints this agent can call.</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        updateField("endpoints", [
-                          ...formData.endpoints,
-                          { connection_id: "", name: "New Endpoint", path: "", method: "GET", description: "", payload_format: "", expected_output: "" }
-                        ]);
-                        setExpandedEndpoints(prev => ({...prev, [formData.endpoints.length]: true}));
-                      }}
-                    >
-                      <Plus className="w-4 h-4 mr-2" /> Add Endpoint
-                    </Button>
-                  </div>
+              {activeTab === 'tools' && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {toolsSubView === "hub" ? (
+                    <>
+                      <div>
+                        <h3 className="text-2xl font-bold">Tools & Integrations</h3>
+                        <p className="text-muted-foreground text-sm mt-1">Configure capabilities, API endpoints, databases, and native app extensions.</p>
+                      </div>
 
-                  {formData.endpoints.length === 0 ? (
-                    <div className="text-center p-10 bg-muted/20 border border-dashed border-border rounded-2xl text-muted-foreground">
-                      No endpoints configured. Click 'Add Endpoint' to give this agent external API access.
-                    </div>
+                      {/* 1. Core Capabilities */}
+                      <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
+                        <h4 className="font-bold text-lg border-b pb-2 mb-4 flex items-center gap-2">
+                          <Wrench size={18} className="text-primary" /> Core Capabilities
+                        </h4>
+                        
+                        <div className="flex items-center justify-between pb-4 border-b border-border/50">
+                          <div>
+                            <h4 className="font-semibold flex items-center gap-2"><Globe size={18} className="text-blue-500" /> Web Search Fallback</h4>
+                            <p className="text-sm text-muted-foreground mt-1">Allow the agent to search the internet if the answer isn't in documents.</p>
+                          </div>
+                          <Switch checked={formData.web_search_enabled} onCheckedChange={(val) => updateField("web_search_enabled", val)} />
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2">
+                          <div>
+                            <h4 className="font-semibold flex items-center gap-2"><Code size={18} className="text-indigo-500" /> CSV & Excel Spreadsheet Analyzer</h4>
+                            <p className="text-sm text-muted-foreground mt-1">Allow the agent to natively parse, query, and perform statistical analysis on uploaded CSV and Excel spreadsheet files.</p>
+                          </div>
+                          <Switch checked={formData.code_interpreter_enabled} onCheckedChange={(val) => updateField("code_interpreter_enabled", val)} />
+                        </div>
+                      </div>
+
+                      {/* 2. Tool Categories Grid */}
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
+                          <div className="space-y-1">
+                            <h4 className="text-lg font-bold flex items-center gap-2"><Network size={18} className="text-primary" /> Custom API Tools</h4>
+                            <p className="text-sm text-muted-foreground">Configure external REST API webhook endpoints this agent can call.</p>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
+                              {formData.endpoints.length} configured
+                            </span>
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("api-tools")} className="hover:bg-primary/10 hover:text-primary">
+                            <ArrowRight size={20} />
+                          </Button>
+                        </div>
+
+                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
+                          <div className="space-y-1">
+                            <h4 className="text-lg font-bold flex items-center gap-2"><Database size={18} className="text-primary" /> Database Connectors</h4>
+                            <p className="text-sm text-muted-foreground">Allow your agent to execute raw SQL queries to databases.</p>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
+                              {(formData.databases || []).length} active
+                            </span>
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("databases")} className="hover:bg-primary/10 hover:text-primary">
+                            <ArrowRight size={20} />
+                          </Button>
+                        </div>
+
+                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
+                          <div className="space-y-1">
+                            <h4 className="text-lg font-bold flex items-center gap-2"><Blocks size={18} className="text-primary" /> App Integrations</h4>
+                            <p className="text-sm text-muted-foreground">Connect the agent to external applications like Slack, GitHub, Jira.</p>
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
+                              {(formData.native_integrations || []).length} connected
+                            </span>
+                          </div>
+                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("integrations")} className="hover:bg-primary/10 hover:text-primary">
+                            <ArrowRight size={20} />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
                   ) : (
-                    <div className="space-y-4">
-                      {formData.endpoints.map((ep, idx) => {
-                        const isExpanded = !!expandedEndpoints[idx];
-                        return (
-                        <div key={idx} className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-                          <div 
-                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                            onClick={() => setExpandedEndpoints(prev => ({...prev, [idx]: !prev[idx]}))}
-                          >
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <span className={`px-2 py-0.5 text-xs font-bold rounded-md ${ep.method === 'GET' ? 'bg-blue-100 text-blue-700' : ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                {ep.method || 'GET'}
-                              </span>
-                              <span className="font-semibold">{ep.name || 'Unnamed Endpoint'}</span>
-                              <span className="text-muted-foreground text-sm truncate max-w-[200px]">{ep.path}</span>
-                              {ep.name && (
-                                <span className="text-xs text-muted-foreground/90 flex items-center gap-1.5 bg-muted/70 px-2.5 py-1 rounded-xl border border-border/80 ml-2">
-                                  <Terminal size={12} className="text-primary shrink-0" />
-                                  <span className="text-[11px] font-medium text-foreground">Backend Tool:</span>
-                                  <code className="font-mono text-primary font-bold text-[11px]">
-                                    {ep.name.replace(/[\s-]/g, "_")}
-                                  </code>
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-8 w-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const newEps = [...formData.endpoints];
-                                  newEps.splice(idx, 1);
-                                  updateField("endpoints", newEps);
-                                }}
-                              >
-                                <Trash2 size={14} />
-                              </Button>
-                              <div className="text-muted-foreground p-1">
-                                {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {isExpanded && (
-                            <div className="p-5 pt-2 border-t border-border/50">
-                              <div className="grid grid-cols-2 gap-4 mb-4">
-                            {agent?.project_id ? (
-                              <div>
-                                <label className="block text-sm font-semibold mb-1">API Connection <span className="text-red-500">*</span></label>
-                                <Select
-                                  value={ep.connection_id}
-                                  onValueChange={(val) => {
-                                    const newEps = [...formData.endpoints];
-                                    newEps[idx].connection_id = val;
-                                    updateField("endpoints", newEps);
-                                  }}
-                                >
-                                  <SelectTrigger className={`w-full bg-background rounded-xl ${validationErrors[`endpoint_${idx}_connection_id`] ? "border-red-500 ring-2 ring-red-500/20" : ""}`}>
-                                    <SelectValue placeholder="Select Connection" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {globalConnections.map(conn => (
-                                      <SelectItem key={conn.id} value={conn.id}>{conn.name}</SelectItem>
-                                    ))}
-                                    {globalConnections.length === 0 && (
-                                      <SelectItem value="none" disabled>No connections available</SelectItem>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ) : (
-                              <div>
-                                <label className="block text-sm font-semibold mb-1">Base URL <span className="text-red-500">*</span></label>
-                                <input
-                                  type="text"
-                                  value={ep.base_url || ""}
-                                  onChange={(e) => {
-                                    const newEps = [...formData.endpoints];
-                                    newEps[idx].base_url = e.target.value;
-                                    updateField("endpoints", newEps);
-                                  }}
-                                  placeholder="https://api.example.com"
-                                  className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_base_url`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
-                                />
-                              </div>
-                            )}
-                             <div>
-                               <label className="block text-sm font-semibold mb-1">Endpoint Name <span className="text-red-500">*</span></label>
-                               <input
-                                 type="text"
-                                 value={ep.name}
-                                 onChange={(e) => {
-                                   const newEps = [...formData.endpoints];
-                                   newEps[idx].name = e.target.value;
-                                   updateField("endpoints", newEps);
-                                 }}
-                                 placeholder="e.g. Get User Data"
-                                 className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_name`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
-                               />
-                             </div>
-                          </div>
+                    <div className="space-y-6">
+                      <button
+                        type="button"
+                        onClick={() => setToolsSubView("hub")}
+                        className="flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary/80 transition-colors"
+                      >
+                        <ArrowLeft size={14} /> Back to Tools & Integrations
+                      </button>
 
-                          <div className="flex items-center justify-between bg-muted/20 border border-border/50 p-4 rounded-xl mb-4">
-                            <div>
-                              <label className="text-sm font-semibold block">Require User Approval</label>
-                              <span className="text-xs text-muted-foreground">If enabled, the agent will pause and ask for confirmation before executing this tool.</span>
-                            </div>
-                            <Switch
-                              checked={ep.requires_approval || false}
-                              onCheckedChange={(val) => {
-                                const newEps = [...formData.endpoints];
-                                newEps[idx].requires_approval = val;
-                                updateField("endpoints", newEps);
+                      {toolsSubView === "api-tools" && (
+                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
+                          <div className="flex items-center justify-between mb-4 border-b pb-2">
+                            <h4 className="font-bold text-lg flex items-center gap-2">
+                              <Network size={18} className="text-primary" /> Custom API Tools
+                            </h4>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                updateField("endpoints", [
+                                  ...formData.endpoints,
+                                  { connection_id: "", name: "New Tool", path: "", method: "GET", description: "", payload_format: "", expected_output: "" }
+                                ]);
+                                setExpandedEndpoints(prev => ({...prev, [formData.endpoints.length]: true}));
                               }}
-                            />
+                            >
+                              <Plus className="w-4 h-4 mr-2" /> Add Custom API Tool
+                            </Button>
                           </div>
 
-                          <div className="grid grid-cols-[1fr_3fr] gap-4 mb-4">
-                            <div>
-                              <label className="block text-sm font-semibold mb-1">Method <span className="text-red-500">*</span></label>
-                              <Select
-                                value={ep.method}
-                                onValueChange={(val) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].method = val;
-                                  updateField("endpoints", newEps);
-                                }}
-                              >
-                                <SelectTrigger className="w-full bg-background rounded-xl">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="GET">GET</SelectItem>
-                                  <SelectItem value="POST">POST</SelectItem>
-                                  <SelectItem value="PUT">PUT</SelectItem>
-                                  <SelectItem value="DELETE">DELETE</SelectItem>
-                                </SelectContent>
-                              </Select>
+                          {formData.endpoints.length === 0 ? (
+                            <div className="text-center p-8 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
+                              No custom API tools configured. Click 'Add Custom API Tool' to give this agent custom actions.
                             </div>
-                            <div>
-                              <label className="block text-sm font-semibold mb-1">Path <span className="text-red-500">*</span></label>
-                              <input
-                                type="text"
-                                value={ep.path}
-                                onChange={(e) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].path = e.target.value;
-                                  updateField("endpoints", newEps);
-                                }}
-                                placeholder="/v1/users/{user_id}"
-                                className="w-full bg-background font-mono text-sm border border-border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none"
-                              />
-                            </div>
-                          </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {formData.endpoints.map((ep, idx) => {
+                                const isExpanded = !!expandedEndpoints[idx];
+                                return (
+                                  <div key={idx} className="bg-background rounded-xl border border-border shadow-sm overflow-hidden">
+                                    {/* Endpoint header */}
+                                    <div 
+                                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
+                                      onClick={() => setExpandedEndpoints(prev => ({...prev, [idx]: !prev[idx]}))}
+                                    >
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <span className={`px-2 py-0.5 text-xs font-bold rounded-md ${ep.method === 'GET' ? 'bg-blue-100 text-blue-700' : ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                          {ep.method || 'GET'}
+                                        </span>
+                                        <span className="font-semibold text-sm">{ep.name || 'Unnamed Tool'}</span>
+                                        <span className="text-muted-foreground text-xs truncate max-w-[200px]">{ep.path}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const newEps = [...formData.endpoints];
+                                            newEps.splice(idx, 1);
+                                            updateField("endpoints", newEps);
+                                          }}
+                                        >
+                                          <Trash2 size={13} />
+                                        </Button>
+                                        <div className="text-muted-foreground p-1">
+                                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                        </div>
+                                      </div>
+                                    </div>
 
-                          <div className="space-y-4">
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-sm font-semibold">Description (Instructions for Agent) <span className="text-red-500">*</span></label>
-                                <button
-                                  type="button"
-                                  onClick={() => handleGenerateDescription(idx)}
-                                  disabled={generatingDescriptionIdx === idx}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-xl hover:bg-primary/20 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all"
-                                >
-                                  {generatingDescriptionIdx === idx ? (
-                                    <>
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                      Generating...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Sparkles className="w-3 h-3" />
-                                      AI Generate
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                              <input
-                                type="text"
-                                value={ep.description}
-                                onChange={(e) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].description = e.target.value;
-                                  updateField("endpoints", newEps);
-                                }}
-                                placeholder="Use this to fetch user data given a user ID."
-                                className={`w-full bg-background border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none ${validationErrors[`endpoint_${idx}_description`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
-                              />
-                            </div>
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-sm font-semibold">Payload Format (JSON)</label>
-                                <button
-                                  type="button"
-                                  onClick={() => prefillPayloadTemplate(idx)}
-                                  className="text-[11px] font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer"
-                                >
-                                  Load Sample Template
-                                </button>
-                              </div>
-                              <textarea
-                                value={ep.payload_format}
-                                onChange={(e) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].payload_format = e.target.value;
-                                  updateField("endpoints", newEps);
-                                }}
-                                placeholder='{"user_id": "{id}"}'
-                                rows={3}
-                                className="w-full bg-background font-mono text-xs border border-border rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-primary/20 outline-none"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-semibold mb-1">Expected Output (JSON)</label>
-                              <textarea
-                                value={ep.expected_output || ""}
-                                onChange={(e) => {
-                                  const newEps = [...formData.endpoints];
-                                  newEps[idx].expected_output = e.target.value;
-                                  updateField("endpoints", newEps);
-                                }}
-                                placeholder='{"user_name": "John", "age": 30}'
-                                rows={3}
-                                className="w-full bg-background font-mono text-xs border border-border rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-primary/20 outline-none"
-                              />
-                            </div>
-                            {!agent?.project_id && (
-                              <>
-                                <div>
-                                  <label className="block text-sm font-semibold mb-1">API Key / Auth Header</label>
-                                  <input
-                                    type="password"
-                                    value={ep.api_key || ""}
-                                    onChange={(e) => {
-                                      const newEps = [...formData.endpoints];
-                                      newEps[idx].api_key = e.target.value;
-                                      updateField("endpoints", newEps);
-                                    }}
-                                    placeholder="Bearer sk-..."
-                                    className="w-full bg-background font-mono text-sm border border-border rounded-xl px-4 py-2 focus:ring-2 focus:ring-primary/20 outline-none"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-semibold mb-1">Headers (JSON)</label>
-                                  <textarea
-                                    value={ep.headers || ""}
-                                    onChange={(e) => {
-                                      const newEps = [...formData.endpoints];
-                                      newEps[idx].headers = e.target.value;
-                                      updateField("endpoints", newEps);
-                                    }}
-                                    placeholder='{"X-Custom-Token": "abc"}'
-                                    rows={2}
-                                    className="w-full bg-background font-mono text-xs border border-border rounded-xl px-4 py-3 resize-y focus:ring-2 focus:ring-primary/20 outline-none"
-                                  />
-                                </div>
-                              </>
-                            )}
-                              </div>
+                                    {isExpanded && (
+                                      <div className="p-5 pt-2 border-t border-border/50 bg-card/30">
+                                        <div className="grid grid-cols-2 gap-4 mb-4">
+                                          {agent?.project_id ? (
+                                            <div>
+                                              <label className="block text-xs font-semibold mb-1">API Connection <span className="text-red-500">*</span></label>
+                                              <Select
+                                                value={ep.connection_id}
+                                                onValueChange={(val) => {
+                                                  const newEps = [...formData.endpoints];
+                                                  newEps[idx].connection_id = val;
+                                                  updateField("endpoints", newEps);
+                                                }}
+                                              >
+                                                <SelectTrigger className={`w-full bg-background rounded-xl h-9 text-xs`}>
+                                                  <SelectValue placeholder="Select Connection" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {globalConnections.map(conn => (
+                                                    <SelectItem key={conn.id} value={conn.id}>{conn.name}</SelectItem>
+                                                  ))}
+                                                  {globalConnections.length === 0 && (
+                                                    <SelectItem value="none" disabled>No connections available</SelectItem>
+                                                  )}
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                          ) : (
+                                            <div>
+                                              <label className="block text-xs font-semibold mb-1">Base URL <span className="text-red-500">*</span></label>
+                                              <input
+                                                type="text"
+                                                value={ep.base_url || ""}
+                                                onChange={(e) => {
+                                                  const newEps = [...formData.endpoints];
+                                                  newEps[idx].base_url = e.target.value;
+                                                  updateField("endpoints", newEps);
+                                                }}
+                                                placeholder="https://api.example.com"
+                                                className={`w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none`}
+                                              />
+                                            </div>
+                                          )}
+                                          <div>
+                                            <label className="block text-xs font-semibold mb-1">Tool Name <span className="text-red-500">*</span></label>
+                                            <input
+                                              type="text"
+                                              value={ep.name}
+                                              onChange={(e) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].name = e.target.value;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                              placeholder="e.g. Get User Data"
+                                              className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between bg-muted/20 border border-border/50 p-3 rounded-xl mb-4">
+                                          <div>
+                                            <label className="text-xs font-semibold block">Require User Approval</label>
+                                            <span className="text-[11px] text-muted-foreground">If enabled, the agent will pause and ask for confirmation before executing this tool.</span>
+                                          </div>
+                                          <Switch
+                                            checked={ep.requires_approval || false}
+                                            onCheckedChange={(val) => {
+                                              const newEps = [...formData.endpoints];
+                                              newEps[idx].requires_approval = val;
+                                              updateField("endpoints", newEps);
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div className="grid grid-cols-[1fr_3fr] gap-4 mb-4">
+                                          <div>
+                                            <label className="block text-xs font-semibold mb-1">Method <span className="text-red-500">*</span></label>
+                                            <Select
+                                              value={ep.method}
+                                              onValueChange={(val) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].method = val;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                            >
+                                              <SelectTrigger className="w-full bg-background rounded-xl h-9 text-xs">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="GET">GET</SelectItem>
+                                                <SelectItem value="POST">POST</SelectItem>
+                                                <SelectItem value="PUT">PUT</SelectItem>
+                                                <SelectItem value="DELETE">DELETE</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold mb-1">Path <span className="text-red-500">*</span></label>
+                                            <input
+                                              type="text"
+                                              value={ep.path}
+                                              onChange={(e) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].path = e.target.value;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                              placeholder="/v1/users/{user_id}"
+                                              className="w-full bg-background font-mono text-xs border border-border rounded-xl px-3 py-1.5 outline-none"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                          <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                              <label className="text-xs font-semibold">Description (Instructions for Agent) <span className="text-red-500">*</span></label>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleGenerateDescription(idx)}
+                                                disabled={generatingDescriptionIdx === idx}
+                                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 active:scale-95 disabled:opacity-50 transition-all"
+                                              >
+                                                {generatingDescriptionIdx === idx ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                                                <span>AI Generate</span>
+                                              </button>
+                                            </div>
+                                            <textarea
+                                              value={ep.description}
+                                              onChange={(e) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].description = e.target.value;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                              placeholder="Use this to fetch user data given a user ID."
+                                              rows={2}
+                                              className={`w-full bg-background border rounded-xl px-3 py-1.5 text-xs outline-none resize-y ${validationErrors[`endpoint_${idx}_description`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                              <label className="text-xs font-semibold">Payload Format (JSON)</label>
+                                              <button
+                                                type="button"
+                                                onClick={() => prefillPayloadTemplate(idx)}
+                                                className="text-[10px] font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer"
+                                              >
+                                                Load Sample Template
+                                              </button>
+                                            </div>
+                                            <textarea
+                                              value={ep.payload_format}
+                                              onChange={(e) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].payload_format = e.target.value;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                              placeholder='{"user_id": "{id}"}'
+                                              rows={2}
+                                              className="w-full bg-background font-mono text-[11px] border border-border rounded-xl px-3 py-2 resize-y outline-none"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold mb-1">Expected Output (JSON)</label>
+                                            <textarea
+                                              value={ep.expected_output || ""}
+                                              onChange={(e) => {
+                                                const newEps = [...formData.endpoints];
+                                                newEps[idx].expected_output = e.target.value;
+                                                updateField("endpoints", newEps);
+                                              }}
+                                              placeholder='{"user_name": "John", "age": 30}'
+                                              rows={2}
+                                              className="w-full bg-background font-mono text-[11px] border border-border rounded-xl px-3 py-2 resize-y outline-none"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {toolsSubView === "databases" && (
+                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
+                          <div className="flex items-center justify-between mb-4 border-b pb-2">
+                            <h4 className="font-bold text-lg flex items-center gap-2">
+                              <Database size={18} className="text-primary" /> Database Connectors
+                            </h4>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                updateField("databases", [
+                                  ...(formData.databases || []),
+                                  { name: "New Database", type: "postgresql", connection_string: "" }
+                                ]);
+                                setExpandedDatabases(prev => ({...prev, [(formData.databases || []).length]: true}));
+                              }}
+                            >
+                              <Plus className="w-4 h-4 mr-2" /> Add Database
+                            </Button>
+                          </div>
+
+                          {(!formData.databases || formData.databases.length === 0) ? (
+                            <div className="text-center p-8 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
+                              No database tools configured. Click 'Add Database' to connect SQL databases.
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {formData.databases.map((db, idx) => {
+                                const isExpanded = !!expandedDatabases[idx];
+                                return (
+                                  <div key={idx} className="bg-background rounded-xl border border-border shadow-sm overflow-hidden">
+                                    <div 
+                                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
+                                      onClick={() => setExpandedDatabases(prev => ({...prev, [idx]: !prev[idx]}))}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <Database className="w-4 h-4 text-primary shrink-0" />
+                                        <span className="font-semibold text-sm">{db.name || 'Unnamed Database'}</span>
+                                        <span className="text-muted-foreground text-xs uppercase">{db.type}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-7 w-7"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const newDbs = [...formData.databases];
+                                            newDbs.splice(idx, 1);
+                                            updateField("databases", newDbs);
+                                          }}
+                                        >
+                                          <Trash2 size={13} />
+                                        </Button>
+                                        <div className="text-muted-foreground p-1">
+                                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {isExpanded && (
+                                      <div className="p-5 pt-2 border-t border-border/50 bg-card/30 space-y-4">
+                                        <div>
+                                          <label className="block text-xs font-semibold mb-1">Database Name <span className="text-red-500">*</span></label>
+                                          <input
+                                            type="text"
+                                            value={db.name}
+                                            onChange={(e) => {
+                                              const newDbs = [...formData.databases];
+                                              newDbs[idx].name = e.target.value;
+                                              updateField("databases", newDbs);
+                                            }}
+                                            placeholder="e.g. production_db"
+                                            className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-semibold mb-1">Connection String <span className="text-red-500">*</span></label>
+                                          <input
+                                            type="password"
+                                            value={db.connection_string}
+                                            onChange={(e) => {
+                                              const newDbs = [...formData.databases];
+                                              newDbs[idx].connection_string = e.target.value;
+                                              updateField("databases", newDbs);
+                                            }}
+                                            placeholder="postgresql://user:pass@host:port/dbname"
+                                            className="w-full bg-background font-mono text-xs border border-border rounded-xl px-3 py-1.5 outline-none"
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {toolsSubView === "integrations" && (
+                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
+                          <h4 className="font-bold text-lg border-b pb-2 mb-4 flex items-center gap-2">
+                            <Blocks size={18} className="text-primary" /> App Integrations
+                          </h4>
+                          
+                          <div className="space-y-4">
+                            {[
+                              { id: "github", name: "GitHub", description: "Access repositories and issues.", icon: "https://cdn-icons-png.flaticon.com/512/25/25231.png" },
+                              { id: "slack", name: "Slack", description: "Send and receive messages.", icon: "https://cdn-icons-png.flaticon.com/512/3800/3800024.png" },
+                              { id: "jira", name: "Jira", description: "Manage project tickets.", icon: "https://cdn-icons-png.flaticon.com/512/5968/5968875.png" }
+                            ].map((integration) => {
+                              const isConnected = formData.native_integrations?.includes(integration.id);
+                              return (
+                                <div key={integration.id} className="p-4 bg-background border border-border rounded-xl flex items-center justify-between transition-all">
+                                  <div className="flex items-center gap-4">
+                                    <img src={integration.icon} alt={integration.name} className="w-7 h-7 object-contain" />
+                                    <div>
+                                      <h4 className="text-sm font-semibold text-foreground">{integration.name}</h4>
+                                      <p className="text-xs text-muted-foreground">{integration.description}</p>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant={isConnected ? "outline" : "default"}
+                                    size="sm"
+                                    className={isConnected ? "text-red-500 hover:text-red-600 hover:bg-red-500/10" : ""}
+                                    onClick={() => {
+                                      const current = formData.native_integrations || [];
+                                      if (isConnected) {
+                                        updateField("native_integrations", current.filter(id => id !== integration.id));
+                                      } else {
+                                        const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+                                        window.open(`${baseUrl}/api/auth/${integration.id}/login`, "OAuth_Login", "width=600,height=700");
+                                        updateField("native_integrations", [...current, integration.id]);
+                                      }
+                                    }}
+                                  >
+                                    {isConnected ? "Disconnect" : "Connect"}
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1301,13 +1521,6 @@ export default function AgentSettingsPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="pt-4 border-t border-border mt-2 flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold flex items-center gap-2"><Globe size={18} className="text-blue-500" /> Web Search Fallback</h4>
-                        <p className="text-sm text-muted-foreground mt-1">Allow the agent to search the internet if the answer isn't in documents.</p>
-                      </div>
-                      <Switch checked={formData.web_search_enabled} onCheckedChange={(val) => updateField("web_search_enabled", val)} />
                     </div>
                   </div>
 
@@ -1489,194 +1702,7 @@ export default function AgentSettingsPage() {
                   </div>
                 </div>
               )}
-              {activeTab === 'integrations' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-2xl font-bold">Native Integrations</h3>
-                    <p className="text-muted-foreground text-sm mt-1">Connect your agent to external apps.</p>
-                  </div>
-                  <div className="space-y-4">
-                    {[
-                      { id: "github", name: "GitHub", description: "Access repositories and issues.", icon: "https://cdn-icons-png.flaticon.com/512/25/25231.png" },
-                      { id: "slack", name: "Slack", description: "Send and receive messages.", icon: "https://cdn-icons-png.flaticon.com/512/3800/3800024.png" },
-                      { id: "jira", name: "Jira", description: "Manage project tickets.", icon: "https://cdn-icons-png.flaticon.com/512/5968/5968875.png" }
-                    ].map((integration) => {
-                      const isConnected = formData.native_integrations?.includes(integration.id);
-                      return (
-                        <div key={integration.id} className="p-4 bg-card border border-border rounded-2xl flex items-center justify-between transition-all">
-                          <div className="flex items-center gap-4">
-                            <img src={integration.icon} alt={integration.name} className="w-8 h-8 object-contain" />
-                            <div>
-                              <h4 className="text-base font-semibold text-foreground">{integration.name}</h4>
-                              <p className="text-sm text-muted-foreground">{integration.description}</p>
-                            </div>
-                          </div>
-                          <Button
-                            variant={isConnected ? "outline" : "default"}
-                            className={isConnected ? "text-red-500 hover:text-red-600 hover:bg-red-500/10" : ""}
-                            onClick={() => {
-                              const current = formData.native_integrations || [];
-                              if (isConnected) {
-                                updateField("native_integrations", current.filter(id => id !== integration.id));
-                              } else {
-                                // Trigger OAuth Flow in a popup window
-                                const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-                                window.open(`${baseUrl}/api/auth/${integration.id}/login`, "OAuth_Login", "width=600,height=700");
-                                // Optimistically add it to the form data
-                                updateField("native_integrations", [...current, integration.id]);
-                              }
-                            }}
-                          >
-                            {isConnected ? "Disconnect" : "Connect"}
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
-              {activeTab === 'databases' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-2xl font-bold">Database Connectors</h3>
-                      <p className="text-muted-foreground text-sm mt-1">Allow your agent to execute raw SQL queries.</p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        updateField("databases", [
-                          ...(formData.databases || []),
-                          { name: "New Database", type: "postgresql", connection_string: "" }
-                        ]);
-                        setExpandedDatabases(prev => ({...prev, [(formData.databases || []).length]: true}));
-                      }}
-                    >
-                      <Plus className="w-4 h-4 mr-2" /> Add Database
-                    </Button>
-                  </div>
-
-                  {(!formData.databases || formData.databases.length === 0) ? (
-                    <div className="text-center p-10 bg-muted/20 border border-dashed border-border rounded-2xl text-muted-foreground">
-                      No databases configured. Click 'Add Database' to connect one.
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {formData.databases.map((db, idx) => {
-                        const isExpanded = !!expandedDatabases[idx];
-                        return (
-                          <div key={idx} className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-                            <div 
-                              className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                              onClick={() => setExpandedDatabases(prev => ({...prev, [idx]: !prev[idx]}))}
-                            >
-                              <div className="flex items-center gap-3 flex-wrap">
-                                 <Database className="w-4 h-4 text-primary shrink-0" />
-                                 <span className="font-semibold">{db.name || 'Unnamed Database'}</span>
-                                 <span className="text-muted-foreground text-sm uppercase">{db.type}</span>
-                                 {db.name && (
-                                   <span className="text-xs text-muted-foreground/90 flex items-center gap-1.5 bg-muted/70 px-2.5 py-1 rounded-xl border border-border/80 ml-2">
-                                     <Terminal size={12} className="text-primary shrink-0" />
-                                     <span className="text-[11px] font-medium text-foreground">Backend Tool:</span>
-                                     <code className="font-mono text-primary font-bold text-[11px]">
-                                       execute_sql_{db.name.replace(/[\s-]/g, "_")}
-                                     </code>
-                                   </span>
-                                 )}
-                               </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-8 w-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const newDbs = [...formData.databases];
-                                    newDbs.splice(idx, 1);
-                                    updateField("databases", newDbs);
-                                  }}
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                                <div className="text-muted-foreground p-1">
-                                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {isExpanded && (
-                              <div className="p-5 pt-2 border-t border-border/50 space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-sm font-semibold mb-1">Name <span className="text-red-500">*</span></label>
-                                      <input
-                                        type="text"
-                                        className={`w-full p-2.5 bg-background border rounded-xl text-sm ${validationErrors[`database_${idx}_name`] ? "border-red-500 ring-2 ring-red-500/20" : "border-input"}`}
-                                        placeholder="e.g. Production DB"
-                                        value={db.name}
-                                        onChange={(e) => {
-                                          const newDbs = [...formData.databases];
-                                          newDbs[idx].name = e.target.value;
-                                          updateField("databases", newDbs);
-                                        }}
-                                      />
-                                    </div>
-                                  <div>
-                                    <label className="block text-sm font-semibold mb-1">Type <span className="text-red-500">*</span></label>
-                                    <select
-                                      className="w-full p-2.5 bg-background border border-input rounded-xl text-sm"
-                                      value={db.type}
-                                      onChange={(e) => {
-                                        const newDbs = [...formData.databases];
-                                        newDbs[idx].type = e.target.value;
-                                        updateField("databases", newDbs);
-                                      }}
-                                    >
-                                      <option value="postgresql">PostgreSQL</option>
-                                      <option value="mysql">MySQL</option>
-                                    </select>
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-semibold mb-1">Connection String <span className="text-red-500">*</span></label>
-                                  <input
-                                    type="password"
-                                    className={`w-full p-2.5 bg-background border rounded-xl text-sm ${validationErrors[`database_${idx}_connection_string`] ? "border-red-500 ring-2 ring-red-500/20" : "border-input"}`}
-                                    placeholder="postgresql://user:pass@localhost:5432/dbname"
-                                    value={db.connection_string}
-                                    onChange={(e) => {
-                                      const newDbs = [...formData.databases];
-                                      newDbs[idx].connection_string = e.target.value;
-                                      updateField("databases", newDbs);
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'code-interpreter' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-2xl font-bold">Code Interpreter</h3>
-                    <p className="text-muted-foreground text-sm mt-1">Give your agent a sandboxed Python environment for data analysis.</p>
-                  </div>
-                  <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between">
-                    <div>
-                      <h4 className="text-base font-semibold text-foreground">Enable Code Interpreter</h4>
-                      <p className="text-sm text-muted-foreground mt-1">Allow the agent to write and execute Python code in a secure sandbox.</p>
-                    </div>
-                    <Switch checked={formData.code_interpreter_enabled} onCheckedChange={(val) => updateField("code_interpreter_enabled", val)} />
-                  </div>
-                </div>
-              )}
 
               {activeTab === 'analytics' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">

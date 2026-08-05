@@ -354,7 +354,9 @@ async def handle_view_document(doc_id: str, jwt_token: str):
         "jpeg": "image/jpeg",
         "csv": "text/csv",
         "txt": "text/plain",
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xls": "application/vnd.ms-excel"
     }
     media_type = media_types.get(ext, "application/octet-stream")
 
@@ -387,7 +389,7 @@ async def handle_process_file(agent_id: str, file: UploadFile, background_tasks:
         HTTPException(500): Raised for backend crashes.
     """
     logger.info(f"Processing uploaded file: '{file.filename}' for agent ID: {agent_id}")
-    allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg"}
+    allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg", "xlsx", "xls"}
     if not file.filename:
         logger.warning("File upload rejected: Missing filename")
         raise HTTPException(status_code=400, detail="Filename is required")
@@ -903,7 +905,7 @@ async def handle_update_file(doc_id: str, file: UploadFile, background_tasks: Ba
         old_size = doc[4] or 0
 
         # Validate file extensions
-        allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg"}
+        allowed_exts = {"pdf", "txt", "docx", "csv", "png", "jpg", "jpeg", "xlsx", "xls"}
         if not file.filename:
             logger.warning("Replace file aborted: Missing filename.")
             raise HTTPException(status_code=400, detail="Filename is required")

@@ -69,12 +69,13 @@ def generate_otp():
     logger.debug("Successfully generated a new OTP.")
     return otp
 
-async def handle_google_login(base_url: str):
+async def handle_google_login(base_url: str, state: str = None):
     """
     Constructs the redirect URL pointing to Google's OAuth 2.0 login screen.
 
     Parameters:
         base_url (str): The server backend host URL (used to configure callback paths).
+        state (str, optional): The state parameter containing frontend origin to preserve.
 
     Returns:
         str: The full Google OAuth consent redirection URL.
@@ -101,13 +102,16 @@ async def handle_google_login(base_url: str):
         "access_type": "offline",                     # Requests refresh token to keep user logged in
         "prompt": "consent"                            # Forces consent screen layout to show every time
     }
+    if state:
+        params["state"] = state
+        
     # Encode parameters into query format (e.g. 'client_id=123&scope=openid')
     target_url = f"{auth_url}?{urlencode(params)}"
     logger.debug(f"Generated Google OAuth authorization URL: {target_url}")
     return target_url
 
 
-async def handle_google_callback(base_url: str, request_url: str, code: str):
+async def handle_google_callback(base_url: str, request_url: str, code: str, state: str = None):
     """
     Processes the OAuth callback request from Google.
     Exchanges the authorization code for an access token, pulls email profile info,
@@ -117,6 +121,7 @@ async def handle_google_callback(base_url: str, request_url: str, code: str):
         base_url (str): Backend API base URL.
         request_url (str): The actual request callback URL triggered by the client.
         code (str): The authorization code returned by Google.
+        state (str, optional): The state parameter containing frontend origin.
 
     Returns:
         str: The frontend redirect target URL containing the user's signed JWT token.
@@ -200,7 +205,7 @@ async def handle_google_callback(base_url: str, request_url: str, code: str):
         jwt_token = create_access_token(user_id=user_id, email=email)
         
         # Configure frontend redirect targets
-        frontend_redirect = FRONTEND_URL
+        frontend_redirect = state or FRONTEND_URL
         if frontend_redirect == "*":
             frontend_redirect = "http://localhost:5173"
         elif "," in frontend_redirect:
@@ -209,6 +214,16 @@ async def handle_google_callback(base_url: str, request_url: str, code: str):
                 frontend_redirect = "http://localhost:5173"
             else:
                 frontend_redirect = "https://blinkbot.in"
+        else:
+            # Validate state redirect to prevent open redirect vulnerabilities
+            is_valid_origin = (
+                "localhost" in frontend_redirect or 
+                "127.0.0.1" in frontend_redirect or 
+                frontend_redirect.endswith("blinkbot.in") or 
+                frontend_redirect.endswith("blinkbot.in/")
+            )
+            if not is_valid_origin:
+                frontend_redirect = FRONTEND_URL
                 
         redirect_target = f"{frontend_redirect}/auth/callback?token={jwt_token}"
         logger.info(f"Google login success. Redirecting to target: {frontend_redirect}")
