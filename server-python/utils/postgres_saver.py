@@ -253,7 +253,17 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
     ) -> None:
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
-        checkpoint_id = config["configurable"]["checkpoint_id"]
+        checkpoint_id = config["configurable"].get("checkpoint_id")
+        if not checkpoint_id:
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT checkpoint_id FROM langgraph_checkpoints WHERE thread_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (thread_id,)
+                )
+                row = await run_in_threadpool(cursor.fetchone)
+                if row:
+                    checkpoint_id = row[0]
 
         async with get_db_cursor_async(commit=True) as cursor:
             for idx, (channel, value) in enumerate(writes):

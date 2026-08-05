@@ -54,6 +54,8 @@ from utils.logger import get_department_logger
 # Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
 
+_circuit_breakers = {}
+
 def _get_content_string(content) -> str:
     if isinstance(content, list):
         parts = []
@@ -320,6 +322,11 @@ def create_webhook_tool(endpoint, project_tools_dict):
     @tool
     async def execute_webhook(**kwargs) -> str:
         """Execute the webhook with the provided arguments."""
+        import time
+        cb = _circuit_breakers.setdefault(full_url, {"failures": 0, "last_failure": 0.0})
+        if cb["failures"] >= 3 and (time.time() - cb["last_failure"] < 900):
+            return "Error: Circuit Breaker Tripped - The target service is currently offline. Please use a fallback tool if available."
+
         try:
             payload_dict = kwargs.get("kwargs", kwargs)
             if "payload" in payload_dict and len(payload_dict) == 1:
@@ -338,6 +345,13 @@ def create_webhook_tool(endpoint, project_tools_dict):
                     kwargs_request["json"] = payload_dict
                 async with session.request(method, full_url, **kwargs_request) as response:
                     logger.info(f"✅ WEBHOOK RESPONSE STATUS: {response.status}")
+                    
+                    if 200 <= response.status < 300:
+                        cb["failures"] = 0
+                    else:
+                        cb["failures"] += 1
+                        cb["last_failure"] = time.time()
+
                     try:
                         resp = await response.json()
                         resp_str = json_lib.dumps(resp)
@@ -353,6 +367,8 @@ def create_webhook_tool(endpoint, project_tools_dict):
                         )
                     return resp_str
         except Exception as e:
+            cb["failures"] += 1
+            cb["last_failure"] = time.time()
             logger.error(f"❌ Error executing webhook {name}: {str(e)}", exc_info=True)
             return f"Error executing {name}: {str(e)}"
             
@@ -633,6 +649,9 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 paused_state["tools_factory"] = None
                 
                 try:
+                    current_state = await graph.aget_state(config)
+                    resume_config = current_state.config
+                    
                     if decision == "reject":
                         logger.info(f"User rejected tool call: {tool_call_id}")
                         tool_messages = []
@@ -642,12 +661,15 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 tool_call_id=tc["id"],
                                 name=tc["name"]
                             ))
-                        await graph.aupdate_state(config, {"messages": tool_messages})
+                        await graph.aupdate_state(resume_config, {"messages": tool_messages})
+                        # Re-fetch state to get updated checkpoint ID after state update
+                        updated_state = await graph.aget_state(config)
+                        resume_config = updated_state.config
                     else:
                         logger.info(f"User approved tool call: {tool_call_id}")
                         
                     logger.info("Resuming LangGraph multi-agent stream execution after human-in-the-loop review...")
-                    await run_stream(None, config, graph, gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
+                    await run_stream(None, resume_config, graph, gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
                     
                 except Exception as exc:
                     logger.error("Chat generation failed during resume", exc_info=True)
@@ -885,7 +907,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             f"2. Base your response strictly on the tool output. If the search returns no results, politely inform the user.\n"
                             f"3. Do NOT invent facts or answer ungrounded questions from parametric memory when tools are present.\n"
                             f"4. Format response in clean Markdown without exposing tool call names or raw JSON.\n"
-                            f"5. CRITICAL: When calling tools, you MUST NOT write any conversational text, explanations, or responses. Generate ONLY the tool call. Do not say 'Let me check' or try to answer the question before the tool returns."
+                            f"5. CRITICAL: When calling tools, you MUST NOT write any conversational text, explanations, or responses. Generate ONLY the tool call. Do not say 'Let me check' or try to answer the question before the tool returns.\n"
+                            f"6. If a tool returns a 5xx error or a 'Circuit Breaker Tripped' message, do not give up. You must immediately evaluate your available tools and execute an alternative fallback tool (like sending an email instead of a webhook) to fulfill the user's intent. Only inform the user of the failure if all fallback options have also failed."
                         )
                         
                         lang_map = {

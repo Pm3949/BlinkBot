@@ -110,7 +110,9 @@ export default function ProjectDetailsPage() {
     messages,
     loading,
     sendMessage,
-    clearSandbox
+    clearSandbox,
+    pendingApproval,
+    sendApprovalResponse
   } = useSandboxChat();
 
   useEffect(() => {
@@ -443,6 +445,8 @@ export default function ProjectDetailsPage() {
             <StudioSandboxChat
               messages={messages}
               loading={loading}
+              pendingApproval={pendingApproval}
+              sendApprovalResponse={sendApprovalResponse}
               onSend={(content) => {
                 const manager = subAgents.find(a => a.name === 'Network Manager');
                 if (manager) {

@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import TracePanel from "../components/chat/TracePanel";
@@ -50,6 +50,8 @@ export default function ChatPage() {
     renameSession,
     togglePinSession,
     deleteSession,
+    pendingApproval,
+    sendApprovalResponse,
   } = useChat();
 
 
@@ -242,13 +244,44 @@ export default function ChatPage() {
               </div>
             )} */}
 
+            {pendingApproval && (
+              <div className="p-5 border border-amber-500/20 bg-amber-500/5 rounded-2xl shadow-sm space-y-4 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center gap-2 text-amber-500 font-semibold">
+                  <ShieldAlert size={20} />
+                  <span>Action Approval Required</span>
+                </div>
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <p>
+                    The agent wants to run <span className="font-semibold text-foreground font-mono bg-muted px-1.5 py-0.5 rounded border border-border">{pendingApproval.tool_name}</span> with the following parameters:
+                  </p>
+                  <pre className="p-3 bg-muted border border-border rounded-xl text-xs overflow-x-auto font-mono text-foreground">
+                    {JSON.stringify(pendingApproval.arguments, null, 2)}
+                  </pre>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => sendApprovalResponse("approve", pendingApproval.tool_call_id)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-md transition-all"
+                  >
+                    <Check size={14} /> Approve Action
+                  </button>
+                  <button
+                    onClick={() => sendApprovalResponse("reject", pendingApproval.tool_call_id)}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-500 rounded-xl text-xs font-bold transition-all"
+                  >
+                    <X size={14} /> Reject Action
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
         </div>
 
         <ChatComposer
-          disabled={!selectedAgentId}
-          isLoading={loading}
+          disabled={!selectedAgentId || !!pendingApproval}
+          isLoading={loading || !!pendingApproval}
           onSend={handleSend}
           agent={activeAgent}
           chatLanguage={chatLanguage}
