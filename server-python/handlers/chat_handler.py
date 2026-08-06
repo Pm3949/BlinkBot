@@ -50,6 +50,7 @@ from core.security import decrypt_key
 from core.scrubber import scrub_pii
 from handlers.websocket_handlers import agent_connection_manager
 from utils.logger import get_department_logger
+from db.workspace_tools_repository import get_agent_attached_tools
 
 # Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
@@ -376,6 +377,167 @@ def create_webhook_tool(endpoint, project_tools_dict):
     execute_webhook.description = description
     object.__setattr__(execute_webhook, "requires_approval", endpoint.get("requires_approval", False))
     return execute_webhook
+
+
+def create_workspace_webhook_tool(tool_id, tool_name, config):
+    """
+    Creates a LangChain Tool structured to issue custom HTTP requests (webhooks) for workspace tools.
+    """
+    from langchain_core.tools import tool
+    import json as json_lib
+    import time
+    import aiohttp
+    
+    base_url = config.get("base_url", "")
+    path = config.get("path", "")
+    method = config.get("method", "GET")
+    api_key = config.get("api_key", "")
+    headers = config.get("headers", {})
+    if isinstance(headers, str):
+        try:
+            headers = json_lib.loads(headers)
+        except Exception:
+            headers = {}
+            
+    if api_key:
+        headers["Authorization"] = api_key
+        
+    full_url = base_url.rstrip("/") + "/" + path.lstrip("/")
+    description = config.get("description", f"Execute API action for {tool_name}.")
+    payload_format = config.get("payload_format", "")
+    expected_output = config.get("expected_output", "")
+    
+    if payload_format:
+        description += f"\nExpected JSON arguments: {payload_format}"
+        
+    if expected_output:
+        description += f"\nThe expected response from the API: {expected_output}"
+        
+    clean_name = tool_name.replace(" ", "_").replace("-", "_")
+    
+    @tool
+    async def execute_workspace_webhook(**kwargs) -> str:
+        """Execute the webhook with the provided arguments."""
+        import time
+        cb = _circuit_breakers.setdefault(full_url, {"failures": 0, "last_failure": 0.0})
+        if cb["failures"] >= 3 and (time.time() - cb["last_failure"] < 900):
+            return "Error: Circuit Breaker Tripped - The target service is currently offline. Please use a fallback tool if available."
+            
+        try:
+            payload_dict = kwargs.get("kwargs", kwargs)
+            if "payload" in payload_dict and len(payload_dict) == 1:
+                payload_dict = payload_dict["payload"]
+                
+            logger.info(f"🔨 WORKSPACE TOOL TRIGGERED: Executing webhook '{clean_name}' to {full_url}")
+            sanitized_headers = headers.copy()
+            if "Authorization" in sanitized_headers:
+                sanitized_headers["Authorization"] = "[MASKED]"
+                
+            async with aiohttp.ClientSession() as session:
+                kwargs_request = {"headers": headers, "timeout": aiohttp.ClientTimeout(total=15)}
+                if method.upper() in ["POST", "PUT", "PATCH"]:
+                    kwargs_request["json"] = payload_dict
+                async with session.request(method, full_url, **kwargs_request) as response:
+                    if 200 <= response.status < 300:
+                        cb["failures"] = 0
+                    else:
+                        cb["failures"] += 1
+                        cb["last_failure"] = time.time()
+                        
+                    try:
+                        resp = await response.json()
+                        resp_str = json_lib.dumps(resp)
+                    except Exception:
+                        resp_str = await response.text()
+                        
+                    if len(resp_str) > 8000:
+                        return resp_str[:8000] + "\n\n[OUTPUT TRUNCATED: Payload exceeded 8000 chars.]"
+                    return resp_str
+        except Exception as e:
+            cb["failures"] += 1
+            cb["last_failure"] = time.time()
+            logger.error(f"❌ Error executing workspace webhook {clean_name}: {str(e)}", exc_info=True)
+            return f"Error: Custom API tool '{clean_name}' failed or is unreachable: {str(e)}"
+            
+    execute_workspace_webhook.name = clean_name
+    execute_workspace_webhook.description = description
+    object.__setattr__(execute_workspace_webhook, "requires_approval", config.get("requires_approval", False))
+    return execute_workspace_webhook
+
+
+def create_e2b_python_tool(tool_id, tool_name, code_content):
+    """
+    Creates a LangChain Tool structured to safely run user-provided Python scripts
+    inside an isolated E2B Code Interpreter sandbox.
+    """
+    import ast
+    from langchain_core.tools import Tool
+    
+    func_name = "custom_tool"
+    docstring = f"Custom Python tool: {tool_name}"
+    try:
+        tree = ast.parse(code_content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                for dec in node.decorator_list:
+                    if (isinstance(dec, ast.Name) and dec.id == "tool") or \
+                       (isinstance(dec, ast.Attribute) and dec.attr == "tool"):
+                        func_name = node.name
+                        docstring = ast.get_docstring(node) or f"Custom Python tool: {tool_name}"
+                        break
+    except Exception as e:
+        logger.error(f"Error parsing function metadata for tool {tool_name}: {e}")
+        
+    def execute_in_e2b(**kwargs) -> str:
+        exec_code = f"""
+{code_content}
+
+try:
+    res = {func_name}(**{repr(kwargs)})
+    print(res)
+except Exception as e:
+    print(f"Error executing function: {{e}}")
+"""
+        try:
+            from e2b_code_interpreter import CodeInterpreter
+            
+            def _run():
+                with CodeInterpreter() as sandbox:
+                    exec_result = sandbox.notebook.exec_cell(exec_code)
+                    if exec_result.error:
+                        return f"Execution Error: {exec_result.error.name} - {exec_result.error.value}\n{exec_result.error.traceback}"
+                    stdout_str = exec_result.stdout or ""
+                    text_str = exec_result.text or ""
+                    return (stdout_str + "\n" + text_str).strip() or "Success"
+            
+            import threading
+            class PropagatingThread(threading.Thread):
+                def run(self):
+                    self.exc = None
+                    try:
+                        self.ret = _run()
+                    except Exception as e:
+                        self.exc = e
+            
+            t = PropagatingThread()
+            t.daemon = True
+            t.start()
+            t.join(timeout=20.0)
+            if t.is_alive():
+                return "Error: Execution timed out after 20 seconds."
+            if t.exc:
+                raise t.exc
+            return t.ret
+        except Exception as e:
+            logger.error(f"❌ Error executing python_code tool {tool_name} in E2B: {str(e)}", exc_info=True)
+            return f"Error: Custom Python tool '{tool_name}' failed during sandbox execution: {str(e)}"
+
+    clean_name = tool_name.replace(" ", "_").replace("-", "_").lower()
+    return Tool(
+        name=clean_name,
+        func=execute_in_e2b,
+        description=docstring
+    )
 
 
 async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
@@ -987,6 +1149,48 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 from tools.sql_tools import create_sql_tools
                                 sql_tools = create_sql_tools(db.get("connection_string"), db.get("name"))
                                 t_list.extend(sql_tools)
+
+                        # Load and mount workspace tools
+                        attached_workspace_tools = workspace_tools_map.get(str(aid), [])
+                        for tool_obj in attached_workspace_tools:
+                            tool_type = tool_obj.get("tool_type")
+                            tool_name = tool_obj.get("name")
+                            tool_config = tool_obj.get("configuration", {})
+                            is_system = tool_obj.get("is_system", False)
+                            
+                            if is_system:
+                                sys_ident = tool_config.get("system_identifier")
+                                if sys_ident == "web_search":
+                                    if search_web not in t_list:
+                                        t_list.append(search_web)
+                                elif sys_ident == "code_interpreter":
+                                    from tools.code_tools import create_code_tools
+                                    t_list.extend(create_code_tools(str(aid)))
+                                elif sys_ident == "ocr_reader":
+                                    from langchain_core.tools import tool as lc_tool
+                                    @lc_tool(name="image_reader_ocr")
+                                    def image_reader_ocr(query: str = "") -> str:
+                                        """Use this to verify that OCR is automatically active for PDF and image document uploads."""
+                                        return "OCR is automatically active for PDF and image document uploads. Text extraction runs automatically during ingestion."
+                                    t_list.append(image_reader_ocr)
+                            else:
+                                if tool_type == "api_webhook":
+                                    if tool_config.get("method") and tool_config.get("path"):
+                                        w_tool = create_workspace_webhook_tool(tool_obj.get("id"), tool_name, tool_config)
+                                        t_list.append(w_tool)
+                                elif tool_type == "database":
+                                    if tool_config.get("connection_string"):
+                                        from tools.sql_tools import create_sql_tools
+                                        sql_tools = create_sql_tools(tool_config.get("connection_string"), tool_name)
+                                        t_list.extend(sql_tools)
+                                elif tool_type == "python_code":
+                                    if tool_obj.get("code_content"):
+                                        p_tool = create_e2b_python_tool(tool_obj.get("id"), tool_name, tool_obj.get("code_content"))
+                                        t_list.append(p_tool)
+                                elif tool_type == "oauth":
+                                    provider = tool_config.get("provider")
+                                    if provider and provider not in agent_native:
+                                        agent_native.append(provider)
                                 
                         # Load and mount code interpreter tools
                         if code_interpreter_enabled and str(aid) == str(agent_id):
@@ -1042,6 +1246,16 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
                             except Exception:
                                 native_integrations_map[str(sa[0])] = []
+
+                    # Pre-fetch workspace tools for the main agent and sub-agents
+                    workspace_tools_map = {}
+                    try:
+                        workspace_tools_map[str(agent_id)] = await get_agent_attached_tools(str(agent_id))
+                        if project_id and sub_agents:
+                            for sa in sub_agents:
+                                workspace_tools_map[str(sa[0])] = await get_agent_attached_tools(str(sa[0]))
+                    except Exception as e:
+                        logger.error(f"Error pre-fetching workspace tools: {e}", exc_info=True)
 
                     graph = build_multi_agent_graph(
                         master_agent_id=agent_id,

@@ -54,6 +54,11 @@ const groups = [
         icon: Globe,
         path: "/chatbots",
       },
+      {
+        label: "Tool Library",
+        icon: Database,
+        path: "/tools",
+      },
     ],
   },
   {

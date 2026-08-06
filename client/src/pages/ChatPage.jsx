@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import TracePanel from "../components/chat/TracePanel";
@@ -137,7 +137,7 @@ export default function ChatPage() {
 
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+    <div className="flex h-dvh w-screen overflow-hidden bg-background">
       {isSidebarOpen && (
         <ChatSidebar
           standaloneAgents={standaloneAgents}
@@ -155,7 +155,14 @@ export default function ChatPage() {
       )}
 
       <div className="flex-1 flex flex-col relative min-w-0">
-        <div className="absolute top-4 left-4 z-10">
+        <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+           <Link 
+             to="/dashboard"
+             className="p-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+             title="Back to Dashboard"
+           >
+             <ArrowLeft size={18} />
+           </Link>
            <button 
              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
              className="p-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground transition-all"
@@ -196,7 +203,7 @@ export default function ChatPage() {
 
         <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
           <VerificationBanner onRetry={handleSend} />
-          <div className="max-w-4xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
+          <div className="max-w-6xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
 
             {!isLoadingAgents && standaloneAgents.length === 0 && projects.length === 0 && (

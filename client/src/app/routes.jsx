@@ -22,6 +22,7 @@ import ModelsPage from "../pages/ModelsPage";
 import TeamPage from "../pages/TeamPage";
 import BillingPage from "../pages/BillingPage";
 import LandingPage from "../pages/LandingPage";
+import WorkspaceToolsPage from "../pages/WorkspaceToolsPage";
 import UserGuidePage from "../pages/UserGuidePage";
 import TermsPage from "../pages/TermsPage";
 import AboutPage from "../pages/AboutPage";
@@ -70,6 +71,16 @@ export const router = createBrowserRouter([
     element: <BlogPage />,
   },
 
+  // ── Protected standalone routes ─────────────────────────────────
+  {
+    path: "/chat",
+    element: (
+      <ProtectedRoute>
+        <ChatPage />
+      </ProtectedRoute>
+    ),
+  },
+
   // ── Protected shell (all app pages live here) ────────────────────
   {
     path: "/",
@@ -86,12 +97,12 @@ export const router = createBrowserRouter([
         element: <DashboardPage />,
       },
       {
-        path: "chat",
-        element: <ChatPage />,
-      },
-      {
         path: "analytics",
         element: <AnalyticsPage />,
+      },
+      {
+        path: "tools",
+        element: <WorkspaceToolsPage />,
       },
       {
         path: "models",

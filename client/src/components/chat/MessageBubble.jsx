@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Bot, User, Copy, Volume2, Square, Clock, ThumbsUp, ThumbsDown, Globe, FileText, BookOpen } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -132,23 +133,34 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
     <div className={`animate-message flex gap-4 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser && (
         <div
-          className={`
+          className="
           h-10
           w-10
           rounded-2xl
           flex
           items-center
           justify-center
-          ${isMasterAgent ? "bg-purple-600 text-white shadow-md shadow-purple-500/20" : "bg-primary text-primary-foreground"}
-        `}
+          bg-white
+          dark:bg-slate-900
+          border
+          border-border
+          p-1.5
+          shadow-sm
+          shrink-0
+        "
         >
-          <Bot size={18} />
+          <img
+            src="/logo1.png"
+            alt={agent?.name || "BlinkBot"}
+            className="h-full w-full object-contain rounded-lg"
+          />
         </div>
       )}
 
       <div
         className={`
-        max-w-3xl
+        max-w-5xl
+        w-full
         rounded-[28px]
         px-6
         py-5

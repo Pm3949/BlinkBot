@@ -3,7 +3,7 @@ import { useNavigate, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Pencil, BarChart2, TrendingUp, DollarSign, Activity } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
-import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw, Wrench } from "lucide-react";
+import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, Cloud, MessageSquare, Code, Globe, Loader2, Bot, Brain, Key, Sparkles, Network, Plus, Trash2, Settings2, Database, Blocks, Terminal, Library, ChevronDown, ChevronUp, Zap, Lock, ExternalLink, RefreshCw, Wrench, ArrowDown } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useEffect } from "react";
 import { useWorkspacePermissions, useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
@@ -13,6 +13,9 @@ import { useProjectTools } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector, useUpdateUrl, useProcessText, useUpdateText, useUpdateFile, useSyncConnector } from "../hooks/useDocuments";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { useUIStore } from "../store/useUIStore";
+import { getWorkspaceTools, getAgentAttachedTools, attachToolToAgent, detachToolFromAgent } from "../services/workspaceToolsService";
+import { Webhook } from "lucide-react";
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
 
@@ -84,6 +87,57 @@ export default function AgentSettingsPage() {
   const [expandedDatabases, setExpandedDatabases] = useState({});
 
   const selectedAgentId = agent?.id;
+
+  const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const [workspaceTools, setWorkspaceTools] = useState([]);
+  const [attachedToolIds, setAttachedToolIds] = useState(new Set());
+  const [loadingTools, setLoadingTools] = useState(false);
+  const [isBrowseModalOpen, setIsBrowseModalOpen] = useState(false);
+  const [isAddDropdownOpen, setIsAddDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const loadWorkspaceToolsData = async () => {
+      if (!activeWorkspaceId || !selectedAgentId) return;
+      setLoadingTools(true);
+      try {
+        const [allTools, attached] = await Promise.all([
+          getWorkspaceTools(activeWorkspaceId),
+          getAgentAttachedTools(selectedAgentId)
+        ]);
+        setWorkspaceTools(allTools);
+        setAttachedToolIds(new Set(attached.map(t => t.id)));
+      } catch (err) {
+        console.error("Error loading tools data:", err);
+      } finally {
+        setLoadingTools(false);
+      }
+    };
+    loadWorkspaceToolsData();
+  }, [activeWorkspaceId, selectedAgentId]);
+
+  const handleToggleTool = async (toolId, isAttached) => {
+    try {
+      if (isAttached) {
+        await detachToolFromAgent(selectedAgentId, toolId);
+        setAttachedToolIds(prev => {
+          const next = new Set(prev);
+          next.delete(toolId);
+          return next;
+        });
+        toast.success("Tool detached successfully");
+      } else {
+        await attachToolToAgent(selectedAgentId, toolId);
+        setAttachedToolIds(prev => {
+          const next = new Set(prev);
+          next.add(toolId);
+          return next;
+        });
+        toast.success("Tool attached successfully");
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to update tool attachment");
+    }
+  };
 
 
   const { data: documents = [], isError, isLoading, error } = useDocuments(selectedAgentId);
@@ -1010,487 +1064,143 @@ export default function AgentSettingsPage() {
 
               {activeTab === 'tools' && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {toolsSubView === "hub" ? (
-                    <>
+                  {/* Top Section: Connected Tools */}
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-2xl font-bold">Agent Tools & Capabilities</h3>
+                      <p className="text-muted-foreground text-sm mt-1">Configure which APIs, database connections, and system extensions this agent can access.</p>
+                    </div>
+
+                    {loadingTools ? (
+                      <div className="flex items-center justify-center p-8">
+                        <Loader2 className="animate-spin text-primary" size={24} />
+                      </div>
+                    ) : workspaceTools.filter(t => attachedToolIds.has(t.id)).length === 0 ? (
+                      <div className="rounded-3xl border-2 border-dashed border-border bg-card p-12 text-center flex flex-col items-center justify-center space-y-4">
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                          <Wrench size={24} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-base text-foreground">No tools connected</h4>
+                          <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                            This agent has no tools connected. Select a tool from the Workspace Library below to get started.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 text-primary text-xs font-bold animate-bounce mt-2">
+                          <ArrowDown size={14} /> Scroll down to available tools
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {workspaceTools
+                          .filter(t => attachedToolIds.has(t.id))
+                          .map((tool) => (
+                            <div key={tool.id} className="p-4 bg-card border border-border/80 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition duration-200">
+                              <div className="flex items-center gap-3.5">
+                                <div className="p-2.5 bg-muted rounded-xl">
+                                  {tool.tool_type === "api_webhook" && <Webhook size={18} className="text-primary" />}
+                                  {tool.tool_type === "database" && <Database size={18} className="text-emerald-500" />}
+                                  {tool.tool_type === "oauth" && <Key size={18} className="text-purple-500" />}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
+                                    {tool.is_system && (
+                                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                        System
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-[280px]">
+                                    {tool.tool_type === "api_webhook" && (tool.configuration?.description || `Webhook: ${tool.configuration?.method} ${tool.configuration?.path}`)}
+                                    {tool.tool_type === "database" && (tool.configuration?.description || `Database Connection`)}
+                                    {tool.tool_type === "oauth" && `OAuth Integration`}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleToggleTool(tool.id, true)} // true to detach
+                                className="text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-xl"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Divider and Bottom Section: Available Workspace Tools */}
+                  <div className="border-t border-border/50 mt-10 pt-8 space-y-5">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
-                        <h3 className="text-2xl font-bold">Tools & Integrations</h3>
-                        <p className="text-muted-foreground text-sm mt-1">Configure capabilities, API endpoints, databases, and native app extensions.</p>
+                        <h4 className="text-xl font-bold text-foreground">Workspace Tool Library</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">Click "Attach" to grant this agent access to these capabilities.</p>
                       </div>
-
-                      {/* 1. Core Capabilities */}
-                      <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
-                        <h4 className="font-bold text-lg border-b pb-2 mb-4 flex items-center gap-2">
-                          <Wrench size={18} className="text-primary" /> Core Capabilities
-                        </h4>
-                        
-                        <div className="flex items-center justify-between pb-4 border-b border-border/50">
-                          <div>
-                            <h4 className="font-semibold flex items-center gap-2"><Globe size={18} className="text-blue-500" /> Web Search Fallback</h4>
-                            <p className="text-sm text-muted-foreground mt-1">Allow the agent to search the internet if the answer isn't in documents.</p>
-                          </div>
-                          <Switch checked={formData.web_search_enabled} onCheckedChange={(val) => updateField("web_search_enabled", val)} />
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2">
-                          <div>
-                            <h4 className="font-semibold flex items-center gap-2"><Code size={18} className="text-indigo-500" /> CSV & Excel Spreadsheet Analyzer</h4>
-                            <p className="text-sm text-muted-foreground mt-1">Allow the agent to natively parse, query, and perform statistical analysis on uploaded CSV and Excel spreadsheet files.</p>
-                          </div>
-                          <Switch checked={formData.code_interpreter_enabled} onCheckedChange={(val) => updateField("code_interpreter_enabled", val)} />
-                        </div>
-                      </div>
-
-                      {/* 2. Tool Categories Grid */}
-                      <div className="grid grid-cols-1 gap-4">
-                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
-                          <div className="space-y-1">
-                            <h4 className="text-lg font-bold flex items-center gap-2"><Network size={18} className="text-primary" /> Custom API Tools</h4>
-                            <p className="text-sm text-muted-foreground">Configure external REST API webhook endpoints this agent can call.</p>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
-                              {formData.endpoints.length} configured
-                            </span>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("api-tools")} className="hover:bg-primary/10 hover:text-primary">
-                            <ArrowRight size={20} />
-                          </Button>
-                        </div>
-
-                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
-                          <div className="space-y-1">
-                            <h4 className="text-lg font-bold flex items-center gap-2"><Database size={18} className="text-primary" /> Database Connectors</h4>
-                            <p className="text-sm text-muted-foreground">Allow your agent to execute raw SQL queries to databases.</p>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
-                              {(formData.databases || []).length} active
-                            </span>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("databases")} className="hover:bg-primary/10 hover:text-primary">
-                            <ArrowRight size={20} />
-                          </Button>
-                        </div>
-
-                        <div className="p-6 bg-card border border-border rounded-2xl flex items-center justify-between shadow-sm hover:border-primary/50 transition-colors">
-                          <div className="space-y-1">
-                            <h4 className="text-lg font-bold flex items-center gap-2"><Blocks size={18} className="text-primary" /> App Integrations</h4>
-                            <p className="text-sm text-muted-foreground">Connect the agent to external applications like Slack, GitHub, Jira.</p>
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary inline-block">
-                              {(formData.native_integrations || []).length} connected
-                            </span>
-                          </div>
-                          <Button variant="ghost" size="icon" onClick={() => setToolsSubView("integrations")} className="hover:bg-primary/10 hover:text-primary">
-                            <ArrowRight size={20} />
-                          </Button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-6">
                       <button
                         type="button"
-                        onClick={() => setToolsSubView("hub")}
-                        className="flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary/80 transition-colors"
+                        onClick={() => navigate("/tools")}
+                        className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
                       >
-                        <ArrowLeft size={14} /> Back to Tools & Integrations
+                        Manage Workspace Tools <ExternalLink size={12} />
                       </button>
+                    </div>
 
-                      {toolsSubView === "api-tools" && (
-                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
-                          <div className="flex items-center justify-between mb-4 border-b pb-2">
-                            <h4 className="font-bold text-lg flex items-center gap-2">
-                              <Network size={18} className="text-primary" /> Custom API Tools
-                            </h4>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                updateField("endpoints", [
-                                  ...formData.endpoints,
-                                  { connection_id: "", name: "New Tool", path: "", method: "GET", description: "", payload_format: "", expected_output: "" }
-                                ]);
-                                setExpandedEndpoints(prev => ({...prev, [formData.endpoints.length]: true}));
-                              }}
-                            >
-                              <Plus className="w-4 h-4 mr-2" /> Add Custom API Tool
-                            </Button>
-                          </div>
-
-                          {formData.endpoints.length === 0 ? (
-                            <div className="text-center p-8 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
-                              No custom API tools configured. Click 'Add Custom API Tool' to give this agent custom actions.
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {formData.endpoints.map((ep, idx) => {
-                                const isExpanded = !!expandedEndpoints[idx];
-                                return (
-                                  <div key={idx} className="bg-background rounded-xl border border-border shadow-sm overflow-hidden">
-                                    {/* Endpoint header */}
-                                    <div 
-                                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                                      onClick={() => setExpandedEndpoints(prev => ({...prev, [idx]: !prev[idx]}))}
-                                    >
-                                      <div className="flex items-center gap-3 flex-wrap">
-                                        <span className={`px-2 py-0.5 text-xs font-bold rounded-md ${ep.method === 'GET' ? 'bg-blue-100 text-blue-700' : ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                          {ep.method || 'GET'}
+                    <div className="space-y-3">
+                      {loadingTools ? (
+                        <div className="flex items-center justify-center p-4">
+                          <Loader2 className="animate-spin text-primary" size={20} />
+                        </div>
+                      ) : workspaceTools.filter(t => !attachedToolIds.has(t.id)).length === 0 ? (
+                        <div className="text-center p-6 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-xs">
+                          All available workspace tools are currently connected to this agent.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {workspaceTools
+                            .filter(t => !attachedToolIds.has(t.id))
+                            .map((tool) => (
+                              <div key={tool.id} className="p-4 bg-card hover:bg-card/80 border border-border/80 rounded-2xl flex items-center justify-between transition-all duration-200 hover:shadow-sm">
+                                <div className="flex items-center gap-3.5">
+                                  <div className="p-2.5 bg-muted rounded-xl">
+                                    {tool.tool_type === "api_webhook" && <Webhook size={18} className="text-primary" />}
+                                    {tool.tool_type === "database" && <Database size={18} className="text-emerald-500" />}
+                                    {tool.tool_type === "oauth" && <Key size={18} className="text-purple-500" />}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
+                                      {tool.is_system && (
+                                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                          System
                                         </span>
-                                        <span className="font-semibold text-sm">{ep.name || 'Unnamed Tool'}</span>
-                                        <span className="text-muted-foreground text-xs truncate max-w-[200px]">{ep.path}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-7 w-7"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            const newEps = [...formData.endpoints];
-                                            newEps.splice(idx, 1);
-                                            updateField("endpoints", newEps);
-                                          }}
-                                        >
-                                          <Trash2 size={13} />
-                                        </Button>
-                                        <div className="text-muted-foreground p-1">
-                                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                        </div>
-                                      </div>
+                                      )}
                                     </div>
-
-                                    {isExpanded && (
-                                      <div className="p-5 pt-2 border-t border-border/50 bg-card/30">
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                          {agent?.project_id ? (
-                                            <div>
-                                              <label className="block text-xs font-semibold mb-1">API Connection <span className="text-red-500">*</span></label>
-                                              <Select
-                                                value={ep.connection_id}
-                                                onValueChange={(val) => {
-                                                  const newEps = [...formData.endpoints];
-                                                  newEps[idx].connection_id = val;
-                                                  updateField("endpoints", newEps);
-                                                }}
-                                              >
-                                                <SelectTrigger className={`w-full bg-background rounded-xl h-9 text-xs`}>
-                                                  <SelectValue placeholder="Select Connection" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                  {globalConnections.map(conn => (
-                                                    <SelectItem key={conn.id} value={conn.id}>{conn.name}</SelectItem>
-                                                  ))}
-                                                  {globalConnections.length === 0 && (
-                                                    <SelectItem value="none" disabled>No connections available</SelectItem>
-                                                  )}
-                                                </SelectContent>
-                                              </Select>
-                                            </div>
-                                          ) : (
-                                            <div>
-                                              <label className="block text-xs font-semibold mb-1">Base URL <span className="text-red-500">*</span></label>
-                                              <input
-                                                type="text"
-                                                value={ep.base_url || ""}
-                                                onChange={(e) => {
-                                                  const newEps = [...formData.endpoints];
-                                                  newEps[idx].base_url = e.target.value;
-                                                  updateField("endpoints", newEps);
-                                                }}
-                                                placeholder="https://api.example.com"
-                                                className={`w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none`}
-                                              />
-                                            </div>
-                                          )}
-                                          <div>
-                                            <label className="block text-xs font-semibold mb-1">Tool Name <span className="text-red-500">*</span></label>
-                                            <input
-                                              type="text"
-                                              value={ep.name}
-                                              onChange={(e) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].name = e.target.value;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                              placeholder="e.g. Get User Data"
-                                              className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between bg-muted/20 border border-border/50 p-3 rounded-xl mb-4">
-                                          <div>
-                                            <label className="text-xs font-semibold block">Require User Approval</label>
-                                            <span className="text-[11px] text-muted-foreground">If enabled, the agent will pause and ask for confirmation before executing this tool.</span>
-                                          </div>
-                                          <Switch
-                                            checked={ep.requires_approval || false}
-                                            onCheckedChange={(val) => {
-                                              const newEps = [...formData.endpoints];
-                                              newEps[idx].requires_approval = val;
-                                              updateField("endpoints", newEps);
-                                            }}
-                                          />
-                                        </div>
-
-                                        <div className="grid grid-cols-[1fr_3fr] gap-4 mb-4">
-                                          <div>
-                                            <label className="block text-xs font-semibold mb-1">Method <span className="text-red-500">*</span></label>
-                                            <Select
-                                              value={ep.method}
-                                              onValueChange={(val) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].method = val;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                            >
-                                              <SelectTrigger className="w-full bg-background rounded-xl h-9 text-xs">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="GET">GET</SelectItem>
-                                                <SelectItem value="POST">POST</SelectItem>
-                                                <SelectItem value="PUT">PUT</SelectItem>
-                                                <SelectItem value="DELETE">DELETE</SelectItem>
-                                              </SelectContent>
-                                            </Select>
-                                          </div>
-                                          <div>
-                                            <label className="block text-xs font-semibold mb-1">Path <span className="text-red-500">*</span></label>
-                                            <input
-                                              type="text"
-                                              value={ep.path}
-                                              onChange={(e) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].path = e.target.value;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                              placeholder="/v1/users/{user_id}"
-                                              className="w-full bg-background font-mono text-xs border border-border rounded-xl px-3 py-1.5 outline-none"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        <div className="space-y-3">
-                                          <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                              <label className="text-xs font-semibold">Description (Instructions for Agent) <span className="text-red-500">*</span></label>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleGenerateDescription(idx)}
-                                                disabled={generatingDescriptionIdx === idx}
-                                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 rounded-lg hover:bg-primary/20 active:scale-95 disabled:opacity-50 transition-all"
-                                              >
-                                                {generatingDescriptionIdx === idx ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
-                                                <span>AI Generate</span>
-                                              </button>
-                                            </div>
-                                            <textarea
-                                              value={ep.description}
-                                              onChange={(e) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].description = e.target.value;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                              placeholder="Use this to fetch user data given a user ID."
-                                              rows={2}
-                                              className={`w-full bg-background border rounded-xl px-3 py-1.5 text-xs outline-none resize-y ${validationErrors[`endpoint_${idx}_description`] ? "border-red-500 ring-2 ring-red-500/20" : "border-border"}`}
-                                            />
-                                          </div>
-                                          <div>
-                                            <div className="flex items-center justify-between mb-1">
-                                              <label className="text-xs font-semibold">Payload Format (JSON)</label>
-                                              <button
-                                                type="button"
-                                                onClick={() => prefillPayloadTemplate(idx)}
-                                                className="text-[10px] font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer"
-                                              >
-                                                Load Sample Template
-                                              </button>
-                                            </div>
-                                            <textarea
-                                              value={ep.payload_format}
-                                              onChange={(e) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].payload_format = e.target.value;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                              placeholder='{"user_id": "{id}"}'
-                                              rows={2}
-                                              className="w-full bg-background font-mono text-[11px] border border-border rounded-xl px-3 py-2 resize-y outline-none"
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="block text-xs font-semibold mb-1">Expected Output (JSON)</label>
-                                            <textarea
-                                              value={ep.expected_output || ""}
-                                              onChange={(e) => {
-                                                const newEps = [...formData.endpoints];
-                                                newEps[idx].expected_output = e.target.value;
-                                                updateField("endpoints", newEps);
-                                              }}
-                                              placeholder='{"user_name": "John", "age": 30}'
-                                              rows={2}
-                                              className="w-full bg-background font-mono text-[11px] border border-border rounded-xl px-3 py-2 resize-y outline-none"
-                                            />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
+                                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-[500px]">
+                                      {tool.tool_type === "api_webhook" && (tool.configuration?.description || `REST API: ${tool.configuration?.method} ${tool.configuration?.path}`)}
+                                      {tool.tool_type === "database" && (tool.configuration?.description || `Database Connection`)}
+                                      {tool.tool_type === "oauth" && `OAuth Integration`}
+                                    </p>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {toolsSubView === "databases" && (
-                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
-                          <div className="flex items-center justify-between mb-4 border-b pb-2">
-                            <h4 className="font-bold text-lg flex items-center gap-2">
-                              <Database size={18} className="text-primary" /> Database Connectors
-                            </h4>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                updateField("databases", [
-                                  ...(formData.databases || []),
-                                  { name: "New Database", type: "postgresql", connection_string: "" }
-                                ]);
-                                setExpandedDatabases(prev => ({...prev, [(formData.databases || []).length]: true}));
-                              }}
-                            >
-                              <Plus className="w-4 h-4 mr-2" /> Add Database
-                            </Button>
-                          </div>
-
-                          {(!formData.databases || formData.databases.length === 0) ? (
-                            <div className="text-center p-8 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
-                              No database tools configured. Click 'Add Database' to connect SQL databases.
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              {formData.databases.map((db, idx) => {
-                                const isExpanded = !!expandedDatabases[idx];
-                                return (
-                                  <div key={idx} className="bg-background rounded-xl border border-border shadow-sm overflow-hidden">
-                                    <div 
-                                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                                      onClick={() => setExpandedDatabases(prev => ({...prev, [idx]: !prev[idx]}))}
-                                    >
-                                      <div className="flex items-center gap-3">
-                                        <Database className="w-4 h-4 text-primary shrink-0" />
-                                        <span className="font-semibold text-sm">{db.name || 'Unnamed Database'}</span>
-                                        <span className="text-muted-foreground text-xs uppercase">{db.type}</span>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10 h-7 w-7"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            const newDbs = [...formData.databases];
-                                            newDbs.splice(idx, 1);
-                                            updateField("databases", newDbs);
-                                          }}
-                                        >
-                                          <Trash2 size={13} />
-                                        </Button>
-                                        <div className="text-muted-foreground p-1">
-                                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {isExpanded && (
-                                      <div className="p-5 pt-2 border-t border-border/50 bg-card/30 space-y-4">
-                                        <div>
-                                          <label className="block text-xs font-semibold mb-1">Database Name <span className="text-red-500">*</span></label>
-                                          <input
-                                            type="text"
-                                            value={db.name}
-                                            onChange={(e) => {
-                                              const newDbs = [...formData.databases];
-                                              newDbs[idx].name = e.target.value;
-                                              updateField("databases", newDbs);
-                                            }}
-                                            placeholder="e.g. production_db"
-                                            className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs outline-none"
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs font-semibold mb-1">Connection String <span className="text-red-500">*</span></label>
-                                          <input
-                                            type="password"
-                                            value={db.connection_string}
-                                            onChange={(e) => {
-                                              const newDbs = [...formData.databases];
-                                              newDbs[idx].connection_string = e.target.value;
-                                              updateField("databases", newDbs);
-                                            }}
-                                            placeholder="postgresql://user:pass@host:port/dbname"
-                                            className="w-full bg-background font-mono text-xs border border-border rounded-xl px-3 py-1.5 outline-none"
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {toolsSubView === "integrations" && (
-                        <div className="space-y-4 bg-card p-6 rounded-2xl border border-border shadow-sm">
-                          <h4 className="font-bold text-lg border-b pb-2 mb-4 flex items-center gap-2">
-                            <Blocks size={18} className="text-primary" /> App Integrations
-                          </h4>
-                          
-                          <div className="space-y-4">
-                            {[
-                              { id: "github", name: "GitHub", description: "Access repositories and issues.", icon: "https://cdn-icons-png.flaticon.com/512/25/25231.png" },
-                              { id: "slack", name: "Slack", description: "Send and receive messages.", icon: "https://cdn-icons-png.flaticon.com/512/3800/3800024.png" },
-                              { id: "jira", name: "Jira", description: "Manage project tickets.", icon: "https://cdn-icons-png.flaticon.com/512/5968/5968875.png" }
-                            ].map((integration) => {
-                              const isConnected = formData.native_integrations?.includes(integration.id);
-                              return (
-                                <div key={integration.id} className="p-4 bg-background border border-border rounded-xl flex items-center justify-between transition-all">
-                                  <div className="flex items-center gap-4">
-                                    <img src={integration.icon} alt={integration.name} className="w-7 h-7 object-contain" />
-                                    <div>
-                                      <h4 className="text-sm font-semibold text-foreground">{integration.name}</h4>
-                                      <p className="text-xs text-muted-foreground">{integration.description}</p>
-                                    </div>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant={isConnected ? "outline" : "default"}
-                                    size="sm"
-                                    className={isConnected ? "text-red-500 hover:text-red-600 hover:bg-red-500/10" : ""}
-                                    onClick={() => {
-                                      const current = formData.native_integrations || [];
-                                      if (isConnected) {
-                                        updateField("native_integrations", current.filter(id => id !== integration.id));
-                                      } else {
-                                        const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-                                        window.open(`${baseUrl}/api/auth/${integration.id}/login`, "OAuth_Login", "width=600,height=700");
-                                        updateField("native_integrations", [...current, integration.id]);
-                                      }
-                                    }}
-                                  >
-                                    {isConnected ? "Disconnect" : "Connect"}
-                                  </Button>
                                 </div>
-                              );
-                            })}
-                          </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleToggleTool(tool.id, false)} // false to attach
+                                  className="rounded-xl px-4 font-semibold text-xs transition"
+                                >
+                                  Attach
+                                </Button>
+                              </div>
+                            ))}
                         </div>
                       )}
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
 
