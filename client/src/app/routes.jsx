@@ -23,6 +23,7 @@ import TeamPage from "../pages/TeamPage";
 import BillingPage from "../pages/BillingPage";
 import LandingPage from "../pages/LandingPage";
 import WorkspaceToolsPage from "../pages/WorkspaceToolsPage";
+import CreateToolPage from "../pages/CreateToolPage";
 import UserGuidePage from "../pages/UserGuidePage";
 import TermsPage from "../pages/TermsPage";
 import AboutPage from "../pages/AboutPage";
@@ -103,6 +104,10 @@ export const router = createBrowserRouter([
       {
         path: "tools",
         element: <WorkspaceToolsPage />,
+      },
+      {
+        path: "tools/new",
+        element: <CreateToolPage />,
       },
       {
         path: "models",
