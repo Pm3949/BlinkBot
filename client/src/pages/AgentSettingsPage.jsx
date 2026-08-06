@@ -1064,36 +1064,78 @@ export default function AgentSettingsPage() {
 
               {activeTab === 'tools' && (
                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {/* Top Section: Connected Tools */}
+                  {/* Built-in Capabilities (System Tools) */}
                   <div className="space-y-4">
                     <div>
-                      <h3 className="text-2xl font-bold">Agent Tools & Capabilities</h3>
-                      <p className="text-muted-foreground text-sm mt-1">Configure which APIs, database connections, and system extensions this agent can access.</p>
+                      <h3 className="text-xl font-bold">Built-in Capabilities</h3>
+                      <p className="text-muted-foreground text-sm mt-0.5">Toggle native core integrations directly for this agent.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {workspaceTools.filter(t => t.is_system).map((tool) => {
+                        const isAttached = attachedToolIds.has(tool.id);
+                        return (
+                          <div key={tool.id} className="p-4 bg-card/60 border border-border/80 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition duration-200">
+                            <div className="flex items-center gap-3.5">
+                              <div className="p-2.5 bg-muted rounded-xl">
+                                {tool.tool_type === "api_webhook" && <Webhook size={18} className="text-primary" />}
+                                {tool.tool_type === "database" && <Database size={18} className="text-emerald-500" />}
+                                {tool.tool_type === "oauth" && <Key size={18} className="text-purple-500" />}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                                    System
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-[280px]">
+                                  {tool.configuration?.description || "Core system capabilities extension."}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            {/* Premium Toggle Switch */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleTool(tool.id, isAttached)}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isAttached ? "bg-primary" : "bg-muted"}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isAttached ? "translate-x-5" : "translate-x-0"}`} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Divider and Custom Tools Section */}
+                  <div className="border-t border-border/50 pt-8 space-y-4">
+                    <div>
+                      <h3 className="text-xl font-bold">Connected Custom Tools</h3>
+                      <p className="text-muted-foreground text-sm mt-0.5">APIs, databases, and Python scripts attached to this agent.</p>
                     </div>
 
                     {loadingTools ? (
                       <div className="flex items-center justify-center p-8">
                         <Loader2 className="animate-spin text-primary" size={24} />
                       </div>
-                    ) : workspaceTools.filter(t => attachedToolIds.has(t.id)).length === 0 ? (
+                    ) : workspaceTools.filter(t => !t.is_system && attachedToolIds.has(t.id)).length === 0 ? (
                       <div className="rounded-3xl border-2 border-dashed border-border bg-card p-12 text-center flex flex-col items-center justify-center space-y-4">
                         <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                           <Wrench size={24} />
                         </div>
                         <div>
-                          <h4 className="font-bold text-base text-foreground">No tools connected</h4>
+                          <h4 className="font-bold text-base text-foreground">No custom tools connected</h4>
                           <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-                            This agent has no tools connected. Select a tool from the Workspace Library below to get started.
+                            Add workspace tools from the library below to attach external capabilities.
                           </p>
-                        </div>
-                        <div className="flex items-center gap-1 text-primary text-xs font-bold animate-bounce mt-2">
-                          <ArrowDown size={14} /> Scroll down to available tools
                         </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {workspaceTools
-                          .filter(t => attachedToolIds.has(t.id))
+                          .filter(t => !t.is_system && attachedToolIds.has(t.id))
                           .map((tool) => (
                             <div key={tool.id} className="p-4 bg-card border border-border/80 rounded-2xl flex items-center justify-between shadow-sm hover:shadow-md transition duration-200">
                               <div className="flex items-center gap-3.5">
@@ -1101,20 +1143,15 @@ export default function AgentSettingsPage() {
                                   {tool.tool_type === "api_webhook" && <Webhook size={18} className="text-primary" />}
                                   {tool.tool_type === "database" && <Database size={18} className="text-emerald-500" />}
                                   {tool.tool_type === "oauth" && <Key size={18} className="text-purple-500" />}
+                                  {tool.tool_type === "python_code" && <FileCode size={18} className="text-indigo-500" />}
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
-                                    {tool.is_system && (
-                                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                                        System
-                                      </span>
-                                    )}
-                                  </div>
+                                  <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
                                   <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-[280px]">
                                     {tool.tool_type === "api_webhook" && (tool.configuration?.description || `Webhook: ${tool.configuration?.method} ${tool.configuration?.path}`)}
                                     {tool.tool_type === "database" && (tool.configuration?.description || `Database Connection`)}
                                     {tool.tool_type === "oauth" && `OAuth Integration`}
+                                    {tool.tool_type === "python_code" && `Python Script (BYOC)`}
                                   </p>
                                 </div>
                               </div>
@@ -1122,7 +1159,7 @@ export default function AgentSettingsPage() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleToggleTool(tool.id, true)} // true to detach
+                                onClick={() => handleToggleTool(tool.id, true)}
                                 className="text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-xl"
                               >
                                 Remove
@@ -1133,19 +1170,19 @@ export default function AgentSettingsPage() {
                     )}
                   </div>
 
-                  {/* Divider and Bottom Section: Available Workspace Tools */}
+                  {/* Available Workspace Library Section */}
                   <div className="border-t border-border/50 mt-10 pt-8 space-y-5">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
-                        <h4 className="text-xl font-bold text-foreground">Workspace Tool Library</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">Click "Attach" to grant this agent access to these capabilities.</p>
+                        <h4 className="text-xl font-bold text-foreground">Workspace Custom Tools Library</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">Click "Attach" to grant this agent access to custom integrations.</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => navigate("/tools")}
                         className="text-xs font-bold text-primary hover:underline flex items-center gap-1"
                       >
-                        Manage Workspace Tools <ExternalLink size={12} />
+                        Manage Custom Tools <ExternalLink size={12} />
                       </button>
                     </div>
 
@@ -1154,14 +1191,14 @@ export default function AgentSettingsPage() {
                         <div className="flex items-center justify-center p-4">
                           <Loader2 className="animate-spin text-primary" size={20} />
                         </div>
-                      ) : workspaceTools.filter(t => !attachedToolIds.has(t.id)).length === 0 ? (
+                      ) : workspaceTools.filter(t => !t.is_system && !attachedToolIds.has(t.id)).length === 0 ? (
                         <div className="text-center p-6 bg-muted/20 border border-dashed border-border rounded-xl text-muted-foreground text-xs">
-                          All available workspace tools are currently connected to this agent.
+                          All available workspace custom tools are currently connected to this agent.
                         </div>
                       ) : (
                         <div className="space-y-3">
                           {workspaceTools
-                            .filter(t => !attachedToolIds.has(t.id))
+                            .filter(t => !t.is_system && !attachedToolIds.has(t.id))
                             .map((tool) => (
                               <div key={tool.id} className="p-4 bg-card hover:bg-card/80 border border-border/80 rounded-2xl flex items-center justify-between transition-all duration-200 hover:shadow-sm">
                                 <div className="flex items-center gap-3.5">
@@ -1169,20 +1206,15 @@ export default function AgentSettingsPage() {
                                     {tool.tool_type === "api_webhook" && <Webhook size={18} className="text-primary" />}
                                     {tool.tool_type === "database" && <Database size={18} className="text-emerald-500" />}
                                     {tool.tool_type === "oauth" && <Key size={18} className="text-purple-500" />}
+                                    {tool.tool_type === "python_code" && <FileCode size={18} className="text-indigo-500" />}
                                   </div>
                                   <div>
-                                    <div className="flex items-center gap-2">
-                                      <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
-                                      {tool.is_system && (
-                                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                                          System
-                                        </span>
-                                      )}
-                                    </div>
+                                    <h4 className="text-sm font-bold text-foreground">{tool.name}</h4>
                                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-[500px]">
                                       {tool.tool_type === "api_webhook" && (tool.configuration?.description || `REST API: ${tool.configuration?.method} ${tool.configuration?.path}`)}
                                       {tool.tool_type === "database" && (tool.configuration?.description || `Database Connection`)}
                                       {tool.tool_type === "oauth" && `OAuth Integration`}
+                                      {tool.tool_type === "python_code" && `Python Script (BYOC)`}
                                     </p>
                                   </div>
                                 </div>
@@ -1190,7 +1222,7 @@ export default function AgentSettingsPage() {
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleToggleTool(tool.id, false)} // false to attach
+                                  onClick={() => handleToggleTool(tool.id, false)}
                                   className="rounded-xl px-4 font-semibold text-xs transition"
                                 >
                                   Attach
