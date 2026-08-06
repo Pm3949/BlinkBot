@@ -336,3 +336,50 @@ async def handle_verify_feedback(feedback_id: str, payload: dict):
     except Exception as e:
         logger.error(f"Error verifying feedback ID {feedback_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to verify feedback")
+
+
+async def handle_get_agent_feedback(agent_id: str):
+    """
+    Retrieves open feedback tickets (memory logs) for a specific agent.
+    """
+    logger.info(f"Retrieving active open feedback tickets for agent ID: {agent_id}")
+    try:
+        tickets = await feedback_repository.get_agent_feedback(agent_id)
+        logger.info(f"Successfully retrieved {len(tickets)} feedback records for agent {agent_id}.")
+        return tickets
+    except Exception as e:
+        logger.error(f"Error fetching open feedback for agent {agent_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch agent feedback")
+
+
+async def handle_delete_feedback(feedback_id: str):
+    """
+    Deletes a specific feedback ticket by its ID.
+    """
+    logger.info(f"Deleting feedback ticket ID: {feedback_id}")
+    try:
+        success = await feedback_repository.delete_feedback_ticket(feedback_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Feedback ticket not found")
+        logger.info(f"Feedback ticket ID {feedback_id} successfully deleted.")
+        return {"message": "Feedback ticket deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting feedback ID {feedback_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete feedback")
+
+
+async def handle_clear_agent_feedback(agent_id: str):
+    """
+    Deletes all chat messages and sessions associated with the agent to clear conversation memory.
+    """
+    logger.info(f"Clearing all conversation history for agent ID: {agent_id}")
+    try:
+        from db import chat_repository
+        await chat_repository.clear_agent_conversation_history(agent_id)
+        logger.info(f"Conversation history for agent {agent_id} successfully cleared.")
+        return {"message": "Agent conversation memory cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing conversation history for agent {agent_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to clear agent conversation memory")

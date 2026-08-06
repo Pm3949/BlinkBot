@@ -358,3 +358,62 @@ async def verify_feedback(feedback_id: str, is_satisfied: bool, comment: str, cu
                 (new_comment, feedback_id)
             )
 
+
+async def get_agent_feedback(agent_id: str):
+    """
+    Retrieves all open feedback tickets for a specific agent.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT f.id, f.message_id, f.vote_type, f.category, 
+                   f.comment_text, f.created_at,
+                   m.content as message_content
+            FROM message_feedback f
+            LEFT JOIN chat_messages m ON f.message_id = m.id
+            WHERE f.agent_id = %s AND f.status = 'open'
+            ORDER BY f.created_at DESC;
+            """,
+            (agent_id,)
+        )
+        rows = await run_in_threadpool(cursor.fetchall)
+        return [
+            {
+                "id": str(r[0]),
+                "message_id": str(r[1]) if r[1] else None,
+                "vote_type": r[2],
+                "category": r[3],
+                "comment_text": r[4],
+                "created_at": r[5].isoformat() if r[5] else None,
+                "message_content": r[6]
+            }
+            for r in rows
+        ]
+
+
+async def delete_feedback_ticket(feedback_id: str):
+    """
+    Deletes a specific feedback ticket by its ID.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM message_feedback WHERE id = %s;",
+            (feedback_id,)
+        )
+        return cursor.rowcount > 0
+
+
+async def clear_agent_feedback(agent_id: str):
+    """
+    Deletes all open feedback tickets (agent memory) for a specific agent.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM message_feedback WHERE agent_id = %s AND status = 'open';",
+            (agent_id,)
+        )
+        return cursor.rowcount > 0
+

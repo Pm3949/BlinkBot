@@ -110,7 +110,8 @@ export function useChat() {
         agent_name: agentName,
         message,
         history,
-        language
+        language,
+        session_id: currentSessionId
     });
   };
 

@@ -164,9 +164,16 @@ async def get_global_registry(current_user: dict = Depends(get_current_user)):
     return GLOBAL_TOOLS_REGISTRY
 
 
+@router.get("/api/tools/pre-defined")
+async def get_pre_defined_tools(current_user: dict = Depends(get_current_user)):
+    from utils.langgraph_tools_registry import LANGGRAPH_TOOLS_REGISTRY
+    return LANGGRAPH_TOOLS_REGISTRY
+
+
 class ProvisionPayload(BaseModel):
     template_id: str
     workspace_id: str
+    api_key: Optional[str] = None
 
 
 @router.get("/api/tools/templates")
@@ -189,8 +196,37 @@ async def provision_tool(payload: ProvisionPayload, current_user: dict = Depends
     try:
         import os
         import json as json_lib
+        from utils.langgraph_tools_registry import LANGGRAPH_TOOLS_REGISTRY
         
-        # 1. Check if it's a global tool
+        # 1. Check if it's a pre-defined LangGraph tool registry item
+        langgraph_tool = None
+        for t in LANGGRAPH_TOOLS_REGISTRY:
+            if t["tool_key"] == payload.template_id:
+                langgraph_tool = t
+                break
+                
+        if langgraph_tool:
+            if langgraph_tool["requires_auth"] and not payload.api_key:
+                raise HTTPException(status_code=400, detail=f"API key is required to provision the {langgraph_tool['name']} integration.")
+                
+            config = {"description": langgraph_tool["description"]}
+            if payload.api_key:
+                config["api_key"] = payload.api_key
+                
+            new_tool = await workspace_tools_repository.create_workspace_tool(
+                workspace_id=payload.workspace_id,
+                name=langgraph_tool["name"],
+                tool_type="api_webhook",  # Predefined tools behave as API webhook handlers
+                configuration=config,
+                code_content=None,
+                is_global=True,
+                tool_key=langgraph_tool["tool_key"]
+            )
+            if not new_tool:
+                raise HTTPException(status_code=500, detail="Failed to provision predefined LangGraph tool.")
+            return new_tool
+        
+        # 2. Check if it's a global tool
         global_tool = None
         for t in GLOBAL_TOOLS_REGISTRY:
             if t["id"] == payload.template_id:
@@ -211,7 +247,7 @@ async def provision_tool(payload: ProvisionPayload, current_user: dict = Depends
                 raise HTTPException(status_code=500, detail="Failed to provision global tool.")
             return new_tool
             
-        # 2. Check templates if not a global tool
+        # 3. Check templates if not a global/predefined tool
         templates_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tool_templates.json")
         if not os.path.exists(templates_path):
             raise HTTPException(status_code=404, detail="Templates registry not found.")
@@ -226,7 +262,7 @@ async def provision_tool(payload: ProvisionPayload, current_user: dict = Depends
                 break
                 
         if not target_template:
-            raise HTTPException(status_code=404, detail=f"Template/Global tool with ID '{payload.template_id}' not found.")
+            raise HTTPException(status_code=404, detail=f"Template/Global/Predefined tool with ID '{payload.template_id}' not found.")
             
         # Provision the tool under the workspace
         new_tool = await workspace_tools_repository.create_workspace_tool(
@@ -239,6 +275,8 @@ async def provision_tool(payload: ProvisionPayload, current_user: dict = Depends
         if not new_tool:
             raise HTTPException(status_code=500, detail="Failed to provision workspace tool from template.")
         return new_tool
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error provisioning tool template {payload.template_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -4,6 +4,7 @@ import { useAgentSocket } from "./useAgentSocket";
 export function useSandboxChat() {
   const [localMessages, setLocalMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [sandboxSessionId, setSandboxSessionId] = useState(() => "sandbox_" + Math.random().toString(36).substring(7));
 
   // Connection config
   const clientId = useMemo(() => {
@@ -63,14 +64,16 @@ export function useSandboxChat() {
         agent_name: agentName,
         message,
         history,
-        language
+        language,
+        session_id: sandboxSessionId
     });
-  }, [localMessages, sendChatRequest]);
+  }, [localMessages, sendChatRequest, sandboxSessionId]);
 
   const clearSandbox = useCallback(() => {
     setLocalMessages([]);
     clearTextChunks();
     setIsTyping(false);
+    setSandboxSessionId("sandbox_" + Math.random().toString(36).substring(7));
   }, [clearTextChunks]);
 
   return {

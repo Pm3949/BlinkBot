@@ -182,6 +182,7 @@ def build_multi_agent_graph(
             # Parse the JSON response.
             parsed = json.loads(content)
             next_step = parsed.get("next", "FINISH").strip()
+            print(f"DEBUG SUPERVISOR ROUTER: content={content}, next_step={next_step}")
         except Exception as e:
             # Fall back to ending the execution loop on errors.
             print(f"Routing failed: {e}")
@@ -213,7 +214,20 @@ def build_multi_agent_graph(
                 "next_agent": master_agent_id,
             }
 
-        # Default fallback to exit.
+        # Default fallback to exit, or route to master agent if user just spoke to prevent blank response.
+        last_is_human = False
+        if state.get("messages"):
+            last_msg = state["messages"][-1]
+            if getattr(last_msg, "type", None) == "human" or isinstance(last_msg, HumanMessage):
+                last_is_human = True
+
+        if last_is_human:
+            return {
+                "active_agent_id": master_agent_id,
+                "routed_agent_name": gateway_name,
+                "next_agent": master_agent_id,
+            }
+
         return {
             "active_agent_id": master_agent_id,
             "routed_agent_name": gateway_name,
@@ -367,7 +381,5 @@ def build_multi_agent_graph(
     )
     workflow.add_edge("tools", "agent")
 
-    # Compile the workflow with postgres checkpointer and tool interruption breakpoint.
-    from utils.postgres_saver import PostgresCheckpointSaver
-    checkpointer = PostgresCheckpointSaver()
-    return workflow.compile(checkpointer=checkpointer, interrupt_before=["tools"])
+    # Compile the workflow statelessly (no checkpointer, no HITL interruption).
+    return workflow.compile()

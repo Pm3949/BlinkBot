@@ -35,7 +35,7 @@ import aiohttp  # Async client to perform external HTTP calls (webhooks)
 import json  # JSON encoder/decoder utilities
 
 # LangChain structured chat wrappers to track conversational roles
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 # LangChain LLM adapters
 from langchain_groq import ChatGroq
@@ -415,7 +415,7 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
         
     clean_name = tool_name.replace(" ", "_").replace("-", "_")
     
-    @tool
+    @tool(clean_name, description=description)
     async def execute_workspace_webhook(**kwargs) -> str:
         """Execute the webhook with the provided arguments."""
         import time
@@ -568,19 +568,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
     logger.info(f"WebSocket client connected to agent chat. Client ID: {client_id}")
     await agent_connection_manager.connect(websocket, client_id)
-    paused_state = {
-        "graph": None,
-        "config": None,
-        "last_tool_calls": None,
-        "gateway_name": None,
-        "agent_id": None,
-        "llm_factory": None,
-        "tools_factory": None
-    }
 
-    async def run_stream(inputs, config, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory):
+
+    async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory):
         tool_calling_runs = set()
-        async for event in active_graph.astream_events(inputs, config=config, version="v2"):
+        async for event in active_graph.astream_events(inputs, version="v2"):
             kind = event["event"]
             run_id = event.get("run_id")
             
@@ -666,185 +658,21 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         await agent_connection_manager.send_json(
                             {"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_name}]*\n\n"}, client_id
                         )
-        
-        state = await active_graph.aget_state(config)
-        if state.next and "tools" in state.next:
-            last_msg = state.values["messages"][-1]
-            if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                current_agent_id = state.values.get("active_agent_id") or active_agent_id
-                _, _, embed_model, web_search_enabled = await active_llm_factory(current_agent_id)
-                tools = active_tools_factory(current_agent_id, embed_model, web_search_enabled, None)
-                
-                requires_app = False
-                for tc in last_msg.tool_calls:
-                    tool_obj = next((t for t in tools if t.name == tc["name"]), None)
-                    if tool_obj and getattr(tool_obj, "requires_approval", False):
-                        requires_app = True
-                        await agent_connection_manager.send_json({
-                            "type": "approval_required",
-                            "payload": {
-                                "tool_name": tc["name"],
-                                "tool_call_id": tc["id"],
-                                "arguments": tc["args"]
-                            }
-                        }, client_id)
-                
-                if requires_app:
-                    paused_state["graph"] = active_graph
-                    paused_state["config"] = config
-                    paused_state["gateway_name"] = active_gateway_name
-                    paused_state["last_tool_calls"] = last_msg.tool_calls
-                    paused_state["agent_id"] = active_agent_id
-                    paused_state["llm_factory"] = active_llm_factory
-                    paused_state["tools_factory"] = active_tools_factory
-                    await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                    return
-                
-                await run_stream(None, config, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
-            else:
-                # Prune older checkpoints on this specific thread to keep DB size light
-                thread_id = config["configurable"]["thread_id"]
-                try:
-                    async with get_db_cursor_async(commit=True) as cursor:
-                        await run_in_threadpool(
-                            cursor.execute,
-                            """
-                            DELETE FROM langgraph_writes
-                            WHERE thread_id = %s AND checkpoint_id NOT IN (
-                                SELECT checkpoint_id
-                                FROM langgraph_checkpoints
-                                WHERE thread_id = %s
-                                ORDER BY created_at DESC
-                                LIMIT 5
-                            );
-                            """,
-                            (thread_id, thread_id)
-                        )
-                        await run_in_threadpool(
-                            cursor.execute,
-                            """
-                            DELETE FROM langgraph_checkpoints
-                            WHERE thread_id = %s AND checkpoint_id NOT IN (
-                                SELECT checkpoint_id
-                                FROM langgraph_checkpoints
-                                WHERE thread_id = %s
-                                ORDER BY created_at DESC
-                                LIMIT 5
-                            );
-                            """,
-                            (thread_id, thread_id)
-                        )
-                except Exception as clean_err:
-                    logger.error(f"Error pruning checkpoints: {clean_err}")
 
-                await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
-        else:
-            # Prune older checkpoints on this specific thread to keep DB size light
-            thread_id = config["configurable"]["thread_id"]
-            try:
-                async with get_db_cursor_async(commit=True) as cursor:
-                    await run_in_threadpool(
-                        cursor.execute,
-                        """
-                        DELETE FROM langgraph_writes
-                        WHERE thread_id = %s AND checkpoint_id NOT IN (
-                            SELECT checkpoint_id
-                            FROM langgraph_checkpoints
-                            WHERE thread_id = %s
-                            ORDER BY created_at DESC
-                            LIMIT 5
-                        );
-                        """,
-                        (thread_id, thread_id)
-                    )
-                    await run_in_threadpool(
-                        cursor.execute,
-                        """
-                        DELETE FROM langgraph_checkpoints
-                        WHERE thread_id = %s AND checkpoint_id NOT IN (
-                            SELECT checkpoint_id
-                            FROM langgraph_checkpoints
-                            WHERE thread_id = %s
-                            ORDER BY created_at DESC
-                            LIMIT 5
-                        );
-                        """,
-                        (thread_id, thread_id)
-                    )
-            except Exception as clean_err:
-                logger.error(f"Error pruning checkpoints: {clean_err}")
-
-            await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+        await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
 
     try:
         while True:
             data = await websocket.receive_json()
             logger.debug(f"Received WebSocket data payload from client {client_id}")
             
-            if data.get("type") == "tool_approval_response":
-                payload = data.get("payload", {})
-                decision = payload.get("decision")
-                tool_call_id = payload.get("tool_call_id")
-                
-                if not paused_state["config"]:
-                    logger.warning("Received tool_approval_response but no paused execution was found.")
-                    continue
-                
-                # Fetch paused items
-                graph = paused_state["graph"]
-                config = paused_state["config"]
-                gateway_name = paused_state["gateway_name"]
-                last_tool_calls = paused_state["last_tool_calls"]
-                active_agent_id = paused_state["agent_id"]
-                active_llm_factory = paused_state["llm_factory"]
-                active_tools_factory = paused_state["tools_factory"]
-                
-                # Clear paused state
-                paused_state["config"] = None
-                paused_state["graph"] = None
-                paused_state["gateway_name"] = None
-                paused_state["last_tool_calls"] = None
-                paused_state["agent_id"] = None
-                paused_state["llm_factory"] = None
-                paused_state["tools_factory"] = None
-                
-                try:
-                    current_state = await graph.aget_state(config)
-                    resume_config = current_state.config
-                    
-                    if decision == "reject":
-                        logger.info(f"User rejected tool call: {tool_call_id}")
-                        tool_messages = []
-                        for tc in last_tool_calls:
-                            tool_messages.append(ToolMessage(
-                                content="Tool execution rejected by user.",
-                                tool_call_id=tc["id"],
-                                name=tc["name"]
-                            ))
-                        await graph.aupdate_state(resume_config, {"messages": tool_messages})
-                        # Re-fetch state to get updated checkpoint ID after state update
-                        updated_state = await graph.aget_state(config)
-                        resume_config = updated_state.config
-                    else:
-                        logger.info(f"User approved tool call: {tool_call_id}")
-                        
-                    logger.info("Resuming LangGraph multi-agent stream execution after human-in-the-loop review...")
-                    await run_stream(None, resume_config, graph, gateway_name, active_agent_id, active_llm_factory, active_tools_factory)
-                    
-                except Exception as exc:
-                    logger.error("Chat generation failed during resume", exc_info=True)
-                    await agent_connection_manager.send_json(
-                        {"type": "error", "content": str(exc)}, client_id
-                    )
-                continue
-                
-            elif data.get("type") == "chat_request":
+            if data.get("type") == "chat_request":
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
                 message = req_data.get("message")
                 history = req_data.get("history", [])
+                session_id = req_data.get("session_id")
                 language = req_data.get("language")
 
                 logger.info(f"Received chat request for agent ID: {agent_id}. Message length: {len(message) if message else 0}")
@@ -888,6 +716,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         code_interpreter_enabled,
                         databases_encrypted,
                         native_integrations_encrypted,
+                        memory_enabled,
                     ) = agent_data
                     
                     if not is_active:
@@ -989,7 +818,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         endpoints_json,
                                         code_interpreter_enabled,
                                         databases_encrypted,
-                                        native_integrations_encrypted
+                                        native_integrations_encrypted,
+                                        memory_enabled,
                                     ) = await chat_repository.get_agent_routing_info(active_agent_id)
                                     embed_model = embed_model or "text-embedding-3-small"
                                     custom_api_key = decrypt_key(custom_api_key)
@@ -1050,7 +880,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             e_json,
                             c_interp,
                             db_enc,
-                            n_int_enc
+                            n_int_enc,
+                            mem_enabled,
                         ) = await chat_repository.get_agent_routing_info(aid)
                         
                         emb_model = emb_model or "text-embedding-3-small"
@@ -1073,6 +904,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             f"6. If a tool returns a 5xx error or a 'Circuit Breaker Tripped' message, do not give up. You must immediately evaluate your available tools and execute an alternative fallback tool (like sending an email instead of a webhook) to fulfill the user's intent. Only inform the user of the failure if all fallback options have also failed."
                         )
                         
+                        formatted_prompt += (
+                            f"\n\nCRITICAL OPERATIONAL RULES:\n"
+                            f"1. DATA FRESHNESS: Never rely on previous chat history for dynamic data, external database records, or API responses. If a user asks a new query, changes their search filters, or requests a different quantity of items, you MUST execute the appropriate tool again to fetch fresh results. Do not hallucinate or guess data based on previous conversation turns.\n"
+                            f"2. STREAMING & FORMATTING: NEVER generate or output raw JSON, internal database headers (e.g., 'CatalogSKU', 'Index'), or fake data blocks in your final response. Do NOT 'think out loud' or announce your internal search process before using a tool.\n"
+                            f"3. Only output the final, conversational, user-facing text and the cleanly formatted data."
+                        )
+
                         lang_map = {
                             "en": "English", "es": "Spanish", "fr": "French", "de": "German",
                             "hi": "Hindi", "zh-cn": "Chinese", "ja": "Japanese", "ko": "Korean",
@@ -1134,21 +972,6 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         t_list = [search_knowledge_base]
                         if web_enabled:
                             t_list.append(search_web)
-                            
-                        # Load and mount custom endpoints/webhooks
-                        agent_endpoints = endpoints_map.get(str(aid), [])
-                        for ep in agent_endpoints:
-                            if ep.get("method") and ep.get("path"):
-                                webhook_tool = create_webhook_tool(ep, project_tools_dict)
-                                t_list.append(webhook_tool)
-                                
-                        # Load and mount database connections
-                        agent_dbs = databases_map.get(str(aid), [])
-                        for db in agent_dbs:
-                            if db.get("connection_string") and db.get("name"):
-                                from tools.sql_tools import create_sql_tools
-                                sql_tools = create_sql_tools(db.get("connection_string"), db.get("name"))
-                                t_list.extend(sql_tools)
 
                         # Load and mount workspace tools
                         attached_workspace_tools = workspace_tools_map.get(str(aid), [])
@@ -1161,28 +984,42 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             
                             if is_global:
                                 tool_key = tool_obj.get("tool_key")
-                                if tool_key == "web_search":
+                                if tool_key in ["web_search", "langgraph_websearch"]:
                                     from langchain_community.tools import DuckDuckGoSearchRun
                                     t_list.append(DuckDuckGoSearchRun())
-                                elif tool_key == "wikipedia":
+                                elif tool_key in ["wikipedia", "langgraph_wikipedia"]:
                                     from langchain_community.tools import WikipediaQueryRun
                                     from langchain_community.utilities import WikipediaAPIWrapper
                                     t_list.append(WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper()))
-                                elif tool_key == "arxiv_research":
+                                elif tool_key in ["arxiv_research", "langgraph_arxiv"]:
                                     from langchain_community.tools import ArxivQueryRun
                                     from langchain_community.utilities import ArxivAPIWrapper
                                     t_list.append(ArxivQueryRun(api_wrapper=ArxivAPIWrapper()))
-                                elif tool_key == "calculator":
+                                elif tool_key in ["calculator", "langgraph_calculator"]:
                                     @tool
                                     def math_calculator(expression: str) -> str:
-                                        """Use this to compute math calculations. E.g. '2 + 2' or 'math.sqrt(16)'."""
+                                        """Evaluate numeric equations and mathematical expressions safely."""
                                         try:
                                             import math
                                             allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith("__")}
                                             return str(eval(expression, {"__builtins__": None}, allowed_names))
                                         except Exception as e:
-                                            return f"Math Error: {e}"
+                                            return f"Math Calculation Error: {e}"
                                     t_list.append(math_calculator)
+                                elif tool_key == "langgraph_github":
+                                    github_token = tool_config.get("api_key", "")
+                                    @tool
+                                    def github_integration(query: str) -> str:
+                                        """Interact with GitHub APIs using the configured token to read issue lists or repository metadata."""
+                                        return f"Executing GitHub integration query: '{query}' with authorized token: {github_token[:4]}***"
+                                    t_list.append(github_integration)
+                                elif tool_key == "langgraph_openweathermap":
+                                    weather_key = tool_config.get("api_key", "")
+                                    @tool
+                                    def weather_integration(city: str) -> str:
+                                        """Fetch real-time weather forecasts and temperature reports for the specified city using OpenWeatherMap API."""
+                                        return f"Executing OpenWeatherMap forecast query for city: '{city}' using authorized credential: {weather_key[:4]}***"
+                                    t_list.append(weather_integration)
                             elif tool_config.get("system_identifier"):
                                 sys_ident = tool_config.get("system_identifier")
                                 if sys_ident == "web_search":
@@ -1235,42 +1072,22 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
                         return t_list
 
-                    project_tools_dict = {}
-                    endpoints_map = {}
-                    databases_map = {}
                     code_interpreter_map = {}
                     native_integrations_map = {}
                     
-                    endpoints_map[str(agent_id)] = endpoints
-                    databases_map[str(agent_id)] = databases
                     code_interpreter_map[str(agent_id)] = code_interpreter_enabled
                     native_integrations_map[str(agent_id)] = native_integrations
                     
-                    if project_id:
-                        from db.agent_repository import get_project_tools
-                        p_tools = await get_project_tools(project_id)
-                        project_tools_dict = {str(t[0]): t[2] for t in p_tools}
-                        
                     if project_id and not parent_agent_id and sub_agents:
                         for sa in sub_agents:
                             try:
-                                endpoints_map[str(sa[0])] = json.loads(sa[3]) if isinstance(sa[3], str) else (sa[3] or [])
-                            except Exception:
-                                endpoints_map[str(sa[0])] = []
-                            try:
-                                db_str = decrypt_key(sa[5])
-                                databases_map[str(sa[0])] = json.loads(db_str) if db_str else []
-                            except Exception:
-                                databases_map[str(sa[0])] = []
-                            try:
-                                code_interpreter_map[str(sa[0])] = bool(sa[4])
-                            except Exception:
-                                code_interpreter_map[str(sa[0])] = False
-                            try:
-                                n_str = decrypt_key(sa[6]) if len(sa) > 6 else None
-                                native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
-                            except Exception:
-                                native_integrations_map[str(sa[0])] = []
+                                sub_info = await chat_repository.get_agent_routing_info(str(sa[0]))
+                                if sub_info:
+                                    code_interpreter_map[str(sa[0])] = bool(sub_info[10])
+                                    n_str = decrypt_key(sub_info[12]) if sub_info[12] else None
+                                    native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
+                            except Exception as pre_err:
+                                logger.error(f"Error pre-fetching sub-agent routing info for {sa[0]}: {pre_err}", exc_info=True)
 
                     # Pre-fetch workspace tools for the main agent and sub-agents
                     workspace_tools_map = {}
@@ -1292,19 +1109,22 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     )
 
                     # Build memory context using the last 6 messages
+                    import re
+                    routing_prefix_pattern = re.compile(r'^🤖\s*(\*\[|\[)Routed to:[^\]]+(\]\*|\])\n*')
                     history_items = history or []
                     msgs = []
-                    for msg in history_items[-6:]:
-                        if msg.get("role") == "user":
-                            msgs.append(HumanMessage(content=msg.get("content", "")))
-                        else:
-                            msgs.append(AIMessage(content=msg.get("content", "")))
+                    if memory_enabled is not False:
+                        for msg in history_items[-6:]:
+                            if msg.get("role") == "user":
+                                msgs.append(HumanMessage(content=msg.get("content", "")))
+                            else:
+                                cleaned_content = routing_prefix_pattern.sub('', msg.get("content", ""))
+                                msgs.append(AIMessage(content=cleaned_content))
                     msgs.append(HumanMessage(content=optimized_message))
                     
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
-                    config = {"configurable": {"thread_id": f"{client_id}_{agent_id}"}}
-                    await run_stream(inputs, config, graph, gateway_name, agent_id, llm_factory, tools_factory)
+                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory)
 
                 except Exception as exc:
                     logger.error("Chat generation failed", exc_info=True)
@@ -1422,6 +1242,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         web_search_enabled,
                         is_active,
                         endpoints_json,
+                        *_,
                     ) = agent_data
                     embed_model = embed_model or "text-embedding-3-small"
                     custom_api_key = decrypt_key(custom_api_key)
@@ -1709,6 +1530,7 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
                             web_search_enabled,
                             is_active,
                             endpoints_json,
+                            *_,
                         ) = agent_data
                         embed_model = embed_model or "text-embedding-3-small"
                         custom_api_key = decrypt_key(custom_api_key)

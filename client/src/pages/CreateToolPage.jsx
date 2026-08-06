@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { 
   Webhook, 
   Database as DbIcon, 
@@ -13,7 +13,7 @@ import {
   X
 } from "lucide-react";
 import { useUIStore } from "../store/useUIStore";
-import { createWorkspaceTool } from "../services/workspaceToolsService";
+import { createWorkspaceTool, updateWorkspaceTool, getWorkspaceTools } from "../services/workspaceToolsService";
 import { toast } from "sonner";
 
 const PYTHON_BOILERPLATE = `from langchain_core.tools import tool
@@ -26,6 +26,8 @@ def my_custom_tool(query: str) -> str:
 
 export default function CreateToolPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
 
   // Core State
@@ -56,6 +58,42 @@ export default function CreateToolPage() {
   // UI Error Banner State (for validation failures)
   const [errorBanner, setErrorBanner] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editId || !activeWorkspaceId) return;
+    const fetchToolData = async () => {
+      try {
+        const toolsData = await getWorkspaceTools(activeWorkspaceId);
+        const targetTool = toolsData.find(t => t.id === editId);
+        if (targetTool) {
+          setToolType(targetTool.tool_type);
+          setToolName(targetTool.name);
+          setDescription(targetTool.configuration?.description || "");
+          setRequiresApproval(targetTool.requires_approval || false);
+          
+          if (targetTool.tool_type === "api_webhook") {
+            setBaseUrl(targetTool.configuration?.base_url || "");
+            setPath(targetTool.configuration?.path || "");
+            setMethod(targetTool.configuration?.method || "GET");
+            setApiKey(targetTool.configuration?.api_key || "");
+            setHeaders(JSON.stringify(targetTool.configuration?.headers || {}, null, 2));
+            setPayloadFormat(targetTool.configuration?.payload_format || "");
+            setExpectedOutput(targetTool.configuration?.expected_output || "");
+          } else if (targetTool.tool_type === "database") {
+            setConnectionString(targetTool.configuration?.connection_string || "");
+          } else if (targetTool.tool_type === "oauth") {
+            setOauthProvider(targetTool.configuration?.provider || "github");
+          } else if (targetTool.tool_type === "python_code") {
+            setCodeContent(targetTool.code_content || "");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load tool for editing:", err);
+        toast.error("Failed to load tool details");
+      }
+    };
+    fetchToolData();
+  }, [editId, activeWorkspaceId]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -106,14 +144,22 @@ export default function CreateToolPage() {
       configuration = { description: description || "Custom sandboxed Python code tool execution." };
     }
 
+    const payload = {
+      name: toolName,
+      tool_type: toolType,
+      configuration,
+      code_content: toolType === "python_code" ? codeContent : null,
+      requires_approval: requiresApproval
+    };
+
     try {
-      await createWorkspaceTool(activeWorkspaceId, {
-        name: toolName,
-        tool_type: toolType,
-        configuration,
-        code_content: toolType === "python_code" ? codeContent : null
-      });
-      toast.success("Tool created and deployed successfully");
+      if (editId) {
+        await updateWorkspaceTool(activeWorkspaceId, editId, payload);
+        toast.success("Tool updated successfully");
+      } else {
+        await createWorkspaceTool(activeWorkspaceId, payload);
+        toast.success("Tool created and deployed successfully");
+      }
       navigate("/tools");
     } catch (err) {
       setErrorBanner(err.message || "Failed to save tool");
@@ -123,23 +169,55 @@ export default function CreateToolPage() {
     }
   };
 
-  const handleAIGenerateDescription = () => {
+  const handleAIGenerateDescription = async () => {
     if (!toolName.trim()) {
       toast.error("Please enter a tool name first to generate a description");
       return;
     }
-    let aiDesc = "";
-    if (toolType === "api_webhook") {
-      aiDesc = `Use this tool to trigger HTTP ${method} requests to ${toolName}. Purpose: allow retrieving or modifying resources at endpoint ${path || '/'}. Useful for fetching live JSON data or executing actions.`;
-    } else if (toolType === "database") {
-      aiDesc = `Query the ${toolName} PostgreSQL database to retrieve relational data. Allows execution of read-only SELECT queries to fetch production statistics.`;
-    } else if (toolType === "oauth") {
-      aiDesc = `Authenticate and trigger actions with third-party service ${oauthProvider} linked via ${toolName}.`;
-    } else if (toolType === "python_code") {
-      aiDesc = `Run secure sandboxed Python logic for ${toolName}. Solves advanced numeric calculations, string manipulations, or algorithmic tasks.`;
+    const loadingToastId = toast.loading("Generating description via LLM...");
+    try {
+      const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const { getAuthHeaders } = await import("../lib/api");
+      const headers = getAuthHeaders();
+      const res = await fetch(`${API_URL}/api/agents/generate-tool-description`, {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tool_name: toolName,
+          path: path || "/",
+          method: method || "GET",
+          payload_format: payloadFormat || "",
+          expected_output: expectedOutput || "",
+          llm_provider: "groq",
+          llm_model: "llama-3.3-70b-versatile"
+        })
+      });
+      if (!res.ok) throw new Error("Failed to generate description");
+      const data = await res.json();
+      if (data?.description) {
+        setDescription(data.description);
+        toast.success("AI Description generated!", { id: loadingToastId });
+      } else {
+        throw new Error("No description returned");
+      }
+    } catch (err) {
+      console.error(err);
+      let aiDesc = "";
+      if (toolType === "api_webhook") {
+        aiDesc = `Use this tool to trigger HTTP ${method} requests to ${toolName}. Purpose: allow retrieving or modifying resources at endpoint ${path || '/'}. Useful for fetching live JSON data or executing actions.`;
+      } else if (toolType === "database") {
+        aiDesc = `Query the ${toolName} PostgreSQL database to retrieve relational data. Allows execution of read-only SELECT queries to fetch production statistics.`;
+      } else if (toolType === "oauth") {
+        aiDesc = `Authenticate and trigger actions with third-party service ${oauthProvider} linked via ${toolName}.`;
+      } else if (toolType === "python_code") {
+        aiDesc = `Run secure sandboxed Python logic for ${toolName}. Solves advanced numeric calculations, string manipulations, or algorithmic tasks.`;
+      }
+      setDescription(aiDesc);
+      toast.error("Failed to generate description via LLM. Used a local fallback description instead.", { id: loadingToastId });
     }
-    setDescription(aiDesc);
-    toast.success("AI Description generated!");
   };
 
   return (
@@ -160,9 +238,9 @@ export default function CreateToolPage() {
               <span>/</span>
               <span>Tools Library</span>
               <span>/</span>
-              <span className="text-foreground font-semibold">New Tool</span>
+              <span className="text-foreground font-semibold">{editId ? "Edit Tool" : "New Tool"}</span>
             </div>
-            <h1 className="text-lg font-bold mt-0.5">Tool Creation Workbench</h1>
+            <h1 className="text-lg font-bold mt-0.5">{editId ? "Edit Workspace Tool" : "Tool Creation Workbench"}</h1>
           </div>
         </div>
 
@@ -180,7 +258,7 @@ export default function CreateToolPage() {
             disabled={saving}
             className="px-5 py-2.5 bg-primary hover:bg-primary/95 text-primary-foreground font-bold text-sm transition rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
           >
-            <Save size={16} /> {saving ? "Deploying..." : "Save & Deploy Tool"}
+            <Save size={16} /> {saving ? "Deploying..." : editId ? "Update & Deploy Tool" : "Save & Deploy Tool"}
           </button>
         </div>
       </header>

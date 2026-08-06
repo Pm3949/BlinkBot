@@ -128,15 +128,28 @@ export const useUIStore = create(
           const { getAuthHeaders } = await import("../lib/api");
           const headers = getAuthHeaders();
           
-          const [templatesRes, globalsRes] = await Promise.all([
+          const [templatesRes, globalsRes, predefinedRes] = await Promise.all([
             fetch(`${API_URL}/api/tools/templates`, { headers }),
-            fetch(`${API_URL}/api/tools/global-registry`, { headers })
+            fetch(`${API_URL}/api/tools/global-registry`, { headers }),
+            fetch(`${API_URL}/api/tools/pre-defined`, { headers })
           ]);
           
           const templates = await templatesRes.json();
           const globals = await globalsRes.json();
+          const predefined = await predefinedRes.json();
           
-          set({ storeTemplates: [...globals, ...templates] });
+          const formattedPredefined = predefined.map(p => ({
+            id: p.tool_key,
+            name: p.name,
+            tool_type: "api_webhook",
+            description: p.description,
+            category: p.category,
+            requires_auth: p.requires_auth,
+            is_predefined: true,
+            tool_key: p.tool_key
+          }));
+          
+          set({ storeTemplates: [...globals, ...formattedPredefined, ...templates] });
         } catch (err) {
           console.error("Failed to load store templates in store:", err);
         }

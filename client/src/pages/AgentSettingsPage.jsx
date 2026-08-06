@@ -15,7 +15,7 @@ import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { useUIStore } from "../store/useUIStore";
 import { getWorkspaceTools, getAgentAttachedTools, attachToolToAgent, detachToolFromAgent } from "../services/workspaceToolsService";
-import { Webhook } from "lucide-react";
+import { Webhook, FileCode } from "lucide-react";
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, AreaChart, Area } from "recharts";
 
@@ -374,6 +374,68 @@ export default function AgentSettingsPage() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [toolsSubView, setToolsSubView] = useState("hub");
 
+  const [agentMemory, setAgentMemory] = useState([]);
+  const [loadingMemory, setLoadingMemory] = useState(false);
+
+  const fetchMemory = async () => {
+    if (!selectedAgentId) return;
+    setLoadingMemory(true);
+    try {
+      const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/memory`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAgentMemory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch agent memory:", err);
+    } finally {
+      setLoadingMemory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "memory") {
+      fetchMemory();
+    }
+  }, [activeTab, selectedAgentId]);
+
+  const handleDeleteMemoryItem = async (itemId) => {
+    try {
+      const res = await fetch(`${API_URL}/api/feedback/${itemId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        toast.success("Memory entry removed successfully!");
+        fetchMemory();
+      } else {
+        toast.error("Failed to remove memory entry.");
+      }
+    } catch (err) {
+      toast.error("Failed to remove memory entry.");
+    }
+  };
+
+  const handleClearAllMemory = async () => {
+    if (!window.confirm("Are you sure you want to clear all negative feedback memory for this agent?")) return;
+    try {
+      const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/memory`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        toast.success("Agent memory cleared successfully!");
+        setAgentMemory([]);
+      } else {
+        toast.error("Failed to clear agent memory.");
+      }
+    } catch (err) {
+      toast.error("Failed to clear agent memory.");
+    }
+  };
+
   const handleOptimizePrompt = async () => {
     if (!formData.system_prompt.trim()) {
       toast.error("Please enter a draft prompt to optimize.");
@@ -522,6 +584,7 @@ export default function AgentSettingsPage() {
     databases: agent?.databases || [],
     code_interpreter_enabled: agent?.code_interpreter_enabled || false,
     native_integrations: agent?.native_integrations || [],
+    memory_enabled: agent?.memory_enabled !== false,
   });
 
   const { data: activeModelsData } = useActiveModels();
@@ -695,6 +758,7 @@ export default function AgentSettingsPage() {
       databases: formData.databases,
       native_integrations: formData.native_integrations,
       endpoints: formData.endpoints,
+      memory_enabled: formData.memory_enabled,
     };
 
     updateAgentMutation.mutate(payload);
@@ -754,12 +818,14 @@ export default function AgentSettingsPage() {
                   { id: "identity", label: "Identity", icon: Bot },
                   { id: "behavior", label: "Behavior", icon: Brain },
                   { id: "model", label: "Model & AI", icon: Sparkles },
+                  { id: "memory", label: "Memory", icon: Activity },
                   { id: "analytics", label: "Cost & Analytics", icon: BarChart2 },
                 ]
               : [
                   { id: "identity", label: "Identity", icon: Bot },
                   { id: "behavior", label: "Behavior", icon: Brain },
                   { id: "model", label: "Model & AI", icon: Sparkles },
+                  { id: "memory", label: "Memory", icon: Activity },
                   { id: "knowledge-base", label: "Knowledge Base", icon: Library },
                   { id: "tools", label: "Tools", icon: Wrench },
                   { id: "analytics", label: "Cost & Analytics", icon: BarChart2 },
@@ -1440,6 +1506,68 @@ export default function AgentSettingsPage() {
                           </table>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'memory' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div>
+                    <h3 className="text-2xl font-bold">Conversation Memory</h3>
+                    <p className="text-muted-foreground text-sm mt-1">Configure whether the agent retains chat history context for follow-up questions.</p>
+                  </div>
+
+                  {/* Toggle Card */}
+                  <div className="bg-card p-6 rounded-2xl border border-border shadow-sm flex items-center justify-between">
+                    <div className="space-y-1 pr-6">
+                      <div className="font-semibold text-base flex items-center gap-2">
+                        <Brain className="w-5 h-5 text-indigo-500" />
+                        Enable Conversation Memory
+                      </div>
+                      <p className="text-[13px] text-muted-foreground leading-relaxed">
+                        When enabled, the agent remembers the context of previous messages in the chat session to understand reference pronouns and follow-up prompts. When disabled, each message starts a fresh, independent turn.
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => updateField("memory_enabled", !formData.memory_enabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                          formData.memory_enabled ? "bg-primary" : "bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
+                            formData.memory_enabled ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Clear Memory Panel */}
+                  <div className="bg-card rounded-2xl border border-red-500/20 shadow-sm overflow-hidden">
+                    <div className="p-6 bg-red-500/5 border-b border-red-500/10">
+                      <h4 className="font-bold text-lg text-red-500 flex items-center gap-2">
+                        <Trash2 size={20} />
+                        Clear Agent Memory Logs
+                      </h4>
+                      <p className="text-[13px] text-muted-foreground mt-1">Permanently erase the conversation logs and active chat threads for this agent.</p>
+                    </div>
+
+                    <div className="p-6 space-y-4">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        Clearing the agent's memory will delete all stored chat sessions, history threads, and messages linked to this agent. This action is irreversible and the agent will start with a completely blank slate.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={handleClearAllMemory}
+                        className="rounded-xl font-semibold px-6"
+                      >
+                        Wipe Conversation History
+                      </Button>
                     </div>
                   </div>
                 </div>

@@ -69,6 +69,16 @@ export default function WorkspaceToolsPage() {
 
   const handleEnableStoreTool = async (templateId, toolName) => {
     try {
+      const targetTool = storeTemplates.find(t => t.id === templateId);
+      let apiKey = null;
+      if (targetTool?.requires_auth) {
+        apiKey = prompt(`Please enter your API Key/Token for ${toolName}:`);
+        if (!apiKey) {
+          toast.error(`API key is required to provision the ${toolName} capability.`);
+          return;
+        }
+      }
+
       const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
       const headers = getAuthHeaders();
       
@@ -77,12 +87,14 @@ export default function WorkspaceToolsPage() {
         headers,
         body: JSON.stringify({
           template_id: templateId,
-          workspace_id: activeWorkspaceId
+          workspace_id: activeWorkspaceId,
+          api_key: apiKey
         })
       });
       
       if (!res.ok) {
-        throw new Error("Failed to provision tool");
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to provision tool");
       }
       
       toast.success(`${toolName} has been successfully added to your workspace!`);

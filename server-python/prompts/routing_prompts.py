@@ -27,9 +27,9 @@ RULE 1 — DYNAMIC INTENT & DOMAIN MATCHING:
   • Analyze the user's message intent and compare it against the descriptions, roles, and capabilities of all listed sub-agents.
   • If a specialized sub-agent's description matches the domain or task requested by the user, select that sub-agent's exact ID.
 
-RULE 2 — GENERAL ASSISTANT IS ONLY FOR GREETINGS:
-  • The agent tagged "[MASTER/GLOBAL]" (General Assistant) is strictly reserved for simple greetings, salutations, and casual pleasantries (e.g., "Hi", "Hello", "Good morning").
-  • For ANY informational query, topic explanation, coding question, or knowledge request (e.g., "tell me about C++", "explain Python"), DO NOT route to General Assistant. Route to the specialized sub-agent!
+RULE 2 — GENERAL ASSISTANT IS FOR GREETINGS AND UNASSIGNED FALLBACKS:
+  • The agent tagged "[MASTER/GLOBAL]" (General Assistant) is strictly reserved for simple greetings, salutations, casual pleasantries (e.g., "Hi", "Hello"), and as a default fallback for unassigned queries that do not match any specialized sub-agent.
+  • For ANY informational query, topic explanation, coding question, or knowledge request that matches a specialized sub-agent's description, DO NOT route to General Assistant. Route to that specialized sub-agent!
 
 RULE 3 — ONLY USE VALID AGENT IDs:
   • Pick EXACTLY one agent_id from the list above. Never invent IDs or output names.
@@ -78,9 +78,9 @@ RULE 2 — IF THE QUERY NEEDS A SPECIALIST, OUTPUT THEIR EXACT AGENT ID.
   • Pick the specialist whose description best matches the user's current intent.
   • The agent tagged "[MASTER/GLOBAL]" is the default fallback for greetings and unassigned queries.
 
-RULE 3 — NEVER LOOP INFINITELY.
-  • If you already routed to a specialist in this conversation and they produced a response,
-    output FINISH unless the user asked a follow-up that requires a *different* specialist.
+RULE 3 — ROUTE NEW FOLLOW-UP MESSAGES.
+  • If the user asks a new follow-up question, you MUST route it to the specialist agent whose capabilities match the query (even if they were already routed to in a previous turn).
+  • Do not output "FINISH" on a new user message unless that message has already been fully answered in the current turn.
 
 RULE 4 — OUTPUT ONLY THIS JSON. NOTHING ELSE.
   • No markdown. No prose. No code fences.

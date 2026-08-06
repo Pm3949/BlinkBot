@@ -204,7 +204,7 @@ async def get_agent_attached_tools(agent_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT t.id, t.workspace_id, t.name, t.tool_type, t.configuration, t.created_at, t.is_system, t.code_content
+            SELECT t.id, t.workspace_id, t.name, t.tool_type, t.configuration, t.created_at, t.is_system, t.code_content, t.is_global, t.tool_key
             FROM workspace_tools t
             JOIN agent_tools_junction j ON t.id = j.tool_id
             WHERE j.agent_id = %s
@@ -222,7 +222,9 @@ async def get_agent_attached_tools(agent_id: str):
                 "configuration": r[4] if isinstance(r[4], dict) else json.loads(r[4] or "{}"),
                 "created_at": r[5].isoformat() if r[5] else None,
                 "is_system": bool(r[6]),
-                "code_content": r[7]
+                "code_content": r[7],
+                "is_global": bool(r[8]),
+                "tool_key": r[9]
             }
             for r in rows
         ]

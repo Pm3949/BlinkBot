@@ -223,6 +223,24 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
                   />
                 );
               },
+              a({ node, href, children, ...props }) {
+                const isImg = href && (/\.(png|jpe?g|gif|webp|svg|png_t|jpg_t)(\?.*)?$/i.test(href) || href.includes("fakestoreapi.com/img"));
+                if (isImg) {
+                  return (
+                    <img
+                      src={href}
+                      alt={typeof children === "string" ? children : "Image"}
+                      className="my-4 max-h-80 w-auto rounded-xl border border-border shadow-sm object-contain"
+                      loading="lazy"
+                    />
+                  );
+                }
+                return (
+                  <a href={href} className="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer" {...props}>
+                    {children}
+                  </a>
+                );
+              },
             }}
           >
             {displayContent}

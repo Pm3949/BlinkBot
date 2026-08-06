@@ -96,7 +96,8 @@ async def get_agents(workspace_id: str, include_gateways: bool = False):
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
                    web_search_enabled, project_id, is_active, output_format,
-                   endpoints, code_interpreter_enabled, databases, native_integrations
+                   endpoints, code_interpreter_enabled, databases, native_integrations,
+                   memory_enabled
             FROM agents 
             {condition}
             ORDER BY created_at DESC
@@ -154,11 +155,11 @@ async def create_agent(payload_data: dict):
             """
             INSERT INTO agents (name, description, llm_provider, llm_model, 
                               embedding_model, chunk_strategy, system_prompt, output_format, 
-                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id, name, description, llm_provider, llm_model, 
                       embedding_model, chunk_strategy, system_prompt, output_format, 
-                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations;
+                      api_key, language, user_id, workspace_id, created_at, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled;
             """,
             (
                 payload_data.get("name"), 
@@ -182,7 +183,8 @@ async def create_agent(payload_data: dict):
                 payload_data.get("code_interpreter_enabled", False),
                 # Databases and native integration configs may contain sensitive secrets, so we encrypt their JSON strings.
                 encrypt_key(json.dumps(payload_data.get("databases", []))),
-                encrypt_key(json.dumps(payload_data.get("native_integrations", [])))
+                encrypt_key(json.dumps(payload_data.get("native_integrations", []))),
+                payload_data.get("memory_enabled", True)
             )
         )
         # Fetch the returning row containing the freshly generated record values (including its new UUID).
@@ -219,7 +221,7 @@ async def update_agent(agent_id: str, payload: dict):
         # Loop through keys in the payload to dynamically build the SET clause of the SQL statement.
         for key, value in payload.items():
             # Check against a whitelist of valid fields to prevent writing to read-only columns (like id or created_at).
-            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id"]:
+            if key in ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id", "memory_enabled"]:
                 set_clauses.append(f"{key} = %s")
                 # Perform special handling (encryption, serialization) on specific data types.
                 if key == "api_key":
@@ -427,7 +429,7 @@ async def get_project_sub_agents(project_id: str):
             SELECT id, name, description, llm_provider, llm_model, 
                    embedding_model, chunk_strategy, system_prompt, 
                    api_key, language, user_id, workspace_id, created_at,
-                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints, code_interpreter_enabled, databases, native_integrations
+                   web_search_enabled, parent_agent_id, is_active, output_format, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled
             FROM agents 
             WHERE project_id = %s 
             ORDER BY created_at ASC

@@ -193,7 +193,7 @@ async def handle_update_agent(agent_id: str, payload: dict):
         
         # If the database returns no row, indicating agent doesn't exist
         if not row:
-            valid_keys = ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id"]
+            valid_keys = ["name", "description", "llm_provider", "llm_model", "embedding_model", "chunk_strategy", "system_prompt", "output_format", "api_key", "language", "web_search_enabled", "is_active", "endpoints", "code_interpreter_enabled", "databases", "native_integrations", "parent_agent_id", "memory_enabled"]
             if not any(k in valid_keys for k in payload.keys()):
                 logger.warning(f"Update rejected: No valid fields found in payload keys: {list(payload.keys())}")
                 raise HTTPException(status_code=400, detail="No valid fields to update")

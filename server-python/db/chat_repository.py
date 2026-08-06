@@ -69,6 +69,15 @@ async def fetch_temporary_memory_patch(agent_id: str) -> str:
     """
     # Open connection with commit=False (read-only).
     async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT memory_enabled FROM agents WHERE id = %s",
+            (agent_id,)
+        )
+        res = await run_in_threadpool(cursor.fetchone)
+        if res and not res[0]:
+            return ""
+
         # Query feedback tickets linked to this agent that have a status of 'open'.
         # We perform an INNER JOIN with chat_messages to fetch the actual content of the flagged answer.
         await run_in_threadpool(
@@ -121,7 +130,7 @@ async def get_agent_for_chat(agent_id: str):
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations FROM agents WHERE id = %s",
+            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled FROM agents WHERE id = %s",
             (agent_id,),
         )
         return await run_in_threadpool(cursor.fetchone)
@@ -174,7 +183,7 @@ async def get_agent_routing_info(agent_id: str):
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations FROM agents WHERE id = %s",
+            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled FROM agents WHERE id = %s",
             (agent_id,),
         )
         return await run_in_threadpool(cursor.fetchone)
@@ -622,4 +631,22 @@ async def delete_chatbot(chatbot_id: str):
         await run_in_threadpool(cursor.execute, "DELETE FROM widget_message_logs WHERE chatbot_id = %s", (chatbot_id,))
         # Delete the core chatbot configuration row.
         await run_in_threadpool(cursor.execute, "DELETE FROM chatbots WHERE id = %s", (chatbot_id,))
+
+
+async def clear_agent_conversation_history(agent_id: str):
+    """
+    Deletes all chat messages and sessions associated with the agent to clear conversation memory.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE agent_id = %s);",
+            (agent_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM chat_sessions WHERE agent_id = %s;",
+            (agent_id,)
+        )
+        return True
 

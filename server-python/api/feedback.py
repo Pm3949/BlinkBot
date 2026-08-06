@@ -234,3 +234,30 @@ async def verify_feedback(feedback_id: str, payload: FeedbackVerify, current_use
     data["user_id"] = current_user["sub"]
     # Verify the resolution.
     return await handle_verify_feedback(feedback_id, data)
+
+
+@router.get("/api/agents/{agent_id}/memory")
+async def get_agent_memory(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Retrieves all open feedback memory logs for a specific agent.
+    """
+    from handlers.feedback_handler import handle_get_agent_feedback
+    return await handle_get_agent_feedback(agent_id)
+
+
+@router.delete("/api/agents/{agent_id}/memory")
+async def clear_agent_memory(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Clears all open feedback memory logs for a specific agent.
+    """
+    from handlers.feedback_handler import handle_clear_agent_feedback
+    return await handle_clear_agent_feedback(agent_id)
+
+
+@router.delete("/api/feedback/{feedback_id}")
+async def delete_feedback(feedback_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Deletes a specific feedback memory log entry.
+    """
+    from handlers.feedback_handler import handle_delete_feedback
+    return await handle_delete_feedback(feedback_id)
