@@ -16,11 +16,11 @@ import {
 } from "lucide-react";
 import { useUIStore } from "../store/useUIStore";
 import { 
-  getWorkspaceTools, 
   createWorkspaceTool, 
   updateWorkspaceTool, 
   deleteWorkspaceTool 
 } from "../services/workspaceToolsService";
+import { getAuthHeaders } from "../lib/api";
 import { toast } from "sonner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 
@@ -31,8 +31,13 @@ import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 export default function WorkspaceToolsPage() {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const navigate = useNavigate();
-  const [tools, setTools] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // Zustand State Management selectors
+  const tools = useUIStore((state) => state.tools);
+  const storeTemplates = useUIStore((state) => state.storeTemplates);
+  const loading = useUIStore((state) => state.loadingTools);
+  const fetchTools = useUIStore((state) => state.fetchTools);
+  const fetchStoreTemplates = useUIStore((state) => state.fetchStoreTemplates);
 
   // Tab State: 'store' or 'custom'
   const [activeTab, setActiveTab] = useState("store");
@@ -44,24 +49,9 @@ export default function WorkspaceToolsPage() {
   const [storeFilter, setStoreFilter] = useState("all");
   const [customFilter, setCustomFilter] = useState("all");
 
-  // Local provisioning state (mocking enabling store tools)
-  const [provisionedStoreTools, setProvisionedStoreTools] = useState({});
-
-  const fetchTools = async () => {
-    if (!activeWorkspaceId) return;
-    setLoading(true);
-    try {
-      const data = await getWorkspaceTools(activeWorkspaceId);
-      setTools(data);
-    } catch (e) {
-      toast.error("Failed to load workspace tools");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchTools();
+    fetchTools(activeWorkspaceId);
+    fetchStoreTemplates();
   }, [activeWorkspaceId]);
 
   const handleDelete = async (toolId) => {
@@ -71,18 +61,35 @@ export default function WorkspaceToolsPage() {
     try {
       await deleteWorkspaceTool(activeWorkspaceId, toolId);
       toast.success("Tool deleted successfully");
-      fetchTools();
+      fetchTools(activeWorkspaceId);
     } catch (err) {
       toast.error(err.message || "Failed to delete tool");
     }
   };
 
-  const handleEnableStoreTool = (toolId, toolName) => {
-    setProvisionedStoreTools(prev => ({
-      ...prev,
-      [toolId]: true
-    }));
-    toast.success(`${toolName} has been successfully added to your workspace!`);
+  const handleEnableStoreTool = async (templateId, toolName) => {
+    try {
+      const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      const headers = getAuthHeaders();
+      
+      const res = await fetch(`${API_URL}/api/tools/provision`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          template_id: templateId,
+          workspace_id: activeWorkspaceId
+        })
+      });
+      
+      if (!res.ok) {
+        throw new Error("Failed to provision tool");
+      }
+      
+      toast.success(`${toolName} has been successfully added to your workspace!`);
+      fetchTools(activeWorkspaceId);
+    } catch (err) {
+      toast.error(err.message || "Failed to provision tool");
+    }
   };
 
   const getToolIcon = (type) => {
@@ -116,10 +123,9 @@ export default function WorkspaceToolsPage() {
   };
 
   // Split system vs custom tools
-  const systemTools = tools.filter(t => t.is_system);
   const customTools = tools.filter(t => !t.is_system);
 
-  const activeList = activeTab === "store" ? systemTools : customTools;
+  const activeList = activeTab === "store" ? storeTemplates : customTools;
   const activeFilter = activeTab === "store" ? storeFilter : customFilter;
 
   // Filter tools using global search and independent local tab type filters
@@ -217,7 +223,15 @@ export default function WorkspaceToolsPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredTools.map((tool) => {
-                const isEnabled = provisionedStoreTools[tool.id] || tool.is_system;
+                // Check if this template tool or global tool is already enabled in active workspace list
+                const isEnabled = tool.is_global
+                  ? tools.some(t => t.is_global && t.tool_key === tool.tool_key)
+                  : tools.some(t => t.name === tool.name);
+                
+                const activeTool = tool.is_global
+                  ? tools.find(t => t.is_global && t.tool_key === tool.tool_key)
+                  : tools.find(t => t.name === tool.name);
+                
                 return (
                   <div key={tool.id} className="glass-card p-6 flex flex-col justify-between h-64 transition-all duration-200 hover:shadow-md border border-border/50 gap-y-4">
                     <div className="space-y-3">
@@ -231,28 +245,29 @@ export default function WorkspaceToolsPage() {
                           </span>
                         </div>
                         <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                          Template
+                          {tool.is_global ? "Global" : "Template"}
                         </span>
                       </div>
 
                       <div>
                         <h3 className="font-bold text-lg text-foreground truncate">{tool.name}</h3>
                         <p className="text-xs text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed">
-                          {tool.tool_type === "api_webhook" && (tool.configuration?.description || "REST API capability template.")}
-                          {tool.tool_type === "database" && "SQL Connection template details."}
-                          {tool.tool_type === "oauth" && "OAuth connection template details."}
-                          {tool.tool_type === "python_code" && `Custom sandboxed Python code: ${tool.name}`}
+                          {tool.description || "Default platform tool integration."}
                         </p>
                       </div>
                     </div>
 
-                    {/* Enable Action */}
+                    {/* Enable / Remove Actions */}
                     <div className="pt-3.5 border-t border-border/20 flex items-center justify-between mt-auto">
-                      <span className="text-xs text-muted-foreground font-mono">Status: {isEnabled ? "Active" : "Disabled"}</span>
+                      <span className="text-xs text-muted-foreground font-mono">Status: {isEnabled ? "Active" : "Available"}</span>
                       {isEnabled ? (
-                        <div className="text-emerald-500 font-bold text-xs flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                          <CheckCircle size={14} /> Added
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(activeTool.id)}
+                          className="px-4 py-2 border border-red-500/30 bg-red-500/5 hover:bg-red-500/10 text-red-400 font-bold text-xs rounded-xl shadow transition"
+                        >
+                          Remove from Workspace
+                        </button>
                       ) : (
                         <button
                           type="button"

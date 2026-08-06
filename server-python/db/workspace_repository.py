@@ -265,6 +265,46 @@ async def create_workspace(name: str, owner_id: str, email: str, user_name: str)
             """,
             (workspace_id, owner_id, email, user_name)
         )
+
+        # Step 3: Provision core system tools (Web Search, CSV Sandbox, OCR Analyzer)
+        # Ensure is_system = true and is_global = true.
+        CORE_SYSTEM_TOOLS = [
+            {
+                "name": "Web Search Fallback",
+                "tool_type": "api_webhook",
+                "configuration": {
+                    "system_identifier": "web_search",
+                    "description": "Allow the agent to search the internet if the answer isn't in documents."
+                }
+            },
+            {
+                "name": "Python Code Sandbox (CSV Analyzer)",
+                "tool_type": "database",
+                "configuration": {
+                    "system_identifier": "code_interpreter",
+                    "description": "Allow the agent to natively parse, query, and perform statistical analysis on uploaded CSV and Excel spreadsheet files."
+                }
+            },
+            {
+                "name": "Image Reader (OCR)",
+                "tool_type": "api_webhook",
+                "configuration": {
+                    "system_identifier": "ocr_reader",
+                    "description": "Perform optical character recognition (OCR) fallback routines for scanned PDFs or images."
+                }
+            }
+        ]
+        
+        for tool in CORE_SYSTEM_TOOLS:
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                INSERT INTO workspace_tools (workspace_id, name, tool_type, configuration, is_system, is_global)
+                VALUES (%s, %s, %s, %s, true, true)
+                """,
+                (workspace_id, tool["name"], tool["tool_type"], json.dumps(tool["configuration"]))
+            )
+
         return workspace_id
 
 

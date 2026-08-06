@@ -121,3 +121,124 @@ async def detach_tool_from_agent(agent_id: str, tool_id: str, current_user: dict
     except Exception as e:
         logger.error(f"Error detaching tool {tool_id} from agent {agent_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+GLOBAL_TOOLS_REGISTRY = [
+    {
+        "id": "web_search",
+        "name": "Web Search (DuckDuckGo)",
+        "tool_type": "api_webhook",
+        "description": "Search the internet for real-time information using DuckDuckGo.",
+        "is_global": True,
+        "tool_key": "web_search"
+    },
+    {
+        "id": "wikipedia",
+        "name": "Wikipedia Search",
+        "tool_type": "api_webhook",
+        "description": "Query Wikipedia articles for historical, geographical, or general information.",
+        "is_global": True,
+        "tool_key": "wikipedia"
+    },
+    {
+        "id": "arxiv_research",
+        "name": "ArXiv Scientific Papers",
+        "tool_type": "api_webhook",
+        "description": "Query ArXiv directory for scientific research papers and publications.",
+        "is_global": True,
+        "tool_key": "arxiv_research"
+    },
+    {
+        "id": "calculator",
+        "name": "Math Calculator",
+        "tool_type": "api_webhook",
+        "description": "Natively compute complex math calculations and numeric operations.",
+        "is_global": True,
+        "tool_key": "calculator"
+    }
+]
+
+
+@router.get("/api/tools/global-registry")
+async def get_global_registry(current_user: dict = Depends(get_current_user)):
+    return GLOBAL_TOOLS_REGISTRY
+
+
+class ProvisionPayload(BaseModel):
+    template_id: str
+    workspace_id: str
+
+
+@router.get("/api/tools/templates")
+async def get_tool_templates(current_user: dict = Depends(get_current_user)):
+    try:
+        import os
+        import json as json_lib
+        templates_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tool_templates.json")
+        if not os.path.exists(templates_path):
+            return []
+        with open(templates_path, "r", encoding="utf-8") as f:
+            return json_lib.load(f)
+    except Exception as e:
+        logger.error(f"Error loading tool templates: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/tools/provision")
+async def provision_tool(payload: ProvisionPayload, current_user: dict = Depends(get_current_user)):
+    try:
+        import os
+        import json as json_lib
+        
+        # 1. Check if it's a global tool
+        global_tool = None
+        for t in GLOBAL_TOOLS_REGISTRY:
+            if t["id"] == payload.template_id:
+                global_tool = t
+                break
+                
+        if global_tool:
+            new_tool = await workspace_tools_repository.create_workspace_tool(
+                workspace_id=payload.workspace_id,
+                name=global_tool["name"],
+                tool_type=global_tool["tool_type"],
+                configuration={"description": global_tool["description"]},
+                code_content=None,
+                is_global=True,
+                tool_key=global_tool["tool_key"]
+            )
+            if not new_tool:
+                raise HTTPException(status_code=500, detail="Failed to provision global tool.")
+            return new_tool
+            
+        # 2. Check templates if not a global tool
+        templates_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "tool_templates.json")
+        if not os.path.exists(templates_path):
+            raise HTTPException(status_code=404, detail="Templates registry not found.")
+            
+        with open(templates_path, "r", encoding="utf-8") as f:
+            templates = json_lib.load(f)
+            
+        target_template = None
+        for t in templates:
+            if t["id"] == payload.template_id:
+                target_template = t
+                break
+                
+        if not target_template:
+            raise HTTPException(status_code=404, detail=f"Template/Global tool with ID '{payload.template_id}' not found.")
+            
+        # Provision the tool under the workspace
+        new_tool = await workspace_tools_repository.create_workspace_tool(
+            workspace_id=payload.workspace_id,
+            name=target_template["name"],
+            tool_type=target_template["tool_type"],
+            configuration=target_template.get("configuration", {}),
+            code_content=target_template.get("code_content")
+        )
+        if not new_tool:
+            raise HTTPException(status_code=500, detail="Failed to provision workspace tool from template.")
+        return new_tool
+    except Exception as e:
+        logger.error(f"Error provisioning tool template {payload.template_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

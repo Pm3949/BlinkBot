@@ -1,0 +1,28 @@
+[
+  {
+    "id": "nasa_apod_api",
+    "name": "NASA APOD API",
+    "tool_type": "api_webhook",
+    "description": "Fetch NASA Astronomy Picture of the Day (APOD) metadata and images.",
+    "configuration": {
+      "base_url": "https://api.nasa.gov",
+      "path": "planetary/apod",
+      "method": "GET",
+      "api_key": "DEMO_KEY",
+      "headers": {},
+      "description": "Retrieve NASA astronomy picture metadata and image URLs.",
+      "payload_format": "{\"api_key\": \"DEMO_KEY\"}",
+      "expected_output": "{\"url\": \"https://...\", \"explanation\": \"...\"}"
+    }
+  },
+  {
+    "id": "pdf_generator",
+    "name": "PDF Generator",
+    "tool_type": "python_code",
+    "description": "Generate dynamic PDF documents with custom text lines using the fpdf library.",
+    "configuration": {
+      "description": "Generates a basic PDF document and saves it locally."
+    },
+    "code_content": "from langchain_core.tools import tool\n\n@tool\ndef generate_pdf_doc(title: str, content: str) -> str:\n    \"\"\"Generates a custom PDF document containing the specified title and content body text.\"\"\"\n    # Safe in-memory fpdf usage for generating document layout\n    from fpdf import FPDF\n    pdf = FPDF()\n    pdf.add_page()\n    pdf.set_font('Arial', 'B', 16)\n    pdf.cell(40, 10, title)\n    pdf.ln(12)\n    pdf.set_font('Arial', '', 12)\n    pdf.multi_cell(0, 10, content)\n    output_path = 'generated_doc.pdf'\n    pdf.output(output_path, 'F')\n    return f'PDF successfully created and written to {output_path}'"
+  }
+]

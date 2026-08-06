@@ -99,6 +99,48 @@ export const useUIStore = create(
         }),
 
       setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
+
+      tools: [],
+      storeTemplates: [],
+      loadingTools: false,
+      
+      setTools: (tools) => set({ tools }),
+      setStoreTemplates: (storeTemplates) => set({ storeTemplates }),
+      setLoadingTools: (loadingTools) => set({ loadingTools }),
+
+      fetchTools: async (workspaceId) => {
+        if (!workspaceId) return;
+        set({ loadingTools: true });
+        try {
+          const { getWorkspaceTools } = await import("../services/workspaceToolsService");
+          const data = await getWorkspaceTools(workspaceId);
+          set({ tools: data });
+        } catch (e) {
+          console.error("Failed to load tools in store:", e);
+        } finally {
+          set({ loadingTools: false });
+        }
+      },
+      
+      fetchStoreTemplates: async () => {
+        try {
+          const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+          const { getAuthHeaders } = await import("../lib/api");
+          const headers = getAuthHeaders();
+          
+          const [templatesRes, globalsRes] = await Promise.all([
+            fetch(`${API_URL}/api/tools/templates`, { headers }),
+            fetch(`${API_URL}/api/tools/global-registry`, { headers })
+          ]);
+          
+          const templates = await templatesRes.json();
+          const globals = await globalsRes.json();
+          
+          set({ storeTemplates: [...globals, ...templates] });
+        } catch (err) {
+          console.error("Failed to load store templates in store:", err);
+        }
+      },
     }),
     {
       name: "blinkbot-ui",

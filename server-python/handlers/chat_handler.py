@@ -1157,8 +1157,33 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             tool_name = tool_obj.get("name")
                             tool_config = tool_obj.get("configuration", {})
                             is_system = tool_obj.get("is_system", False)
+                            is_global = tool_obj.get("is_global", False)
                             
-                            if is_system:
+                            if is_global:
+                                tool_key = tool_obj.get("tool_key")
+                                if tool_key == "web_search":
+                                    from langchain_community.tools import DuckDuckGoSearchRun
+                                    t_list.append(DuckDuckGoSearchRun())
+                                elif tool_key == "wikipedia":
+                                    from langchain_community.tools import WikipediaQueryRun
+                                    from langchain_community.utilities import WikipediaAPIWrapper
+                                    t_list.append(WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper()))
+                                elif tool_key == "arxiv_research":
+                                    from langchain_community.tools import ArxivQueryRun
+                                    from langchain_community.utilities import ArxivAPIWrapper
+                                    t_list.append(ArxivQueryRun(api_wrapper=ArxivAPIWrapper()))
+                                elif tool_key == "calculator":
+                                    @tool
+                                    def math_calculator(expression: str) -> str:
+                                        """Use this to compute math calculations. E.g. '2 + 2' or 'math.sqrt(16)'."""
+                                        try:
+                                            import math
+                                            allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith("__")}
+                                            return str(eval(expression, {"__builtins__": None}, allowed_names))
+                                        except Exception as e:
+                                            return f"Math Error: {e}"
+                                    t_list.append(math_calculator)
+                            elif tool_config.get("system_identifier"):
                                 sys_ident = tool_config.get("system_identifier")
                                 if sys_ident == "web_search":
                                     if search_web not in t_list:

@@ -31,32 +31,9 @@ SYSTEM_TOOLS = [
 
 async def seed_system_tools_if_missing(workspace_id: str):
     """
-    Ensures that the 3 system tools are seeded for the given workspace.
+    No-op: System tools are now managed dynamically via the predefined templates in the Tool Store.
     """
-    async with get_db_cursor_async(commit=True) as cursor:
-        # Check which system identifiers already exist
-        await run_in_threadpool(
-            cursor.execute,
-            """
-            SELECT configuration->>'system_identifier' 
-            FROM workspace_tools 
-            WHERE workspace_id = %s AND is_system = true
-            """,
-            (workspace_id,)
-        )
-        existing_identifiers = {row[0] for row in await run_in_threadpool(cursor.fetchall) if row[0]}
-        
-        for sys_tool in SYSTEM_TOOLS:
-            ident = sys_tool["configuration"]["system_identifier"]
-            if ident not in existing_identifiers:
-                await run_in_threadpool(
-                    cursor.execute,
-                    """
-                    INSERT INTO workspace_tools (workspace_id, name, tool_type, configuration, is_system)
-                    VALUES (%s, %s, %s, %s, true)
-                    """,
-                    (workspace_id, sys_tool["name"], sys_tool["tool_type"], json.dumps(sys_tool["configuration"]))
-                )
+    pass
 
 async def get_workspace_tools(workspace_id: str):
     """
@@ -69,7 +46,7 @@ async def get_workspace_tools(workspace_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content
+            SELECT id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content, is_global, tool_key
             FROM workspace_tools
             WHERE workspace_id = %s
             ORDER BY is_system DESC, created_at DESC
@@ -86,24 +63,26 @@ async def get_workspace_tools(workspace_id: str):
                 "configuration": r[4] if isinstance(r[4], dict) else json.loads(r[4] or "{}"),
                 "created_at": r[5].isoformat() if r[5] else None,
                 "is_system": bool(r[6]),
-                "code_content": r[7]
+                "code_content": r[7],
+                "is_global": bool(r[8]),
+                "tool_key": r[9]
             }
             for r in rows
         ]
 
-async def create_workspace_tool(workspace_id: str, name: str, tool_type: str, configuration: dict, code_content: str = None):
+async def create_workspace_tool(workspace_id: str, name: str, tool_type: str, configuration: dict, code_content: str = None, is_global: bool = False, tool_key: str = None):
     """
-    Creates a new custom workspace tool (always is_system = false).
+    Creates a new custom or global workspace tool (always is_system = false).
     """
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO workspace_tools (workspace_id, name, tool_type, configuration, is_system, code_content)
-            VALUES (%s, %s, %s, %s, false, %s)
-            RETURNING id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content;
+            INSERT INTO workspace_tools (workspace_id, name, tool_type, configuration, is_system, code_content, is_global, tool_key)
+            VALUES (%s, %s, %s, %s, false, %s, %s, %s)
+            RETURNING id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content, is_global, tool_key;
             """,
-            (workspace_id, name, tool_type, json.dumps(configuration), code_content)
+            (workspace_id, name, tool_type, json.dumps(configuration), code_content, is_global, tool_key)
         )
         row = await run_in_threadpool(cursor.fetchone)
         if row:
@@ -115,7 +94,9 @@ async def create_workspace_tool(workspace_id: str, name: str, tool_type: str, co
                 "configuration": row[4] if isinstance(row[4], dict) else json.loads(row[4] or "{}"),
                 "created_at": row[5].isoformat() if row[5] else None,
                 "is_system": bool(row[6]),
-                "code_content": row[7]
+                "code_content": row[7],
+                "is_global": bool(row[8]),
+                "tool_key": row[9]
             }
         return None
 
@@ -143,7 +124,7 @@ async def update_workspace_tool(tool_id: str, name: str, configuration: dict, co
             UPDATE workspace_tools
             SET name = %s, configuration = %s, code_content = %s
             WHERE id = %s AND is_system = false
-            RETURNING id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content;
+            RETURNING id, workspace_id, name, tool_type, configuration, created_at, is_system, code_content, is_global, tool_key;
             """,
             (name, json.dumps(configuration), code_content, tool_id)
         )
@@ -157,7 +138,9 @@ async def update_workspace_tool(tool_id: str, name: str, configuration: dict, co
                 "configuration": row[4] if isinstance(row[4], dict) else json.loads(row[4] or "{}"),
                 "created_at": row[5].isoformat() if row[5] else None,
                 "is_system": bool(row[6]),
-                "code_content": row[7]
+                "code_content": row[7],
+                "is_global": bool(row[8]),
+                "tool_key": row[9]
             }
         return None
 
