@@ -18,6 +18,7 @@ DATABASE RECOVERY PATH:
 """
 
 import logging
+from utils.logger import get_department_logger
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -34,7 +35,7 @@ from handlers.feedback_handler import (
 )
 
 # Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("system")
 
 # Initialize router with tags for automated Swagger documentation.
 router = APIRouter(tags=["feedback"])

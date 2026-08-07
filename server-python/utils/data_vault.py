@@ -2,9 +2,9 @@ import os
 import zlib
 import base64
 from cryptography.fernet import Fernet
-import logging
+from utils.logger import get_department_logger
 
-logger = logging.getLogger("agent")
+logger = get_department_logger("agent")
 
 # Initialize Fernet cipher. Fall back to generating a key if ENCRYPTION_KEY is missing or invalid.
 encryption_key = os.getenv("ENCRYPTION_KEY")

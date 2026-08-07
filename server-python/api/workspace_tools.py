@@ -1,4 +1,5 @@
 import logging
+from utils.logger import get_department_logger
 from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +8,7 @@ from core.auth import get_current_user
 from db import workspace_tools_repository
 from utils.security import validate_python_tool_code
 
-logger = logging.getLogger(__name__)
+logger = get_department_logger("system")
 router = APIRouter(tags=["workspace_tools"])
 
 class ToolCreate(BaseModel):

@@ -10,13 +10,14 @@ using Pandas. This replaces the paid/external E2B sandboxed execution flow.
 
 import os
 import logging
+from utils.logger import get_department_logger
 import pandas as pd
 from typing import List
 from langchain_core.tools import tool, BaseTool
 from database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
 
-logger = logging.getLogger(__name__)
+logger = get_department_logger("agent")
 
 async def get_agent_documents(agent_id: str) -> List[str]:
     """Helper to query the filenames of documents uploaded for a specific agent."""

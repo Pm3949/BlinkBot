@@ -30,12 +30,13 @@ BEGINNER DATABASE CONCEPTS:
 
 from typing import List, Any
 import logging
+from utils.logger import get_department_logger
 from langchain_community.utilities import SQLDatabase
 from langchain_core.tools import tool, BaseTool
 import threading
 
 # Initialize standard module logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("agent")
 
 # Global cache dictionary for SQLDatabase connection objects.
 _db_cache = {}

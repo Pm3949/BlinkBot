@@ -35,8 +35,10 @@ import logging
 from pathlib import Path
 from custom_rag import CustomRAGEngine
 
-# Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
+
+# Initialize module-level logger using the centralized departmental system.
+logger = get_department_logger("system")
 
 
 # ==========================================

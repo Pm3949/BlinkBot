@@ -21,6 +21,7 @@ DATA FLOW & PROTOCOLS:
 """
 
 import logging
+from utils.logger import get_department_logger
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Request, Header, Response, WebSocket
@@ -39,7 +40,7 @@ from handlers.chat_handler import (
 )
 
 # Initialize standard module logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("agent")
 
 # Initialize router with tags for automated Swagger documentation.
 router = APIRouter(tags=["chat"])

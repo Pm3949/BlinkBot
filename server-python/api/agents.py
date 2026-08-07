@@ -25,6 +25,7 @@ DATA FLOW PATTERNS:
 """
 
 import logging
+from utils.logger import get_department_logger
 from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
@@ -45,7 +46,7 @@ from handlers.agent_handler import (
 )
 
 # Set standard module logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("agent")
 
 # Initialize router with tag categories for automatic Swagger docs.
 router = APIRouter(tags=["agents"])

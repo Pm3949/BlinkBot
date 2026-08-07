@@ -1,8 +1,7 @@
 import json
-import logging
-from langchain_core.messages import SystemMessage, HumanMessage
+from utils.logger import get_department_logger
 
-logger = logging.getLogger("websocket")
+logger = get_department_logger("agent")
 
 async def analyze_and_optimize_query(message: str, llm) -> dict:
     """

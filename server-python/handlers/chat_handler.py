@@ -50,7 +50,7 @@ from core.security import decrypt_key
 from core.scrubber import scrub_pii
 from handlers.websocket_handlers import agent_connection_manager
 from utils.logger import get_department_logger
-from db.workspace_tools_repository import get_agent_attached_tools
+from db.workspace_tools_repository import get_agent_attached_tools, get_agents_attached_tools_bulk
 
 # Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
@@ -556,6 +556,14 @@ except Exception as e:
     )
 
 
+class RequestRegistry:
+    def __init__(self):
+        self.agents = {}          # Caches agent routing configuration tuple (agent_id -> tuple)
+        self.llms = {}            # Caches instantiated resilient LLM objects ((provider, model, key) -> llm)
+        self.tools = {}           # Caches workspace tools configuration (agent_id -> list of tools)
+        self.memory_patches = {}  # Caches temporary memory patch strings (agent_id -> str)
+
+
 async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     """
     Orchestrates real-time bidirectional WebSocket chats for agents.
@@ -711,9 +719,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     tool_call = last_message.tool_calls[0]
                     t_name = tool_call["name"]
                     
-                    # Fetch attached tools for the active agent to check requires_approval flag
-                    from db.workspace_tools_repository import get_agent_attached_tools
-                    agent_tools = await get_agent_attached_tools(str(active_agent_id))
+                    # Fetch attached tools for the active agent to check requires_approval flag from registry
+                    agent_tools = registry.tools.get(str(active_agent_id), [])
                     
                     # Find tool in attached list (by name or normalized matching)
                     matching_tool = next((t for t in agent_tools if t["name"] == t_name or t["name"].replace(" ", "_").lower() == t_name.lower()), None)
@@ -749,7 +756,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         "llm_factory": active_llm_factory,
                         "tools_factory": active_tools_factory,
                         "session_id": session_id,
-                        "tool_name": tool_call["name"]
+                        "tool_name": tool_call["name"],
+                        "registry": registry
                     }
                     return
             break
@@ -788,11 +796,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         )
                         await graph.aupdate_state(config, {"messages": [rejection_message]})
                     
+                    # Restore registry
+                    registry = session_ctx.get("registry")
                     # Resume execution
                     await run_stream(None, graph, session_ctx["gateway_name"], session_ctx["agent_id"], session_ctx["llm_factory"], session_ctx["tools_factory"], session_id)
                 continue
                 
             elif data.get("type") == "chat_request":
+                registry = RequestRegistry()
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
                 message = req_data.get("message")
@@ -825,6 +836,23 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         )
                         await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
+
+                    registry.agents[str(agent_id)] = (
+                        agent_data[1],   # name
+                        agent_data[2],   # system_prompt
+                        agent_data[3],   # output_format
+                        agent_data[4],   # llm_provider
+                        agent_data[5],   # llm_model
+                        agent_data[6],   # api_key
+                        agent_data[7],   # embedding_model
+                        agent_data[8],   # web_search_enabled
+                        agent_data[11],  # is_active
+                        agent_data[12],  # endpoints
+                        agent_data[13],  # code_interpreter_enabled
+                        agent_data[14],  # databases
+                        agent_data[15],  # native_integrations
+                        agent_data[16],  # memory_enabled
+                    )
 
                     (
                         user_id,
@@ -933,6 +961,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         },
                                         client_id
                                     )
+                                    sub_info = await chat_repository.get_agent_routing_info(active_agent_id)
+                                    registry.agents[str(active_agent_id)] = sub_info
                                     (
                                         agent_name,
                                         system_prompt,
@@ -948,7 +978,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         databases_encrypted,
                                         native_integrations_encrypted,
                                         memory_enabled,
-                                    ) = await chat_repository.get_agent_routing_info(active_agent_id)
+                                    ) = sub_info
                                     embed_model = embed_model or "text-embedding-3-small"
                                     custom_api_key = decrypt_key(custom_api_key)
                                     if not is_active:
@@ -996,6 +1026,17 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
                     async def llm_factory(aid: str):
                         logger.debug(f"LLM Factory callback triggered for agent ID: {aid}")
+                        
+                        # Retrieve or cache agent info
+                        aid_str = str(aid)
+                        if aid_str in registry.agents:
+                            logger.info(f"💾 [Registry Cache Hit] Agent routing info for ID: {aid_str}")
+                            agent_info = registry.agents[aid_str]
+                        else:
+                            logger.info(f"🔌 [Registry Cache Miss] Fetching Agent routing info from DB for ID: {aid_str}")
+                            agent_info = await chat_repository.get_agent_routing_info(aid)
+                            registry.agents[aid_str] = agent_info
+
                         (
                             a_name,
                             sys_prompt,
@@ -1011,11 +1052,19 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             db_enc,
                             n_int_enc,
                             mem_enabled,
-                        ) = await chat_repository.get_agent_routing_info(aid)
+                        ) = agent_info
                         
                         emb_model = emb_model or "text-embedding-3-small"
                         c_key = decrypt_key(c_key)
-                        mem_patch = await chat_repository.fetch_temporary_memory_patch(aid)
+
+                        # Retrieve or cache memory patch
+                        if aid_str in registry.memory_patches:
+                            logger.info(f"💾 [Registry Cache Hit] Memory patch for Agent ID: {aid_str}")
+                            mem_patch = registry.memory_patches[aid_str]
+                        else:
+                            logger.info(f"🔌 [Registry Cache Miss] Fetching Memory patch from DB for Agent ID: {aid_str}")
+                            mem_patch = await chat_repository.fetch_temporary_memory_patch(aid)
+                            registry.memory_patches[aid_str] = mem_patch
                         
                         from prompts.base_prompts import HEADER_INSTRUCTION
                         if analysis.get("sentiment") == "frustrated":
@@ -1048,7 +1097,16 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             lang_name = lang_map.get(language.lower(), language)
                             formatted_prompt += f"\n\nIMPORTANT INSTRUCTION: You MUST reply entirely in {lang_name}! Translate your output to {lang_name} completely."
 
-                        llm_inst = await create_resilient_llm_instance(prov, mod, c_key, user_id=user_id)
+                        # Retrieve or cache resilient LLM instance
+                        llm_cache_key = (prov, mod, c_key)
+                        if llm_cache_key in registry.llms:
+                            logger.info(f"💾 [Registry Cache Hit] Reusing LLM instance for {prov}/{mod}")
+                            llm_inst = registry.llms[llm_cache_key]
+                        else:
+                            logger.info(f"🔌 [Registry Cache Miss] Creating new resilient LLM instance for {prov}/{mod}")
+                            llm_inst = await create_resilient_llm_instance(prov, mod, c_key, user_id=user_id)
+                            registry.llms[llm_cache_key] = llm_inst
+
                         return llm_inst, formatted_prompt, emb_model, web_enabled
 
                     def tools_factory(aid: str, emb_model: str, web_enabled: bool, llm_inst):
@@ -1103,7 +1161,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             t_list.append(search_web)
 
                         # Load and mount workspace tools
-                        attached_workspace_tools = workspace_tools_map.get(str(aid), [])
+                        attached_workspace_tools = registry.tools.get(str(aid), [])
                         for tool_obj in attached_workspace_tools:
                             tool_type = tool_obj.get("tool_type")
                             tool_name = tool_obj.get("name")
@@ -1209,24 +1267,24 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                     if project_id and not parent_agent_id and sub_agents:
                         for sa in sub_agents:
-                            try:
-                                sub_info = await chat_repository.get_agent_routing_info(str(sa[0]))
-                                if sub_info:
-                                    code_interpreter_map[str(sa[0])] = bool(sub_info[10])
-                                    n_str = decrypt_key(sub_info[12]) if sub_info[12] else None
-                                    native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
-                            except Exception as pre_err:
-                                logger.error(f"Error pre-fetching sub-agent routing info for {sa[0]}: {pre_err}", exc_info=True)
+                            # sa format: (id, name, description, endpoints, code_interpreter_enabled, databases, native_integrations)
+                            code_interpreter_map[str(sa[0])] = bool(sa[4])
+                            n_str = decrypt_key(sa[6]) if sa[6] else None
+                            native_integrations_map[str(sa[0])] = json.loads(n_str) if n_str else []
 
-                    # Pre-fetch workspace tools for the main agent and sub-agents
-                    workspace_tools_map = {}
+                    # Pre-fetch workspace tools for the main agent and sub-agents in a single bulk query
                     try:
-                        workspace_tools_map[str(agent_id)] = await get_agent_attached_tools(str(agent_id))
+                        agent_ids = [str(agent_id)]
                         if project_id and sub_agents:
                             for sa in sub_agents:
-                                workspace_tools_map[str(sa[0])] = await get_agent_attached_tools(str(sa[0]))
+                                agent_ids.append(str(sa[0]))
+                        logger.info(f"🔌 [Bulk Tool Fetch] Fetching attached tools for agents: {agent_ids}")
+                        registry.tools = await get_agents_attached_tools_bulk(agent_ids)
+                        for aid in agent_ids:
+                            logger.info(f"💾 [Registry Cache Load] Loaded {len(registry.tools.get(aid, []))} tools for agent ID: {aid}")
                     except Exception as e:
                         logger.error(f"Error pre-fetching workspace tools: {e}", exc_info=True)
+                        registry.tools = {}
 
                     graph = build_multi_agent_graph(
                         master_agent_id=agent_id,

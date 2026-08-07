@@ -47,6 +47,10 @@ from passlib.context import CryptContext
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import bcrypt
+from utils.logger import get_department_logger
+
+# Module-level logger for authentication events
+logger = get_department_logger("auth")
 
 # ==========================================
 # JWT CONFIGURATION
@@ -214,7 +218,8 @@ def send_otp_email(to_email: str, otp: str):
     """
     # Bypass execution if mail coordinates are unconfigured in environment variables.
     if not SMTP_USER or not SMTP_PASSWORD:
-        print(f"Skipping email since SMTP_USER or SMTP_PASSWORD is not set. OTP: {otp}")
+        logger.warning("SMTP credentials not configured. Skipping OTP email dispatch.")
+        logger.debug(f"Dev-only OTP for {to_email}: {otp}")
         return
         
     # Configure mail headers.
@@ -260,9 +265,9 @@ def send_otp_email(to_email: str, otp: str):
         server.sendmail(SMTP_USER, to_email, msg.as_string())
         # Close connection.
         server.quit()
-        print(f"OTP Email sent successfully to {to_email}")
+        logger.info(f"OTP email dispatched successfully to {to_email}")
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
+        logger.error(f"Failed to send OTP email to {to_email}: {e}", exc_info=True)
 
 
 def send_password_reset_email(to_email: str, otp: str):
@@ -286,7 +291,8 @@ def send_password_reset_email(to_email: str, otp: str):
         - Gracefully handles and prints errors if connection or dispatch fails.
     """
     if not SMTP_USER or not SMTP_PASSWORD:
-        print(f"Skipping email since SMTP_USER or SMTP_PASSWORD is not set. OTP: {otp}")
+        logger.warning("SMTP credentials not configured. Skipping password reset email dispatch.")
+        logger.debug(f"Dev-only password reset OTP for {to_email}: {otp}")
         return
         
     msg = MIMEMultipart("alternative")
@@ -323,9 +329,9 @@ def send_password_reset_email(to_email: str, otp: str):
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.sendmail(SMTP_USER, to_email, msg.as_string())
         server.quit()
-        print(f"Password reset email sent successfully to {to_email}")
+        logger.info(f"Password reset email dispatched successfully to {to_email}")
     except Exception as e:
-        print(f"Failed to send email to {to_email}: {e}")
+        logger.error(f"Failed to send password reset email to {to_email}: {e}", exc_info=True)
 
 
 # ==========================================

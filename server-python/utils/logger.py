@@ -38,7 +38,7 @@ BEGINNER COMPONENT BREAKDOWN:
 
 import os
 import logging
-import shutil
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict
@@ -209,11 +209,20 @@ def get_department_logger(department_name: str) -> logging.Logger:
     logger.propagate = False
     
     # Define the log formatting template.
-    # Note the custom key `%(context_info)s`, which matches the property we append in `ISTFormatter.format`.
-    log_format = "[%(asctime)s] [%(name)s] [%(levelname)s]%(context_info)s: %(message)s"
+    # Includes %(module)s for precise source tracing.
+    # The custom key `%(context_info)s` matches the property appended in `ISTFormatter.format`.
+    log_format = "[%(asctime)s] [%(levelname)s] [%(name)s.%(module)s]%(context_info)s — %(message)s"
     
     # Initialize the custom timezone-aware formatter.
     formatter = ISTFormatter(fmt=log_format)
+    
+    # ------------------------------------------
+    # Environment-Aware Log Level Configuration
+    # ------------------------------------------
+    # Read from LOG_LEVEL env var. Defaults to DEBUG for development.
+    # In production, set LOG_LEVEL=INFO or LOG_LEVEL=WARNING to reduce console noise.
+    env_log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    console_level = getattr(logging, env_log_level, logging.DEBUG)
     
     # ------------------------------------------
     # 1. Terminal Console Stream Handler Setup
@@ -222,8 +231,8 @@ def get_department_logger(department_name: str) -> logging.Logger:
     # Initialize standard stream handler (defaulting to sys.stderr/sys.stdout).
     console_handler = logging.StreamHandler()
     
-    # Set debug level threshold for console outputs.
-    console_handler.setLevel(logging.DEBUG)
+    # Set environment-aware level threshold for console outputs.
+    console_handler.setLevel(console_level)
     
     # Bind the timezone formatter to the handler.
     console_handler.setFormatter(formatter)
@@ -232,7 +241,7 @@ def get_department_logger(department_name: str) -> logging.Logger:
     logger.addHandler(console_handler)
     
     # ------------------------------------------
-    # 2. File Handler Setup
+    # 2. Rotating File Handler Setup
     # ------------------------------------------
     
     # Define directory name for logs.
@@ -244,10 +253,13 @@ def get_department_logger(department_name: str) -> logging.Logger:
     # Construct the absolute path to the log file (e.g., 'logs/billing.log').
     file_path = os.path.join(logs_dir, f"{dept_lower}.log")
     
-    # Initialize file writer handler. Forces UTF-8 encoding.
-    file_handler = logging.FileHandler(file_path, encoding="utf-8")
+    # Initialize rotating file handler.
+    # maxBytes=10MB, backupCount=5 rotations to prevent unbounded disk growth.
+    file_handler = RotatingFileHandler(
+        file_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
     
-    # Set the debug level threshold for file logs.
+    # File handler always captures DEBUG for full post-mortem analysis.
     file_handler.setLevel(logging.DEBUG)
     
     # Bind the timezone formatter to the file handler.
@@ -302,4 +314,21 @@ def cleanup_department_loggers():
                 
     # Clear the global logger cache directory dictionary.
     _loggers.clear()
+
+
+def get_db_logger(repository_name: str) -> logging.Logger:
+    """
+    Convenience factory for database repository modules.
+
+    Purpose:
+        Returns a logger scoped to the 'database' department.
+        All DB repository files should use this to maintain consistent naming.
+
+    Parameters:
+        repository_name (str): The name of the repository (used for reference, not in logger name).
+
+    Returns:
+        logging.Logger: The configured 'dept.DATABASE' logger instance.
+    """
+    return get_department_logger("database")
 

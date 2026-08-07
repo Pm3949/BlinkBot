@@ -30,13 +30,14 @@ BEGINNER API CONCEPTS:
 
 from typing import List
 import logging
+from utils.logger import get_department_logger
 from langchain_core.tools import tool, BaseTool
 from database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
 import httpx
 
 # Initialize standard module logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("agent")
 
 
 # ==========================================

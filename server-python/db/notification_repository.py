@@ -24,11 +24,12 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
 """
 
 import logging
+from utils.logger import get_department_logger
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 # Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("system")
 
 async def insert_notification(workspace_id: str, title: str, message: str, notification_type: str):
     """

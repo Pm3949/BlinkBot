@@ -34,8 +34,10 @@ import re
 import logging
 from typing import Tuple
 
-# Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+from utils.logger import get_department_logger
+
+# Initialize module-level logger using the centralized departmental system.
+logger = get_department_logger("system")
 
 # File signatures (magic bytes) dictionary.
 # Key: extension string. Value: list of expected byte headers.

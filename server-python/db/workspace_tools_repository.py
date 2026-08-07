@@ -1,6 +1,9 @@
 import json
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
+from utils.logger import get_db_logger
+
+logger = get_db_logger("workspace_tools_repository")
 
 SYSTEM_TOOLS = [
     {
@@ -228,3 +231,43 @@ async def get_agent_attached_tools(agent_id: str):
             }
             for r in rows
         ]
+
+
+async def get_agents_attached_tools_bulk(agent_ids: list):
+    """
+    Retrieves all workspace tools linked to a list of agents in a single bulk query.
+    """
+    if not agent_ids:
+        return {}
+        
+    async with get_db_cursor_async(commit=False) as cursor:
+        placeholders = ",".join(["%s"] * len(agent_ids))
+        query = f"""
+            SELECT j.agent_id, t.id, t.workspace_id, t.name, t.tool_type, t.configuration, t.created_at, t.is_system, t.code_content, t.is_global, t.tool_key
+            FROM workspace_tools t
+            JOIN agent_tools_junction j ON t.id = j.tool_id
+            WHERE j.agent_id IN ({placeholders})
+            ORDER BY t.is_system DESC, t.created_at DESC;
+        """
+        await run_in_threadpool(cursor.execute, query, tuple(agent_ids))
+        rows = await run_in_threadpool(cursor.fetchall)
+        
+        result = {str(aid): [] for aid in agent_ids}
+        for r in rows:
+            aid = str(r[0])
+            tool = {
+                "id": str(r[1]),
+                "workspace_id": str(r[2]),
+                "name": r[3],
+                "tool_type": r[4],
+                "configuration": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
+                "created_at": r[6].isoformat() if r[6] else None,
+                "is_system": bool(r[7]),
+                "code_content": r[8],
+                "is_global": bool(r[9]),
+                "tool_key": r[10]
+            }
+            if aid in result:
+                result[aid].append(tool)
+        return result
+

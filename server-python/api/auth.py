@@ -22,6 +22,7 @@ DATA FLOW:
 
 import os
 import logging
+from utils.logger import get_department_logger
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from slowapi import Limiter
@@ -45,7 +46,7 @@ from handlers.auth_handler import (
 )
 
 # Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("auth")
 
 # Initialize router with tags for automated Swagger documentation.
 router = APIRouter(prefix="/auth", tags=["auth"])

@@ -15,6 +15,7 @@ DATA FLOW:
 """
 
 import logging
+from utils.logger import get_department_logger
 from fastapi import APIRouter, Depends
 from core.auth import get_current_user
 
@@ -22,7 +23,7 @@ from core.auth import get_current_user
 from handlers.analytics_handler import handle_get_analytics
 
 # Configure standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("system")
 
 # Initialize router with tag categories for automated API mapping documentation.
 router = APIRouter(tags=["analytics"])

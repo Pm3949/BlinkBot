@@ -51,10 +51,10 @@ from bs4 import BeautifulSoup
 # Load local system environment variables.
 load_dotenv()
 
-# Initialize module-level logger.
-logger = logging.getLogger(__name__)
-# Configure standard logging levels.
-logging.basicConfig(level=logging.INFO)
+from utils.logger import get_department_logger
+
+# Initialize module-level logger using the centralized departmental system.
+logger = get_department_logger("knowledge_base")
 
 
 class CustomRAGEngine:

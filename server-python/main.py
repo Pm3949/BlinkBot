@@ -40,10 +40,9 @@ BEGINNER SYSTEM ARCHITECTURE CONCEPTS:
 
 import os
 import tempfile
-import logging
 import shutil
 from contextlib import asynccontextmanager
-from utils.logger import cleanup_department_loggers
+from utils.logger import get_department_logger, cleanup_department_loggers
 from dotenv import load_dotenv
 
 # Load local system environment variables.
@@ -72,18 +71,8 @@ from api import (
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
-# Set up module logger.
-logger = logging.getLogger(__name__)
-
-# Configure standard console and file handlers.
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("app.log")
-    ]
-)
+# Set up module logger using the centralized departmental system.
+logger = get_department_logger("system")
 
 # Initialize main FastAPI application.
 app = FastAPI(title="Custom BlinkBot Backend")

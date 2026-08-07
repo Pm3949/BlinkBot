@@ -23,6 +23,7 @@ SECURITY PATTERN:
 """
 
 import logging
+from utils.logger import get_department_logger
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from core.auth import get_current_user
@@ -39,7 +40,7 @@ from handlers.admin_handler import (
 )
 
 # Set standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("system")
 
 # Initialize APIRouter instance for admin routes.
 # The 'tags' grouping tags these endpoints as "admin" in Swagger API documentation docs.

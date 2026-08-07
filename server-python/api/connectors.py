@@ -20,6 +20,7 @@ BACKGROUND CONCURRENCY PATTERNS:
 """
 
 import logging
+from utils.logger import get_department_logger
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -35,7 +36,7 @@ from handlers.connector_handler import (
 )
 
 # Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("knowledge_base")
 
 # Initialize router with tag categories and router prefixes.
 router = APIRouter(prefix="/api/v1/connectors", tags=["connectors"])

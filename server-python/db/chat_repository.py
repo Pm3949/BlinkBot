@@ -43,7 +43,10 @@ VECTOR CONCEPTS IN RAG:
 from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from typing import Optional, List, Dict
+from utils.logger import get_db_logger
 import uuid
+
+logger = get_db_logger("chat_repository")
 
 async def fetch_temporary_memory_patch(agent_id: str) -> str:
     """
@@ -275,6 +278,7 @@ async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, l
                 return results
         except Exception:
             # Fall back to standard vector cosine similarity query if hybrid query fails.
+            logger.debug("Hybrid search function unavailable, falling back to pgvector cosine distance query")
             pass
 
         # Robust pgvector direct query fallback.
@@ -459,6 +463,7 @@ async def create_chat_session(session_id: str, title: str, agent_id: str):
             "INSERT INTO chat_sessions (id, title, agent_id) VALUES (%s, %s, %s)",
             (session_id, title, agent_id)
         )
+    logger.debug(f"Chat session created: session_id={session_id}, agent_id={agent_id}")
 
 
 async def insert_chat_message(msg_id: str, session_id: str, role: str, content: str):
@@ -578,6 +583,7 @@ async def delete_agent(agent_id: str):
 
         # If the query result is empty, exit early.
         if not agent_ids_to_delete:
+            logger.debug(f"No agents found for deletion cascade from agent_id={agent_id}")
             return 0
             
         # Step 2: Manually loop through each agent ID to clear out its downstream resources in order.
@@ -611,6 +617,7 @@ async def delete_agent(agent_id: str):
         placeholders = ','.join(['%s'] * len(ids_tuple))
         await run_in_threadpool(cursor.execute, f"DELETE FROM agents WHERE id IN ({placeholders})", ids_tuple)
         
+        logger.info(f"Agent cascade deletion completed: {len(agent_ids_to_delete)} agents removed from agent_id={agent_id}")
         # Return the count of agents that were deleted.
         return len(agent_ids_to_delete)
 

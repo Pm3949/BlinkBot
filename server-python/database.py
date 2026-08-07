@@ -37,9 +37,13 @@ from psycopg2 import pool
 from contextlib import asynccontextmanager
 from fastapi.concurrency import run_in_threadpool
 from dotenv import load_dotenv
+from utils.logger import get_db_logger
 
 # Load local system environment variables.
 load_dotenv()
+
+# Initialize database connection pool logger.
+logger = get_db_logger("pool")
 
 # Retrieve the PostgreSQL connection string. Contains credentials, host, port, and database name.
 DB_URL = os.getenv("DATABASE_URL")
@@ -52,8 +56,10 @@ if not DB_URL:
 try:
     # Pre-allocates a minimum of 1 connection and caps active concurrent connections at 30.
     db_pool = psycopg2.pool.ThreadedConnectionPool(1, 30, DB_URL)
+    logger.info("Database connection pool initialized successfully (min=1, max=30)")
 except Exception as e:
     # Raise a critical runtime error if the database pool fails to initialize.
+    logger.critical(f"Failed to initialize database pool: {e}", exc_info=True)
     raise RuntimeError(f"Failed to initialize database pool: {e}")
 
 
@@ -136,9 +142,10 @@ async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
         # If the block executed successfully and commit is True, commit the transaction.
         if commit:
             conn.commit()
-    except Exception:
+    except Exception as e:
         # If any exception occurred during block execution, roll back the transaction.
         conn.rollback()
+        logger.warning(f"Transaction rolled back due to error: {type(e).__name__}")
         # Re-raise the exception.
         raise
     finally:
@@ -171,9 +178,10 @@ async def get_db_connection_async():
     try:
         # Yield the raw connection object to the caller.
         yield conn
-    except Exception:
+    except Exception as e:
         # Roll back on error.
         conn.rollback()
+        logger.warning(f"Raw connection transaction rolled back due to error: {type(e).__name__}")
         raise
     finally:
         # Return the connection.

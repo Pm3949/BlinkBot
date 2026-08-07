@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 import os
 import logging
+from utils.logger import get_department_logger
 from database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
 from fastapi_sso.sso.github import GithubSSO
@@ -32,7 +33,7 @@ SlackSSO = None
 # Initialize router instance for OAuth paths.
 router = APIRouter()
 # Initialize standard module-level logger.
-logger = logging.getLogger(__name__)
+logger = get_department_logger("auth")
 
 # Initialize GitHub SSO client parameters.
 github_sso = GithubSSO(

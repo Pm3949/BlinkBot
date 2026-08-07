@@ -49,6 +49,10 @@ from langchain_core.messages import (
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.language_models.chat_models import BaseChatModel
+from utils.logger import get_department_logger
+
+# Module-level logger for LangGraph orchestration events
+logger = get_department_logger("agent")
 
 
 class GraphState(TypedDict):
@@ -182,10 +186,10 @@ def build_multi_agent_graph(
             # Parse the JSON response.
             parsed = json.loads(content)
             next_step = parsed.get("next", "FINISH").strip()
-            print(f"DEBUG SUPERVISOR ROUTER: content={content}, next_step={next_step}")
+            logger.debug(f"Supervisor router decision: content_parsed=True, next_step={next_step}")
         except Exception as e:
             # Fall back to ending the execution loop on errors.
-            print(f"Routing failed: {e}")
+            logger.error(f"Supervisor routing failed: {e}", exc_info=True)
             next_step = "FINISH"
 
         # Match the next_step ID with the list of sub-agents.
@@ -276,7 +280,7 @@ def build_multi_agent_graph(
                     response = chunk
                 else:
                     response += chunk
-            print("AGENT RESPONSE:", response)
+            logger.debug("Agent generation completed successfully")
         except Exception as e:
             # Error Recovery Layer: If token/context limit errors are caught (e.g. HTTP 413 Payload Too Large),
             # truncate message contents and retry generation.
@@ -289,9 +293,7 @@ def build_multi_agent_graph(
                 or "tool" in err_str
                 or "400" in err_str
             ):
-                print(
-                    f"API/Rate Limit Error caught: {e}. Retrying with payload truncation..."
-                )
+                logger.warning(f"API/rate limit error caught, retrying with payload truncation: {e}")
                 truncated_msgs = []
                 for m in msgs:
                     # Truncate content to 2000 characters if it exceeds the limit.
@@ -341,7 +343,27 @@ def build_multi_agent_graph(
 
         # Initialize and invoke the prebuilt ToolNode executor.
         tool_executor = ToolNode(tools)
-        return await tool_executor.ainvoke(state)
+
+        # Log the tool calls to be executed
+        last_message = state["messages"][-1]
+        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            for tc in last_message.tool_calls:
+                logger.info(f"Executing tool call: {tc.get('name')} with arguments: {tc.get('args')}")
+
+        import time
+        _tool_start = time.perf_counter()
+        result = await tool_executor.ainvoke(state)
+        _tool_elapsed = time.perf_counter() - _tool_start
+
+        # Log the responses/results of the tool executions
+        if result and "messages" in result:
+            for msg in result["messages"]:
+                if isinstance(msg, ToolMessage):
+                    logger.info(f"Tool {msg.name} (ID: {msg.tool_call_id}) completed in {_tool_elapsed:.2f}s")
+                else:
+                    logger.info(f"Tool execution returned message type: {type(msg).__name__} in {_tool_elapsed:.2f}s")
+
+        return result
 
     # ------------------------------------------
     # CONDITIONAL TRANSITIONS & EDGES
@@ -385,4 +407,5 @@ def build_multi_agent_graph(
     memory = PostgresCheckpointSaver()
     
     # Compile the workflow with checkpointer and HITL interruption before tools execution.
+    logger.info(f"Compiling LangGraph state machine for gateway '{gateway_name}' with HITL interrupt_before=['tools']")
     return workflow.compile(checkpointer=memory, interrupt_before=["tools"])
