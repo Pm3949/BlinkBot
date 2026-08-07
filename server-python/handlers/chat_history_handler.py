@@ -258,7 +258,8 @@ async def handle_get_chat_messages(session_id: str):
                 "role": row[1],                                              # Role ('user' or 'assistant')
                 "content": row[2],                                           # Text body message content
                 "latency": row[3],                                           # Model processing latency in MS
-                "created_at": row[4].isoformat() if row[4] else None         # ISO-formatted registration date
+                "created_at": row[4].isoformat() if row[4] else None,        # ISO-formatted registration date
+                "steps": row[5] if row[5] else None                          # Agent execution steps trace (JSONB)
             })
             
         # Log successful completion and count
@@ -295,7 +296,8 @@ async def handle_create_chat_message(payload: dict):
             payload.get("session_id"),
             payload.get("role"),
             payload.get("content"),
-            payload.get("latency")
+            payload.get("latency"),
+            payload.get("steps")
         )
         
         # Log success and return
@@ -305,7 +307,8 @@ async def handle_create_chat_message(payload: dict):
             "role": row[1],
             "content": row[2],
             "latency": row[3],
-            "created_at": row[4].isoformat() if row[4] else None
+            "created_at": row[4].isoformat() if row[4] else None,
+            "steps": row[5] if row[5] else None
         }
     except Exception as e:
         logger.error(f"Error creating chat message: {str(e)}", exc_info=True)

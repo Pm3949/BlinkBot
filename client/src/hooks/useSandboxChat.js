@@ -11,11 +11,13 @@ export function useSandboxChat() {
     return "sandbox_" + Math.random().toString(36).substring(7);
   }, []);
   
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-  const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-  const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
+  const wsUrl = useMemo(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+    const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+    return `${baseWsUrl}/ws/chat/${clientId}`;
+  }, [clientId]);
 
-  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
 
   const messages = useMemo(() => {
     if (!isTyping) return localMessages;
@@ -23,28 +25,28 @@ export function useSandboxChat() {
       id: "optimistic-assistant",
       role: "assistant",
       content: agentTextChunks || "",
-      status: agentStatus
+      status: agentStatus,
+      steps: agentSteps
     }];
-  }, [localMessages, isTyping, agentTextChunks, agentStatus]);
+  }, [localMessages, isTyping, agentTextChunks, agentStatus, agentSteps]);
 
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {
     const handleStreamEnd = (e) => {
-       if (isTyping) {
-          setIsTyping(false);
-          const finalContent = e.detail?.content || '';
-          if (finalContent) {
-            setLocalMessages(prev => [
-              ...prev,
-              { id: Date.now().toString(), role: "assistant", content: finalContent, latency: 0 }
-            ]);
-          }
-          clearTextChunks();
+       setIsTyping(false);
+       const finalContent = e.detail?.content || '';
+       const finalSteps = e.detail?.steps || null;
+       if (finalContent) {
+         setLocalMessages(prev => [
+           ...prev,
+           { id: Date.now().toString(), role: "assistant", content: finalContent, latency: 0, steps: finalSteps }
+         ]);
        }
+       clearTextChunks();
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
-  }, [isTyping, clearTextChunks]);
+  }, [clearTextChunks]);
 
   const sendMessage = useCallback(({ agentId, agentName, content, language }) => {
     const message = content.trim();

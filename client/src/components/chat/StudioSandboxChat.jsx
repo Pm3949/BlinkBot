@@ -22,7 +22,7 @@ export default function StudioSandboxChat({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, loading, pendingApproval]);
 
   return (
     <div className="flex flex-col h-full bg-card/95 backdrop-blur-md border-l border-border/50 shadow-2xl relative z-10 w-[450px]">

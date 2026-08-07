@@ -381,5 +381,8 @@ def build_multi_agent_graph(
     )
     workflow.add_edge("tools", "agent")
 
-    # Compile the workflow statelessly (no checkpointer, no HITL interruption).
-    return workflow.compile()
+    from utils.postgres_saver import PostgresCheckpointSaver
+    memory = PostgresCheckpointSaver()
+    
+    # Compile the workflow with checkpointer and HITL interruption before tools execution.
+    return workflow.compile(checkpointer=memory, interrupt_before=["tools"])

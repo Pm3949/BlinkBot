@@ -445,8 +445,6 @@ export default function ProjectDetailsPage() {
             <StudioSandboxChat
               messages={messages}
               loading={loading}
-              pendingApproval={pendingApproval}
-              sendApprovalResponse={sendApprovalResponse}
               onSend={(content) => {
                 const manager = subAgents.find(a => a.name === 'Network Manager');
                 if (manager) {
@@ -467,6 +465,8 @@ export default function ProjectDetailsPage() {
                 setIsSandboxOpen(false);
                 clearSandbox();
               }}
+              pendingApproval={pendingApproval}
+              sendApprovalResponse={sendApprovalResponse}
             />
             <TracePanel onClose={() => {
               setIsSandboxOpen(false);

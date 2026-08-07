@@ -90,7 +90,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [visibleMessages, loading]);
+  }, [visibleMessages, loading, pendingApproval]);
 
   const handleAgentSelect = (agent) => {
     setActiveAgentId(agent.id);
@@ -236,6 +236,7 @@ export default function ChatPage() {
                 latency={message.latency}
                 content={message.content}
                 sources={message.sources}
+                steps={message.steps}
                 status={message.status || (message.role === "assistant" && !message.content ? "Thinking..." : null)}
               />
             ))}

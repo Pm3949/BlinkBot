@@ -7,6 +7,20 @@ export const useAgentSocket = (url) => {
   const reconnectTimeoutRef = useRef(null);
   const [agentTextChunks, setAgentTextChunks] = useState('');
   const [agentStatus, setAgentStatus] = useState('');
+  const [agentSteps, _setAgentSteps] = useState([]);
+  const agentStepsRef = useRef([]);
+
+  const setAgentSteps = useCallback((val) => {
+    let next;
+    if (typeof val === 'function') {
+      next = val(agentStepsRef.current);
+    } else {
+      next = val;
+    }
+    agentStepsRef.current = next;
+    _setAgentSteps(next);
+  }, []);
+
   const [pendingApproval, setPendingApproval] = useState(null);
   // Queue for messages that arrive before the socket is OPEN
   const pendingPayloadRef = useRef(null);
@@ -50,6 +64,18 @@ export const useAgentSocket = (url) => {
             textAccRef.current += data.content;
             setAgentTextChunks((prev) => prev + data.content);
             setAgentStatus('');
+          } else if (data.type === 'step') {
+            // Upsert: update label if same status already exists, otherwise append
+            setAgentSteps(prev => {
+              const exists = prev.find(s => s.status === data.status);
+              if (exists) {
+                return prev.map(s => s.status === data.status
+                  ? { ...s, label: data.label, done: false }
+                  : s
+                );
+              }
+              return [...prev, { status: data.status, label: data.label, done: false }];
+            });
           } else if (data.type === 'status') {
             setAgentStatus(data.content);
             if (data.content) {
@@ -69,11 +95,11 @@ export const useAgentSocket = (url) => {
               type: 'routing',
               agentName: 'Supervisor Router',
               action: `Routed execution path to: ${data.agent_name}`,
-              // logs: `Selected Target Agent: ${data.agent_name} (ID: ${data.agent_id})`,
               logs: `Selected Target Agent: ${data.agent_name}`,
               payload: data
             });
           } else if (data.type === 'error') {
+            console.error('WebSocket received error:', data.content);
             toast.error(data.content);
             useTraceStore.getState().addStep({
               type: 'error',
@@ -82,15 +108,30 @@ export const useAgentSocket = (url) => {
               logs: data.content,
               payload: data
             });
+            const fullContent = textAccRef.current;
+            textAccRef.current = '';
+            setAgentStatus('idle');
+            
+            const doneSteps = agentStepsRef.current.map(s => ({ ...s, done: true }));
+            setAgentSteps(doneSteps);
+            
+            const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent, steps: doneSteps } });
+            window.dispatchEvent(streamEndEvent);
           } else if (data.type === 'approval_required') {
+            console.log('WebSocket RECEIVED approval_required:', data.payload);
             setPendingApproval(data.payload);
             setAgentStatus('');
           } else if (data.type === 'stream_end') {
             const fullContent = textAccRef.current;
             textAccRef.current = '';
-            setAgentStatus('');
-            const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent } });
+            setAgentStatus('idle');
+            
+            const doneSteps = agentStepsRef.current.map(s => ({ ...s, done: true }));
+            setAgentSteps(doneSteps);
+            
+            const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent, steps: doneSteps } });
             window.dispatchEvent(streamEndEvent);
+            
             useTraceStore.getState().addStep({
               type: 'routing',
               agentName: activeAgentNameRef.current || 'Execution Pipeline',
@@ -109,6 +150,16 @@ export const useAgentSocket = (url) => {
       console.log('Disconnected from Agent WebSocket:', event.reason);
       setIsConnected(false);
       socketRef.current = null;
+      
+      const fullContent = textAccRef.current;
+      textAccRef.current = '';
+      setAgentStatus('idle');
+      
+      const doneSteps = agentStepsRef.current.map(s => ({ ...s, done: true }));
+      setAgentSteps(doneSteps);
+      
+      const streamEndEvent = new CustomEvent('agent_stream_end', { detail: { content: fullContent, steps: doneSteps } });
+      window.dispatchEvent(streamEndEvent);
       
       // Auto-reconnect logic
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -144,6 +195,7 @@ export const useAgentSocket = (url) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       setAgentTextChunks(''); // clear on new send
       setAgentStatus('');
+      setAgentSteps([]);     // reset steps for new message
       textAccRef.current = '';
       socketRef.current.send(JSON.stringify({ type: 'chat_request', payload }));
     } else {
@@ -182,6 +234,7 @@ export const useAgentSocket = (url) => {
     isConnected,
     agentTextChunks,
     agentStatus,
+    agentSteps,
     sendChatRequest,
     clearTextChunks,
     pendingApproval,

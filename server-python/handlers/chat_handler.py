@@ -56,6 +56,7 @@ from db.workspace_tools_repository import get_agent_attached_tools
 logger = get_department_logger("agent")
 
 _circuit_breakers = {}
+active_sessions_map = {}
 
 def _get_content_string(content) -> str:
     if isinstance(content, list):
@@ -467,48 +468,62 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
 
 def create_e2b_python_tool(tool_id, tool_name, code_content):
     """
-    Creates a LangChain Tool structured to safely run user-provided Python scripts
-    inside an isolated E2B Code Interpreter sandbox.
+    Creates a LangChain StructuredTool configured to safely run user-provided Python scripts
+    inside an isolated E2B Code Interpreter sandbox, supporting multiple function parameters.
     """
     import ast
-    from langchain_core.tools import Tool
+    from langchain_core.tools import StructuredTool
+    from pydantic import Field, create_model
     
     func_name = "custom_tool"
     docstring = f"Custom Python tool: {tool_name}"
+    fields = {}
+    
     try:
         tree = ast.parse(code_content)
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for dec in node.decorator_list:
                     if (isinstance(dec, ast.Name) and dec.id == "tool") or \
                        (isinstance(dec, ast.Attribute) and dec.attr == "tool"):
                         func_name = node.name
                         docstring = ast.get_docstring(node) or f"Custom Python tool: {tool_name}"
+                        
+                        # Dynamically parse function arguments to build Pydantic schema
+                        for arg in node.args.args:
+                            arg_name = arg.arg
+                            fields[arg_name] = (str, Field(default=..., description=f"Parameter {arg_name}"))
                         break
     except Exception as e:
         logger.error(f"Error parsing function metadata for tool {tool_name}: {e}")
         
-    def execute_in_e2b(**kwargs) -> str:
+    if not fields:
+        fields["query"] = (str, Field(default=..., description="Query input"))
+        
+    ArgsSchema = create_model("DynamicArgsSchema", **fields)
+        
+    def execute_in_e2b(*args, **kwargs) -> str:
+        target_args = list(args)
         exec_code = f"""
 {code_content}
 
 try:
-    res = {func_name}(**{repr(kwargs)})
+    res = {func_name}(*{repr(target_args)}, **{repr(kwargs)})
     print(res)
 except Exception as e:
     print(f"Error executing function: {{e}}")
 """
         try:
-            from e2b_code_interpreter import CodeInterpreter
+            from e2b_code_interpreter import Sandbox
             
             def _run():
-                with CodeInterpreter() as sandbox:
-                    exec_result = sandbox.notebook.exec_cell(exec_code)
+                with Sandbox() as sandbox:
+                    exec_result = sandbox.run_code(exec_code)
                     if exec_result.error:
                         return f"Execution Error: {exec_result.error.name} - {exec_result.error.value}\n{exec_result.error.traceback}"
-                    stdout_str = exec_result.stdout or ""
-                    text_str = exec_result.text or ""
-                    return (stdout_str + "\n" + text_str).strip() or "Success"
+                    stdout_str = "".join(exec_result.logs.stdout) if exec_result.logs.stdout else ""
+                    stderr_str = "".join(exec_result.logs.stderr) if exec_result.logs.stderr else ""
+                    return (stdout_str + "\n" + stderr_str).strip() or "Success"
             
             import threading
             class PropagatingThread(threading.Thread):
@@ -533,10 +548,11 @@ except Exception as e:
             return f"Error: Custom Python tool '{tool_name}' failed during sandbox execution: {str(e)}"
 
     clean_name = tool_name.replace(" ", "_").replace("-", "_").lower()
-    return Tool(
+    return StructuredTool(
         name=clean_name,
         func=execute_in_e2b,
-        description=docstring
+        description=docstring,
+        args_schema=ArgsSchema
     )
 
 
@@ -570,95 +586,178 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     await agent_connection_manager.connect(websocket, client_id)
 
 
-    async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory):
-        tool_calling_runs = set()
-        async for event in active_graph.astream_events(inputs, version="v2"):
-            kind = event["event"]
-            run_id = event.get("run_id")
-            
-            if kind == "on_chat_model_stream":
-                if "supervisor" in event.get("tags", []) or event.get("metadata", {}).get("langgraph_node") == "supervisor":
-                    continue
+    async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory, session_id):
+        config = {"configurable": {"thread_id": session_id}}
+        current_inputs = inputs
+        
+        while True:
+            tool_calling_runs = set()
+            async for event in active_graph.astream_events(current_inputs, config=config, version="v2"):
+                kind = event["event"]
+                run_id = event.get("run_id")
+                metadata = event.get("metadata", {})
+                node = metadata.get("langgraph_node", "")
+                tags = event.get("tags", [])
                 
-                chunk = event["data"]["chunk"]
-                if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
-                    tool_calling_runs.add(run_id)
-                    continue
+                if kind == "on_chat_model_stream":
+                    if "supervisor" in tags or node == "supervisor":
+                        continue
                     
-                if run_id in tool_calling_runs:
-                    continue
+                    chunk = event["data"]["chunk"]
+                    if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
+                        tool_calling_runs.add(run_id)
+                        continue
+                        
+                    if run_id in tool_calling_runs:
+                        continue
+                        
+                    if chunk.content:
+                        chunk_str = _get_content_string(chunk.content)
+                        await agent_connection_manager.send_json(
+                            {"type": "text_chunk", "content": chunk_str}, client_id
+                        )
+    
+                elif kind == "on_chat_model_start":
+                    if "supervisor" not in tags and node != "supervisor":
+                        await agent_connection_manager.send_json(
+                            {"type": "step", "status": "generating", "label": "Generating response..."}, client_id
+                        )
+                        
+                elif kind == "on_chat_model_end":
+                    output = event["data"].get("output")
+                    if output:
+                        usage = getattr(output, "usage_metadata", None)
+                        if not usage and isinstance(output, dict):
+                            usage = output.get("usage_metadata")
+                        if not usage:
+                            llm_output = getattr(output, "llm_output", None) or (output.get("llm_output") if isinstance(output, dict) else None)
+                            if llm_output:
+                                usage = llm_output.get("token_usage") or llm_output.get("usage")
+                        if usage:
+                            prompt_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
+                            completion_tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
+                            total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
+                            if total_tokens > 0:
+                                cost = (prompt_tokens * 0.0000006) + (completion_tokens * 0.0000018)
+                                try:
+                                    async with get_db_cursor_async(commit=True) as cursor:
+                                        await run_in_threadpool(
+                                            cursor.execute,
+                                            """
+                                            INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                                            VALUES (%s, %s, %s, %s, %s, %s)
+                                            """,
+                                            (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
+                                        )
+                                except Exception as db_err:
+                                    if "foreign key" in str(db_err).lower() or "violates foreign key constraint" in str(db_err).lower():
+                                        logger.warning("Skipping token log: Test user not found in DB.")
+                                    else:
+                                        logger.error(f"Failed to log token usage: {db_err}")
                     
-                if chunk.content:
-                    chunk_str = _get_content_string(chunk.content)
+                elif kind == "on_tool_start":
+                    t_name = event["name"]
+                    if t_name == "search_knowledge_base":
+                        status_msg = "Searching Knowledge Base..."
+                        tool_label = "Searching Knowledge Base"
+                    elif t_name == "search_web":
+                        status_msg = "Searching the Web..."
+                        tool_label = "Searching the Web"
+                    else:
+                        action_name = t_name.replace("_", " ").title()
+                        status_msg = f"Running action: {action_name}..."
+                        tool_label = action_name
+                    await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
                     await agent_connection_manager.send_json(
-                        {"type": "text_chunk", "content": chunk_str}, client_id
+                        {"type": "step", "status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}"}, client_id
                     )
                     
-            elif kind == "on_chat_model_end":
-                output = event["data"].get("output")
-                if output:
-                    usage = getattr(output, "usage_metadata", None)
-                    if not usage and isinstance(output, dict):
-                        usage = output.get("usage_metadata")
-                    if not usage:
-                        llm_output = getattr(output, "llm_output", None) or (output.get("llm_output") if isinstance(output, dict) else None)
-                        if llm_output:
-                            usage = llm_output.get("token_usage") or llm_output.get("usage")
-                    if usage:
-                        prompt_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
-                        completion_tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
-                        total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
-                        if total_tokens > 0:
-                            cost = (prompt_tokens * 0.0000006) + (completion_tokens * 0.0000018)
-                            try:
-                                async with get_db_cursor_async(commit=True) as cursor:
-                                    await run_in_threadpool(
-                                        cursor.execute,
-                                        """
-                                        INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
-                                        VALUES (%s, %s, %s, %s, %s, %s)
-                                        """,
-                                        (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
-                                    )
-                            except Exception as db_err:
-                                if "foreign key" in str(db_err).lower() or "violates foreign key constraint" in str(db_err).lower():
-                                    logger.warning("Skipping token log: Test user not found in DB.")
-                                else:
-                                    logger.error(f"Failed to log token usage: {db_err}")
-                                
-            elif kind == "on_tool_start":
-                t_name = event["name"]
-                if t_name == "search_knowledge_base":
-                    status_msg = "Searching Knowledge Base..."
-                elif t_name == "search_web":
-                    status_msg = "Searching the Web..."
-                else:
-                    action_name = t_name.replace("_", " ").title()
-                    status_msg = f"Running action: {action_name}..."
-                await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
-                
-            elif kind == "on_tool_end":
-                await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                
-            elif kind == "on_chain_end" and event["name"] == "supervisor":
-                output = event["data"].get("output", {})
-                if isinstance(output, dict):
-                    routed_name = output.get("routed_agent_name")
-                    routed_id = output.get("active_agent_id")
-                    if routed_id:
-                        await agent_connection_manager.send_json(
-                            {
-                                "type": "routing_decision",
-                                "agent_id": str(routed_id),
-                                "agent_name": routed_name
-                            },
-                            client_id
-                        )
-                    if routed_name and routed_name != active_gateway_name:
-                        await agent_connection_manager.send_json(
-                            {"type": "text_chunk", "content": f"🤖 *[Routed to: {routed_name}]*\n\n"}, client_id
-                        )
-
+                elif kind == "on_tool_end":
+                    t_name = event["name"]
+                    tool_label = t_name.replace("_", " ").title()
+                    await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                    await agent_connection_manager.send_json(
+                        {"type": "step", "status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}"}, client_id
+                    )
+                    
+                elif kind == "on_chain_start" and event["name"] == "supervisor":
+                    await agent_connection_manager.send_json(
+                        {"type": "step", "status": "routing", "label": "Deciding which agent to use..."}, client_id
+                    )
+    
+                elif kind == "on_chain_end" and event["name"] == "supervisor":
+                    output = event["data"].get("output", {})
+                    if isinstance(output, dict):
+                        routed_name = output.get("routed_agent_name")
+                        routed_id = output.get("active_agent_id")
+                        if routed_id:
+                            await agent_connection_manager.send_json(
+                                {
+                                    "type": "routing_decision",
+                                    "agent_id": str(routed_id),
+                                    "agent_name": routed_name
+                                },
+                                client_id
+                            )
+                            await agent_connection_manager.send_json(
+                                {"type": "step", "status": "routing", "label": f"Routing to: {routed_name}"}, client_id
+                            )
+            
+            # Check for breakpoint interruption before tools execute
+            state_snapshot = await active_graph.aget_state(config)
+            if state_snapshot.next and "tools" in state_snapshot.next:
+                last_message = state_snapshot.values["messages"][-1]
+                if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                    tool_call = last_message.tool_calls[0]
+                    t_name = tool_call["name"]
+                    
+                    # Fetch attached tools for the active agent to check requires_approval flag
+                    from db.workspace_tools_repository import get_agent_attached_tools
+                    agent_tools = await get_agent_attached_tools(str(active_agent_id))
+                    
+                    # Find tool in attached list (by name or normalized matching)
+                    matching_tool = next((t for t in agent_tools if t["name"] == t_name or t["name"].replace(" ", "_").lower() == t_name.lower()), None)
+                    
+                    requires_app = False
+                    if matching_tool:
+                        config_dict = matching_tool.get("configuration") or {}
+                        requires_app = config_dict.get("requires_approval") or matching_tool.get("requires_approval") or False
+                    
+                    # System search tools never require approval
+                    if t_name in ["search_knowledge_base", "search_web"]:
+                        requires_app = False
+                        
+                    if not requires_app:
+                        logger.info(f"Auto-approving tool: '{t_name}' (requires_approval is False)")
+                        current_inputs = None
+                        continue
+                        
+                    logger.info(f"Graph execution paused at breakpoint before tool '{t_name}'. Requesting user approval...")
+                    await agent_connection_manager.send_json({
+                        "type": "approval_required",
+                        "payload": {
+                            "tool_call_id": tool_call["id"],
+                            "tool_name": tool_call["name"],
+                            "arguments": tool_call["args"]
+                        }
+                    }, client_id)
+                    
+                    active_sessions_map[client_id] = {
+                        "graph": active_graph,
+                        "gateway_name": active_gateway_name,
+                        "agent_id": active_agent_id,
+                        "llm_factory": active_llm_factory,
+                        "tools_factory": active_tools_factory,
+                        "session_id": session_id,
+                        "tool_name": tool_call["name"]
+                    }
+                    return
+            break
+            
+        # Emit formatting step just before stream end
+        await agent_connection_manager.send_json(
+            {"type": "step", "status": "formatting", "label": "Formatting answer..."}, client_id
+        )
         await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
         await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
 
@@ -667,7 +766,33 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
             data = await websocket.receive_json()
             logger.debug(f"Received WebSocket data payload from client {client_id}")
             
-            if data.get("type") == "chat_request":
+            if data.get("type") == "tool_approval_response":
+                payload = data.get("payload", {})
+                decision = payload.get("decision")
+                tool_call_id = payload.get("tool_call_id")
+                
+                session_ctx = active_sessions_map.pop(client_id, None)
+                if session_ctx:
+                    graph = session_ctx["graph"]
+                    session_id = session_ctx["session_id"]
+                    config = {"configurable": {"thread_id": session_id}}
+                    
+                    if decision == "reject":
+                        from langchain_core.messages import ToolMessage
+                        # Inject a ToolMessage indicating rejection to let the agent continue gracefully
+                        rejection_message = ToolMessage(
+                            content="Error: Action rejected by user.",
+                            tool_call_id=tool_call_id,
+                            name=session_ctx["tool_name"],
+                            status="error"
+                        )
+                        await graph.aupdate_state(config, {"messages": [rejection_message]})
+                    
+                    # Resume execution
+                    await run_stream(None, graph, session_ctx["gateway_name"], session_ctx["agent_id"], session_ctx["llm_factory"], session_ctx["tools_factory"], session_id)
+                continue
+                
+            elif data.get("type") == "chat_request":
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
                 message = req_data.get("message")
@@ -686,6 +811,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         },
                         client_id,
                     )
+                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                     continue
 
                 message = scrub_pii(message)
@@ -697,6 +823,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Agent not found"}, client_id
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     (
@@ -724,6 +851,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Agent is inactive."}, client_id
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
@@ -849,6 +977,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             },
                             client_id,
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     # Preprocess user query using Intent Analyzer & Query Optimizer
@@ -1124,13 +1253,19 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
-                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory)
+                    # Emit initial thinking step before graph execution begins
+                    execution_id = str(uuid.uuid4())
+                    await agent_connection_manager.send_json(
+                        {"type": "step", "status": "thinking", "label": "Analyzing your request..."}, client_id
+                    )
+                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, execution_id)
 
                 except Exception as exc:
                     logger.error("Chat generation failed", exc_info=True)
                     await agent_connection_manager.send_json(
                         {"type": "error", "content": str(exc)}, client_id
                     )
+                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket client disconnected normally. Client ID: {client_id}")
@@ -1188,6 +1323,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         },
                         client_id,
                     )
+                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                     continue
 
                 message = scrub_pii(message)
@@ -1199,6 +1335,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         await agent_connection_manager.send_json(
                             {"type": "error", "content": "Chatbot not found"}, client_id
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     agent_id, settings_chatbot, message_count, user_id, allowed_domains = chatbot_data
@@ -1215,6 +1352,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                             },
                             client_id,
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     # Log widget message event
@@ -1229,6 +1367,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                             {"type": "error", "content": "Underlying Agent not found"},
                             client_id,
                         )
+                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
 
                     (
@@ -1364,6 +1503,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                             await agent_connection_manager.send_json(
                                 {"type": "error", "content": str(exc)}, client_id
                             )
+                            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
 
                     asyncio.create_task(stream_generator())
 
@@ -1372,6 +1512,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     await agent_connection_manager.send_json(
                         {"type": "error", "content": str(e)}, client_id
                     )
+                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
 
     except WebSocketDisconnect:
         logger.info(f"Widget WebSocket connection disconnected normally. Client ID: {client_id}")

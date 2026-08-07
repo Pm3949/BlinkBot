@@ -464,6 +464,29 @@ async def lifespan(app: FastAPI):
     # Start the cron scheduler.
     scheduler.start()
     
+    # Initialize database migrations automatically.
+    try:
+        from database import get_db_cursor_async
+        from fastapi.concurrency import run_in_threadpool
+        import glob
+        
+        # Get all .sql files from db/migrations in sorted order
+        migration_dir = os.path.join(os.path.dirname(__file__), "db", "migrations")
+        sql_files = sorted(glob.glob(os.path.join(migration_dir, "*.sql")))
+        
+        for sql_file in sql_files:
+            try:
+                logger.info(f"Running database migration file: {os.path.basename(sql_file)}")
+                with open(sql_file, "r") as f:
+                    sql_content = f.read()
+                async with get_db_cursor_async(commit=True) as cursor:
+                    await run_in_threadpool(cursor.execute, sql_content)
+            except Exception as file_err:
+                logger.warning(f"Migration file {os.path.basename(sql_file)} skipped or failed: {file_err}")
+        logger.info("All database migrations synchronized.")
+    except Exception as e:
+        logger.error(f"Failed to synchronize database migrations on startup: {e}")
+    
     # Pre-load embedding and reranking models in a background thread.
     try:
         from core.dependencies import warm_up_models_background

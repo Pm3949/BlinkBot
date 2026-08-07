@@ -70,6 +70,7 @@ class ChatMessageCreate(BaseModel):
     role: str # Sender role (e.g. 'user', 'assistant', 'system')
     content: str # Raw text content of the message
     latency: Optional[float] = None # Model response latency in seconds
+    steps: Optional[list] = None # Agent execution steps trace (JSONB)
 
 
 # ==========================================

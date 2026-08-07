@@ -48,8 +48,8 @@ def validate_python_tool_code(code: str) -> None:
             if node.id in FORBIDDEN_BUILTINS:
                 raise ValueError(f"Security Check Failed: Access to '{node.id}' is prohibited.")
         
-        # Check for function decorated with @tool
-        elif isinstance(node, ast.FunctionDef):
+        # Check for function decorated with @tool (supports both sync and async functions)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for decorator in node.decorator_list:
                 if isinstance(decorator, ast.Name) and decorator.id == "tool":
                     has_tool_decorator = True

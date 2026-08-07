@@ -257,17 +257,34 @@ async def get_chat_messages(session_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, role, content, latency, created_at
+            SELECT id, role, content, latency, created_at, steps
             FROM chat_messages
             WHERE session_id = %s
             ORDER BY created_at ASC
             """,
             (session_id,)
         )
-        return await run_in_threadpool(cursor.fetchall)
+        rows = await run_in_threadpool(cursor.fetchall)
+        
+        from utils.data_vault import secure_unpack
+        import json as _json
+        
+        unpacked_rows = []
+        for row in rows:
+            row_id, role, content, latency, created_at, steps = row
+            unpacked_content = secure_unpack(content)
+            unpacked_steps = steps
+            if isinstance(steps, str):
+                try:
+                    unpacked_steps = _json.loads(secure_unpack(steps))
+                except Exception:
+                    pass
+            unpacked_rows.append((row_id, role, unpacked_content, latency, created_at, unpacked_steps))
+            
+        return unpacked_rows
 
 
-async def create_chat_message(session_id: str, role: str, content: str, latency: float):
+async def create_chat_message(session_id: str, role: str, content: str, latency: float, steps=None):
     """
     Creates a new chat message and updates the parent session's update time.
 
@@ -280,39 +297,50 @@ async def create_chat_message(session_id: str, role: str, content: str, latency:
         role (str): The role of the sender (e.g. 'user', 'assistant', 'system').
         content (str): The body text of the message.
         latency (float): The time taken by the LLM (in seconds) to respond.
+        steps (list, optional): The agent execution steps trace to persist.
 
     Returns:
-        tuple: The created message row tuple containing id, role, content, latency, and created_at.
-
-    Side Effects / State Changes:
-        - Inserts a row in the `chat_messages` table.
-        - Modifies a row in the `chat_sessions` table.
-        - Commits both modifications in a single transaction.
-
-    Errors / Exceptions:
-        - May raise database exceptions.
+        tuple: The created message row tuple containing id, role, content, latency, created_at, and steps.
     """
+    import json as _json
+    from utils.data_vault import secure_pack, secure_unpack
+    
+    packed_content = secure_pack(content)
+    steps_json = _json.dumps(steps) if steps else None
+    packed_steps_str = secure_pack(steps_json) if steps_json else None
+    packed_steps = _json.dumps(packed_steps_str) if packed_steps_str else None
+    
     # Open database connection with commit=True.
     async with get_db_cursor_async(commit=True) as cursor:
         # Insert the message record and return values.
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO chat_messages (session_id, role, content, latency)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, role, content, latency, created_at;
+            INSERT INTO chat_messages (session_id, role, content, latency, steps)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, role, content, latency, created_at, steps;
             """,
-            (session_id, role, content, latency)
+            (session_id, role, packed_content, latency, packed_steps)
         )
         # Fetch the returning message record values.
         row = await run_in_threadpool(cursor.fetchone)
         
         # Update the parent session's last activity timestamp to the current UTC time.
-        # This brings the active chat session back to the top of the sidebar.
         await run_in_threadpool(
             cursor.execute,
             "UPDATE chat_sessions SET updated_at = timezone('utc'::text, now()) WHERE id = %s",
             (session_id,)
         )
+        
+        if row:
+            unpacked_content = secure_unpack(row[2])
+            unpacked_steps = row[5]
+            if isinstance(unpacked_steps, str):
+                try:
+                    unpacked_steps = _json.loads(secure_unpack(unpacked_steps))
+                except Exception:
+                    pass
+            return (row[0], row[1], unpacked_content, row[3], row[4], unpacked_steps)
+            
         return row
 

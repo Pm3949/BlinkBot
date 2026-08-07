@@ -18,14 +18,13 @@ export function useChat() {
     return cid;
   }, []);
   
-  // Derive WS base URL from VITE_API_BASE_URL (same strategy as NotificationBell)
-  // This ensures the chat WebSocket connects to the backend, not the frontend host.
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-  const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+  const wsUrl = useMemo(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+    const baseWsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+    return `${baseWsUrl}/ws/chat/${clientId}`;
+  }, [clientId]);
 
-  const wsUrl = `${baseWsUrl}/ws/chat/${clientId}`;
-
-  const { isConnected, agentTextChunks, agentStatus, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -47,27 +46,31 @@ export function useChat() {
       id: "optimistic-assistant",
       role: "assistant",
       content: agentTextChunks || "",
-      status: agentStatus
+      status: agentStatus,
+      steps: agentSteps,
     }];
-  }, [dbMessages, isTyping, agentTextChunks, agentStatus]);
+  }, [dbMessages, isTyping, agentTextChunks, agentStatus, agentSteps]);
 
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {
     const handleStreamEnd = async (e) => {
-       if (isTyping && activeSessionId) {
-          setIsTyping(false);
-          // Use e.detail.content (accumulated via ref in useAgentSocket) — NOT agentTextChunks state
-          // which may be stale due to React's async batching when the event fires
+       setIsTyping(false);
+       if (activeSessionId) {
           const finalContent = e.detail?.content || '';
+          const finalSteps = e.detail?.steps || null;
           if (finalContent) {
-            await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: finalContent, latency: 0 });
+            try {
+              await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: finalContent, latency: 0, steps: finalSteps });
+            } catch (err) {
+              console.error("Database save failed for assistant message:", err);
+            }
           }
           clearTextChunks();
        }
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
-  }, [isTyping, activeSessionId, addMessage, clearTextChunks]);
+  }, [activeSessionId, addMessage, clearTextChunks]);
 
 
   const startNewChat = async ({ agentId, agentName } = {}) => {
@@ -100,9 +103,9 @@ export function useChat() {
        }
     }
 
-    await addMessage.mutateAsync({ sessionId: currentSessionId, role: "user", content: message });
-
     setIsTyping(true);
+
+    await addMessage.mutateAsync({ sessionId: currentSessionId, role: "user", content: message });
     
     const history = dbMessages.map(({ role, content }) => ({ role, content }));
     sendChatRequest({

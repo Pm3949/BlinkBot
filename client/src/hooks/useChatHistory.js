@@ -40,7 +40,12 @@ export function useChatMessages(sessionId) {
     queryKey: ["chat_messages", sessionId],
     queryFn: async () => {
       if (!sessionId) return [];
-      return await getChatMessages(sessionId);
+      const msgs = await getChatMessages(sessionId);
+      // Map steps from DB (already parsed JSON from JSONB column) onto each message
+      return msgs.map(msg => ({
+        ...msg,
+        steps: msg.steps || null
+      }));
     },
     enabled: !!sessionId,
   });
@@ -101,12 +106,13 @@ export function useChatMutations() {
   });
 
   const addMessage = useMutation({
-    mutationFn: async ({ sessionId, role, content, latency }) => {
+    mutationFn: async ({ sessionId, role, content, latency, steps }) => {
       const data = await addChatMessage({
         session_id: sessionId,
         role,
         content,
-        latency: latency || null
+        latency: latency || null,
+        steps: steps || null
       });
         
       return data;

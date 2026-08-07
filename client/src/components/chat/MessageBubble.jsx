@@ -11,8 +11,9 @@ import { getAuthHeaders } from "../../lib/api";
 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import StepsAccordion from "./StepsAccordion";
 
-export default function MessageBubble({ id, role, content, agent, chatLanguage, latency, status, sources }) {
+export default function MessageBubble({ id, role, content, agent, chatLanguage, latency, status, sources, steps }) {
   const isUser = role === "user";
 
   const isWebSource = content?.startsWith("[WEB_SOURCE]");
@@ -181,6 +182,9 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
               <Globe size={12} />
               Answered from Web
             </div>
+          )}
+          {!isUser && steps && steps.length > 0 && (
+            <StepsAccordion steps={steps} isStreaming={!!status || !displayContent} />
           )}
           {status && !displayContent && (
              <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">

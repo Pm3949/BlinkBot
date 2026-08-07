@@ -484,11 +484,13 @@ async def insert_chat_message(msg_id: str, session_id: str, role: str, content: 
     Errors / Exceptions:
         - May raise database exceptions.
     """
+    from utils.data_vault import secure_pack
+    packed_content = secure_pack(content)
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(
             cursor.execute,
             "INSERT INTO chat_messages (id, session_id, role, content) VALUES (%s, %s, %s, %s)",
-            (msg_id, session_id, role, content)
+            (msg_id, session_id, role, packed_content)
         )
 
 
@@ -518,7 +520,14 @@ async def get_session_history(session_id: str, limit: int = 10):
             "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC LIMIT %s",
             (session_id, limit)
         )
-        return await run_in_threadpool(cursor.fetchall)
+        rows = await run_in_threadpool(cursor.fetchall)
+        
+        from utils.data_vault import secure_unpack
+        unpacked_rows = []
+        for role, content in rows:
+            unpacked_rows.append((role, secure_unpack(content)))
+            
+        return unpacked_rows
 
 
 async def delete_agent(agent_id: str):
