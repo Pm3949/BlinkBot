@@ -61,7 +61,7 @@ uvicorn==0.48.0
 
 # --- Payment Gateways ---
 # razorpay: Razorpay client SDK used to create orders and verify checkout signatures in `api/billing.py`.
-razorpay==1.4.1
+razorpay==2.0.1
 
 # --- File Upload Form Handling ---
 # python-multipart: Enables FastAPI to receive multipart form-data (e.g. file uploads in document endpoints).
@@ -111,5 +111,48 @@ fastapi-sso==0.16.0
 
 # --- Embeddings Integration ---
 # langchain-huggingface: Integrates HuggingFace local model embeddings with LangChain workflows.
-langchain-huggingface==0.0.3
+langchain-huggingface==1.2.2
 
+# --- Build Tools (Python 3.14+ venvs no longer bundle pkg_resources) ---
+# setuptools: Provides `pkg_resources`, required by some older packages on Python 3.14+.
+setuptools
+
+# --- Text-to-Speech ---
+# gtts: Google Text-to-Speech library, used in `main.py` to convert text responses to audio.
+gtts
+
+# --- JWT Authentication ---
+# PyJWT: JSON Web Token encoding/decoding for auth token generation and verification.
+PyJWT
+
+# --- Password Hashing ---
+# bcrypt: Secure password hashing algorithm.
+# passlib: Password hashing library that wraps bcrypt and other schemes.
+bcrypt
+passlib
+
+# --- Image Processing ---
+# Pillow: Image processing library (PIL fork), used for image manipulation.
+# pytesseract: OCR wrapper for Tesseract, used to extract text from images.
+Pillow
+pytesseract
+
+# --- Data Analysis ---
+# pandas: DataFrame library used for structured data processing.
+pandas
+
+# --- LangGraph Agent Orchestration ---
+# langgraph: Graph-based agent orchestration framework built on LangChain.
+langgraph
+
+# --- Additional LLM Provider Integrations ---
+# langchain-google-genai: LangChain integration for Google Gemini models.
+# langchain-ollama: LangChain integration for local Ollama models.
+# langchain-anthropic: LangChain integration for Anthropic Claude models.
+langchain-google-genai
+langchain-ollama
+langchain-anthropic
+
+# --- Security Linter ---
+# bandit: Python security linter used in `utils/security.py` to statically analyze user-submitted code.
+bandit

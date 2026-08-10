@@ -302,12 +302,13 @@ def build_multi_agent_graph(
                         and isinstance(m.content, str)
                         and len(m.content) > 2000
                     ):
-                        truncated_msgs.append(
-                            m.__class__(
-                                content=m.content[:2000]
-                                + "\n...[truncated for token limits]"
-                            )
+                        # Preserve all existing fields (e.g. tool_call_id, name on ToolMessage)
+                        # and only override the content to avoid KeyError on required fields.
+                        existing_fields = m.dict()
+                        existing_fields["content"] = (
+                            m.content[:2000] + "\n...[truncated for token limits]"
                         )
+                        truncated_msgs.append(m.__class__(**existing_fields))
                     else:
                         truncated_msgs.append(m)
                 response = None
