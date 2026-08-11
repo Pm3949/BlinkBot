@@ -165,7 +165,12 @@ async def init_ai_models_table():
             -- HuggingFace Models
             ('huggingface', 'meta-llama/Llama-3.3-70B-Instruct', 'Llama 3.3 70B (HF Endpoint)', 'HuggingFace inference endpoint model', TRUE, 'General', FALSE),
             ('huggingface', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'Qwen 2.5 Coder 32B (HF Endpoint)', 'HuggingFace coding inference endpoint model', TRUE, 'Coding', FALSE),
-            ('huggingface', 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', 'DeepSeek R1 Qwen 32B (HF Endpoint)', 'HuggingFace DeepSeek reasoning model endpoint', TRUE, 'Reasoning', FALSE)
+            ('huggingface', 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', 'DeepSeek R1 Qwen 32B (HF Endpoint)', 'HuggingFace DeepSeek reasoning model endpoint', TRUE, 'Reasoning', FALSE),
+
+            -- NVIDIA NIM Models (Paid / API Key)
+            ('nvidia', 'nvidia/llama-3.1-nemotron-70b-instruct', 'Llama 3.1 Nemotron 70B (NVIDIA NIM)', 'NVIDIA Nemotron model optimized for helpfulness & correctness', TRUE, 'General', FALSE),
+            ('nvidia', 'nvidia/llama-3.2-11b-vision-instruct', 'Llama 3.2 11B Vision (NVIDIA NIM)', 'NVIDIA lightweight multimodal vision model', TRUE, 'Fast', FALSE),
+            ('nvidia', 'nvidia/llama-3.3-70b-instruct', 'Llama 3.3 70B (NVIDIA NIM)', 'Meta flagship open model powered by NVIDIA NIM', TRUE, 'General', FALSE)
         ON CONFLICT (model_id) DO NOTHING;
         """
         # Execute seed block.

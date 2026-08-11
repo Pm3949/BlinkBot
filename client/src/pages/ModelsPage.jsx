@@ -91,6 +91,7 @@ export default function ModelsPage() {
     huggingface_api_key: "",
     anthropic_api_key: "",
     gemini_api_key: "",
+    nvidia_api_key: "",
     share_keys: false
   });
 
@@ -100,7 +101,8 @@ export default function ModelsPage() {
     openrouter: false,
     huggingface: false,
     anthropic: false,
-    gemini: false
+    gemini: false,
+    nvidia: false
   });
 
   const toggleShowKey = (provider) => {
@@ -116,6 +118,7 @@ export default function ModelsPage() {
         huggingface_api_key: userSettings.huggingface_api_key || "",
         anthropic_api_key: userSettings.anthropic_api_key || "",
         gemini_api_key: userSettings.gemini_api_key || "",
+        nvidia_api_key: userSettings.nvidia_api_key || "",
         share_keys: userSettings.share_keys || false
       });
     }
@@ -385,7 +388,7 @@ export default function ModelsPage() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Provider Filter Badges */}
             <div className="flex flex-wrap items-center gap-2">
-              {["all", "groq", "openai", "openrouter", "anthropic", "gemini", "huggingface"].map((prov) => (
+              {["all", "groq", "openai", "openrouter", "anthropic", "gemini", "huggingface", "nvidia"].map((prov) => (
                 <button
                   key={prov}
                   onClick={() => setSelectedProvider(prov)}
@@ -953,6 +956,48 @@ export default function ModelsPage() {
                 </button>
               </div>
             </div>
+
+            {/* NVIDIA NIM */}
+            <div className="p-5 rounded-2xl bg-card border border-border/60 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center font-bold text-xs">
+                    NIM
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm">NVIDIA NIM API Key</h4>
+                    <p className="text-xs text-muted-foreground">For Llama 3.1 Nemotron & Llama 3.3</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-xl text-xs"
+                  onClick={() => handleTestKey("nvidia", apiKeys.nvidia_api_key)}
+                  disabled={testingProvider === "nvidia"}
+                >
+                  {testingProvider === "nvidia" ? <Loader2 className="animate-spin" size={14} /> : "Test Key"}
+                </Button>
+              </div>
+
+              <div className="relative flex items-center">
+                <input
+                  type={showKeys.nvidia ? "text" : "password"}
+                  value={apiKeys.nvidia_api_key}
+                  onChange={(e) => setApiKeys((prev) => ({ ...prev, nvidia_api_key: e.target.value }))}
+                  placeholder="nvapi-..."
+                  className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-input bg-background font-mono text-xs focus:ring-2 focus:ring-primary outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleShowKey("nvidia")}
+                  className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
+                  title={showKeys.nvidia ? "Hide API key" : "Show API key"}
+                >
+                  {showKeys.nvidia ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -991,6 +1036,7 @@ export default function ModelsPage() {
                   <option value="huggingface">HuggingFace</option>
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Google Gemini</option>
+                  <option value="nvidia">NVIDIA NIM</option>
                   <option value="custom_openai">Custom OpenAI Server</option>
                 </select>
               </div>
@@ -1175,6 +1221,7 @@ export default function ModelsPage() {
                     <option value="huggingface">HuggingFace</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="gemini">Google Gemini</option>
+                    <option value="nvidia">NVIDIA NIM</option>
                     <option value="custom_openai">Custom OpenAI Server</option>
                   </select>
                 </div>

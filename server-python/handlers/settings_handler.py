@@ -62,6 +62,7 @@ async def handle_get_user_settings(user_id: str):
                 "openrouter_api_key": "",
                 "anthropic_api_key": "",
                 "huggingface_api_key": "",
+                "nvidia_api_key": "",
                 "two_factor_enabled": False,
                 "share_keys": False
             }
@@ -75,8 +76,9 @@ async def handle_get_user_settings(user_id: str):
             "openrouter_api_key": decrypt_key(row[3]) or "",
             "anthropic_api_key": decrypt_key(row[4]) or "",
             "huggingface_api_key": decrypt_key(row[5]) or "",
-            "two_factor_enabled": row[6],
-            "share_keys": row[7] if len(row) > 7 else False
+            "nvidia_api_key": decrypt_key(row[6]) or "",
+            "two_factor_enabled": row[7],
+            "share_keys": row[8] if len(row) > 8 else False
         }
     except Exception as e:
         logger.error(f"Error fetching user settings for user {user_id}: {str(e)}", exc_info=True)
@@ -91,6 +93,7 @@ async def handle_update_user_settings(
     openrouter_api_key: str = None,
     anthropic_api_key: str = None,
     huggingface_api_key: str = None,
+    nvidia_api_key: str = None,
     two_factor_enabled: bool = None,
     share_keys: bool = None
 ):
@@ -105,6 +108,7 @@ async def handle_update_user_settings(
         openrouter_api_key (str, optional): OpenRouter Key override.
         anthropic_api_key (str, optional): Anthropic Key override.
         huggingface_api_key (str, optional): HuggingFace Key override.
+        nvidia_api_key (str, optional): NVIDIA NIM Key override.
         two_factor_enabled (bool, optional): 2FA boolean flag.
         share_keys (bool, optional): Share keys flag.
 
@@ -116,7 +120,7 @@ async def handle_update_user_settings(
     """
     # Log updates with masked key logs
     logger.info(f"Updating credential settings for user ID: {user_id} (share_keys: {share_keys}, 2FA: {two_factor_enabled})")
-    logger.debug(f"Keys updated status: openai={bool(openai_api_key)}, groq={bool(groq_api_key)}, gemini={bool(gemini_api_key)}, openrouter={bool(openrouter_api_key)}, anthropic={bool(anthropic_api_key)}, huggingface={bool(huggingface_api_key)}")
+    logger.debug(f"Keys updated status: openai={bool(openai_api_key)}, groq={bool(groq_api_key)}, gemini={bool(gemini_api_key)}, openrouter={bool(openrouter_api_key)}, anthropic={bool(anthropic_api_key)}, huggingface={bool(huggingface_api_key)}, nvidia={bool(nvidia_api_key)}")
     try:
         # Symmetrically encrypt incoming API keys before database inserts
         openai_key = encrypt_key(openai_api_key) if openai_api_key is not None else None
@@ -125,11 +129,12 @@ async def handle_update_user_settings(
         openrouter_key = encrypt_key(openrouter_api_key) if openrouter_api_key is not None else None
         anthropic_key = encrypt_key(anthropic_api_key) if anthropic_api_key is not None else None
         huggingface_key = encrypt_key(huggingface_api_key) if huggingface_api_key is not None else None
+        nvidia_key = encrypt_key(nvidia_api_key) if nvidia_api_key is not None else None
 
         # Execute upsert statement in database repository
         logger.debug("Executing settings update query in settings_repository...")
         row = await settings_repository.upsert_user_settings(
-            user_id, openai_key, groq_key, gemini_key, openrouter_key, anthropic_key, huggingface_key, two_factor_enabled, share_keys
+            user_id, openai_key, groq_key, gemini_key, openrouter_key, anthropic_key, huggingface_key, nvidia_key, two_factor_enabled, share_keys
         )
         
         logger.info(f"Settings successfully updated in database for user ID: {user_id}")
@@ -140,8 +145,9 @@ async def handle_update_user_settings(
             "openrouter_api_key": decrypt_key(row[3]) or "",
             "anthropic_api_key": decrypt_key(row[4]) or "",
             "huggingface_api_key": decrypt_key(row[5]) or "",
-            "two_factor_enabled": row[6],
-            "share_keys": row[7] if len(row) > 7 else False
+            "nvidia_api_key": decrypt_key(row[6]) or "",
+            "two_factor_enabled": row[7],
+            "share_keys": row[8] if len(row) > 8 else False
         }
     except Exception as e:
         logger.error(f"Error updating user settings for user {user_id}: {str(e)}", exc_info=True)

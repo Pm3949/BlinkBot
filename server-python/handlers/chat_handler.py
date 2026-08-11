@@ -162,6 +162,17 @@ def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] =
         logger.debug(f"Configuring ChatOllama for local Ollama server at: {target_base}")
         return ChatOllama(model=model_name, base_url=target_base, **kwargs)
 
+    # 8. NVIDIA NIM models
+    elif prov == "nvidia":
+        key = api_key or os.getenv("NVIDIA_API_KEY")
+        logger.debug("Configuring ChatOpenAI for NVIDIA NIM...")
+        return ChatOpenAI(
+            model_name=model_name,
+            api_key=key,
+            base_url="https://integrate.api.nvidia.com/v1",
+            **kwargs
+        )
+
     # 8. Default fallback: Groq Serverless Inference
     else:
         key = api_key or os.getenv("GROQ_API_KEY")
@@ -218,7 +229,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
         # Try loading API keys from user settings if no explicit override is passed
         if not api_key and user_keys:
             provider_index_map = {
-                "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5
+                "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5, "nvidia": 6
             }
             idx = provider_index_map.get(provider.lower())
             if idx is not None and user_keys[idx]:
@@ -246,7 +257,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
                     alt_key = None
                     if alt.get("requires_key") and user_keys:
                         provider_index_map = {
-                            "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5
+                            "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5, "nvidia": 6
                         }
                         idx = provider_index_map.get(alt_prov.lower())
                         if idx is not None and user_keys[idx]:

@@ -1,5 +1,6 @@
 import json
 from utils.logger import get_department_logger
+from langchain_core.messages import SystemMessage, HumanMessage
 
 logger = get_department_logger("agent")
 

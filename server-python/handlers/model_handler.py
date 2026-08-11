@@ -282,6 +282,15 @@ async def handle_test_provider_key(provider: str, api_key: str, base_url: str = 
                         return {"status": "connected", "message": "Google Gemini API Key is valid!"}
                     return {"status": "error", "message": f"Gemini authentication failed (HTTP {resp.status})"}
 
+            # 8. NVIDIA NIM Connectivity Check
+            elif provider == "nvidia":
+                url = "https://integrate.api.nvidia.com/v1/models"
+                headers = {"Authorization": f"Bearer {api_key}"}
+                async with session.get(url, headers=headers, timeout=10) as resp:
+                    if resp.status == 200:
+                        return {"status": "connected", "message": "NVIDIA NIM API Key is valid!"}
+                    return {"status": "error", "message": f"NVIDIA NIM authentication failed (HTTP {resp.status})"}
+
             else:
                 return {"status": "connected", "message": f"Provider '{provider}' configured."}
 
@@ -348,7 +357,8 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
                     "gemini": 2,
                     "openrouter": 3,
                     "anthropic": 4,
-                    "huggingface": 5
+                    "huggingface": 5,
+                    "nvidia": 6
                 }
                 idx = provider_index_map.get(provider.lower())
                 if idx is not None and settings[idx]:

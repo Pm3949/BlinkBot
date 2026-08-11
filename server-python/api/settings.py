@@ -51,6 +51,7 @@ class UserSettingsUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     huggingface_api_key: Optional[str] = None
+    nvidia_api_key: Optional[str] = None
     two_factor_enabled: Optional[bool] = None # Optional 2FA preference toggle
     share_keys: Optional[bool] = None # Optional toggle to share keys with workspace members
 
@@ -113,6 +114,7 @@ async def update_user_settings(payload: UserSettingsUpdate, current_user: dict =
         payload.openrouter_api_key,
         payload.anthropic_api_key,
         payload.huggingface_api_key,
+        payload.nvidia_api_key,
         payload.two_factor_enabled,
         payload.share_keys
     )

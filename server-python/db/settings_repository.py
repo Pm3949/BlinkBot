@@ -55,7 +55,7 @@ async def get_user_settings(user_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, two_factor_enabled, share_keys
+            SELECT openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, nvidia_api_key, two_factor_enabled, share_keys
             FROM user_settings
             WHERE user_id = %s
             """,
@@ -72,6 +72,7 @@ async def upsert_user_settings(
     openrouter_key: str = None,
     anthropic_key: str = None,
     huggingface_key: str = None,
+    nvidia_key: str = None,
     two_factor_enabled: bool = None,
     share_keys: bool = None
 ):
@@ -91,6 +92,7 @@ async def upsert_user_settings(
         openrouter_key (str, optional): OpenRouter API key. Defaults to None.
         anthropic_key (str, optional): Anthropic API key. Defaults to None.
         huggingface_key (str, optional): HuggingFace API key. Defaults to None.
+        nvidia_key (str, optional): NVIDIA NIM API key. Defaults to None.
         two_factor_enabled (bool, optional): Toggles 2FA security. Defaults to None.
         share_keys (bool, optional): Toggles key sharing. Defaults to None.
 
@@ -109,8 +111,8 @@ async def upsert_user_settings(
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO user_settings (user_id, openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, two_factor_enabled, share_keys, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            INSERT INTO user_settings (user_id, openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, nvidia_api_key, two_factor_enabled, share_keys, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (user_id) DO UPDATE 
             SET openai_api_key = COALESCE(EXCLUDED.openai_api_key, user_settings.openai_api_key),
                 groq_api_key = COALESCE(EXCLUDED.groq_api_key, user_settings.groq_api_key),
@@ -118,12 +120,13 @@ async def upsert_user_settings(
                 openrouter_api_key = COALESCE(EXCLUDED.openrouter_api_key, user_settings.openrouter_api_key),
                 anthropic_api_key = COALESCE(EXCLUDED.anthropic_api_key, user_settings.anthropic_api_key),
                 huggingface_api_key = COALESCE(EXCLUDED.huggingface_api_key, user_settings.huggingface_api_key),
+                nvidia_api_key = COALESCE(EXCLUDED.nvidia_api_key, user_settings.nvidia_api_key),
                 two_factor_enabled = COALESCE(EXCLUDED.two_factor_enabled, user_settings.two_factor_enabled),
                 share_keys = COALESCE(EXCLUDED.share_keys, user_settings.share_keys),
                 updated_at = now()
-            RETURNING openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, two_factor_enabled, share_keys;
+            RETURNING openai_api_key, groq_api_key, gemini_api_key, openrouter_api_key, anthropic_api_key, huggingface_api_key, nvidia_api_key, two_factor_enabled, share_keys;
             """,
-            (user_id, openai_key, groq_key, gemini_key, openrouter_key, anthropic_key, huggingface_key, two_factor_enabled, share_keys)
+            (user_id, openai_key, groq_key, gemini_key, openrouter_key, anthropic_key, huggingface_key, nvidia_key, two_factor_enabled, share_keys)
         )
         return await run_in_threadpool(cursor.fetchone)
 
@@ -152,8 +155,8 @@ async def get_effective_user_settings(user_id: str):
     # Step 1: Fetch the user's own settings.
     settings = await get_user_settings(user_id)
     # If the user has configured at least one API key, return their settings directly.
-    # We check indices 0 to 5 (the credential slots).
-    if settings and any(settings[i] for i in range(6)):
+    # We check indices 0 to 6 (the credential slots).
+    if settings and any(settings[i] for i in range(7)):
         return settings
         
     # Step 2: Fallback query if no personal keys are configured.
@@ -164,7 +167,7 @@ async def get_effective_user_settings(user_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT s.openai_api_key, s.groq_api_key, s.gemini_api_key, s.openrouter_api_key, s.anthropic_api_key, s.huggingface_api_key, s.two_factor_enabled, s.share_keys
+            SELECT s.openai_api_key, s.groq_api_key, s.gemini_api_key, s.openrouter_api_key, s.anthropic_api_key, s.huggingface_api_key, s.nvidia_api_key, s.two_factor_enabled, s.share_keys
             FROM user_settings s
             JOIN workspaces w ON s.user_id = w.owner_id
             JOIN workspace_members m ON w.id = m.workspace_id
