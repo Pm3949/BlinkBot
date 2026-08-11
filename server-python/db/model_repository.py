@@ -322,7 +322,7 @@ async def create_model(data: dict, user_id: str = None):
             cursor.execute,
             """
             INSERT INTO ai_models (provider, model_id, name, description, requires_key, base_url, category, is_active, user_id, api_key)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)
             RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key;
             """,
             (
