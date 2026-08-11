@@ -43,8 +43,6 @@ import os
 from dotenv import load_dotenv
 from collections import Counter
 
-# Load SentenceTransformer dynamically.
-from sentence_transformers import SentenceTransformer
 # HTML scraping parsing utility.
 from bs4 import BeautifulSoup
 
@@ -83,32 +81,22 @@ class CustomRAGEngine:
         self.reranker_cache = {}
         logger.info("✅ Custom Engine Ready!")
 
-    def _get_model(self, model_name: str) -> SentenceTransformer:
+    def _get_model(self, model_name: str):
         """
-        Retrieves or downloads a SentenceTransformer model.
-
-        Purpose:
-            Implements a singleton-like loader to reuse loaded embedding models.
-
-        Parameters:
-            model_name (str): The HuggingFace name of the model (e.g., 'all-MiniLM-L6-v2').
-
-        Returns:
-            SentenceTransformer: The loaded model instance.
-
-        Side Effects / State Changes:
-            - Downloads model files if missing.
-            - Adds the loaded model to the `models_cache` dictionary.
-
-        Errors / Exceptions:
-            - Raises RuntimeError if model loading fails.
+        Retrieves or downloads a SentenceTransformer model locally.
         """
         # If the model is not in the cache, load it.
         if model_name not in self.models_cache:
-            logger.info("📥 Downloading/Loading embedding model: %s...", model_name)
+            logger.info("📥 Downloading/Loading embedding model locally: %s...", model_name)
             try:
+                # Load SentenceTransformer dynamically to avoid importing it if using cloud APIs.
+                from sentence_transformers import SentenceTransformer
                 # Load the model.
                 self.models_cache[model_name] = SentenceTransformer(model_name)
+            except ImportError as imp_err:
+                raise ImportError(
+                    "sentence_transformers is not installed. Ensure sentence_transformers is in requirements.txt if running locally, or configure HUGGINGFACE_API_KEY to use the cloud API."
+                ) from imp_err
             except Exception as exc:
                 # Raise a critical runtime error if the model fails to load.
                 raise RuntimeError(
@@ -136,6 +124,9 @@ class CustomRAGEngine:
         """
         # If the model is not in the cache, load it.
         if model_name not in self.reranker_cache:
+            if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("CLOUD_MODE", "").lower() == "true":
+                logger.info("☁️ Cloud mode active. Skipping local reranker execution.")
+                return None
             logger.info("📥 Downloading/Loading reranker model: %s...", model_name)
             try:
                 # Import CrossEncoder inside the method to reduce startup import overhead.
@@ -476,6 +467,7 @@ class CustomRAGEngine:
     def vectorize(self, chunks: list, model_name: str = "all-MiniLM-L6-v2") -> list:
         """
         Converts text chunks into dense vector embeddings.
+        Uses Hugging Face Serverless Inference API to prevent OOM errors on cloud hosts like Render.
 
         Parameters:
             chunks (list of str): Input text chunks.
@@ -485,12 +477,43 @@ class CustomRAGEngine:
             list of list of float: Embeddings list.
         """
         logger.info("Generating vectors for %s chunks...", len(chunks))
-        # Retrieve the embedding model.
-        model = self._get_model(model_name)
-        # Generate embeddings and convert them to Python list of floats
-        # so databases like pgvector can process them.
-        embeddings = model.encode(chunks).tolist()
-        return embeddings
+        
+        # Standardize model name for Hugging Face
+        hf_model = model_name
+        if hf_model == "all-MiniLM-L6-v2":
+            hf_model = "sentence-transformers/all-MiniLM-L6-v2"
+            
+        api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{hf_model}"
+        hf_token = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
+        headers = {}
+        if hf_token:
+            headers["Authorization"] = f"Bearer {hf_token}"
+            
+        try:
+            response = requests.post(
+                api_url,
+                headers=headers,
+                json={"inputs": chunks, "options": {"wait_for_model": True}},
+                timeout=30
+            )
+            if response.status_code == 200:
+                embeddings = response.json()
+                # Ensure it is a list of lists of floats (sometimes Hugging Face returns a 1D list if only 1 input is sent)
+                if len(chunks) == 1 and embeddings and not isinstance(embeddings[0], list):
+                    return [embeddings]
+                return embeddings
+            else:
+                logger.warning(f"Hugging Face cloud inference failed with status {response.status_code}: {response.text}. Falling back to local SentenceTransformer.")
+        except Exception as e:
+            logger.error(f"Error querying Hugging Face cloud embedding API: {str(e)}. Falling back to local SentenceTransformer.")
+            
+        # Fallback to local model if API call fails
+        try:
+            model = self._get_model(model_name)
+            embeddings = model.encode(chunks).tolist()
+            return embeddings
+        except Exception as exc:
+            raise RuntimeError(f"Failed to generate embeddings: {exc}") from exc
 
     def hybrid_search(
         self,

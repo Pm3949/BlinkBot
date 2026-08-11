@@ -76,6 +76,11 @@ def warm_up_models_background():
     # Internal target function executed by the background thread.
     def load():
         try:
+            # Skip warming up local models if using cloud inference
+            if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("CLOUD_MODE", "").lower() == "true":
+                logger.info("☁️ Cloud mode detected. Skipping local model preloading to conserve RAM.")
+                return
+
             # Load the sentence transformer model used to create vector embeddings.
             logger.info("Concurrently loading embedding model 'all-MiniLM-L6-v2' in background...")
             rag_engine._get_model('all-MiniLM-L6-v2')

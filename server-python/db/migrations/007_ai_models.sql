@@ -4,15 +4,18 @@
 CREATE TABLE IF NOT EXISTS ai_models (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     provider VARCHAR(50) NOT NULL,
-    model_id VARCHAR(100) NOT NULL UNIQUE,
+    model_id VARCHAR(100) NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
     requires_key BOOLEAN DEFAULT FALSE,
     base_url TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     category VARCHAR(50) DEFAULT 'General',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    user_id UUID
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ai_models_model_id_null_user_idx ON ai_models (model_id) WHERE user_id IS NULL;
 
 -- Seed default models across all major cloud providers
 INSERT INTO ai_models (provider, model_id, name, description, requires_key, category, is_active)
@@ -54,4 +57,4 @@ VALUES
     ('huggingface', 'meta-llama/Llama-3.3-70B-Instruct', 'Llama 3.3 70B (HF Endpoint)', 'HuggingFace inference endpoint model', TRUE, 'General', FALSE),
     ('huggingface', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'Qwen 2.5 Coder 32B (HF Endpoint)', 'HuggingFace coding inference endpoint model', TRUE, 'Coding', FALSE),
     ('huggingface', 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', 'DeepSeek R1 Qwen 32B (HF Endpoint)', 'HuggingFace DeepSeek reasoning model endpoint', TRUE, 'Reasoning', FALSE)
-ON CONFLICT (model_id) DO NOTHING;
+ON CONFLICT (model_id) WHERE user_id IS NULL DO NOTHING;

@@ -124,6 +124,8 @@ async def init_ai_models_table():
         await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES public.users(id) ON DELETE CASCADE;")
         # Drop unique constraints on model_id to allow different users to register the same model_id.
         await run_in_threadpool(cursor.execute, "ALTER TABLE ai_models DROP CONSTRAINT IF EXISTS ai_models_model_id_key;")
+        # Create partial unique index to prevent duplicate system/global models while allowing custom models.
+        await run_in_threadpool(cursor.execute, "CREATE UNIQUE INDEX IF NOT EXISTS ai_models_model_id_null_user_idx ON ai_models (model_id) WHERE user_id IS NULL;")
 
         # --- Seed Data statements ---
         # Lists standard AI models. Custom key models start as inactive (`is_active = FALSE`).
@@ -171,7 +173,7 @@ async def init_ai_models_table():
             ('nvidia', 'nvidia/llama-3.1-nemotron-70b-instruct', 'Llama 3.1 Nemotron 70B (NVIDIA NIM)', 'NVIDIA Nemotron model optimized for helpfulness & correctness', TRUE, 'General', FALSE),
             ('nvidia', 'nvidia/llama-3.2-11b-vision-instruct', 'Llama 3.2 11B Vision (NVIDIA NIM)', 'NVIDIA lightweight multimodal vision model', TRUE, 'Fast', FALSE),
             ('nvidia', 'nvidia/llama-3.3-70b-instruct', 'Llama 3.3 70B (NVIDIA NIM)', 'Meta flagship open model powered by NVIDIA NIM', TRUE, 'General', FALSE)
-        ON CONFLICT (model_id) DO NOTHING;
+        ON CONFLICT (model_id) WHERE user_id IS NULL DO NOTHING;
         """
         # Execute seed block.
         await run_in_threadpool(cursor.execute, seed_sql)
