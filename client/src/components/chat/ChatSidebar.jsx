@@ -12,6 +12,7 @@ import {
 
 import { useProjectSubAgents } from "../../hooks/useAgents";
 import { ChevronRight, ChevronDown, Network } from "lucide-react";
+import Logo from "../shared/Logo";
 
 export default function ChatSidebar({
   standaloneAgents = [],
@@ -96,7 +97,10 @@ export default function ChatSidebar({
   };
   return (
     <div className="w-80 border-r border-border bg-card flex flex-col">
-      <div className="p-5">
+      <div className="p-5 flex flex-col gap-4 border-b border-border">
+        <div className="flex items-center justify-start pl-1">
+          <Logo />
+        </div>
         <button
           type="button"
           onClick={onNewChat}
@@ -118,7 +122,7 @@ export default function ChatSidebar({
         </button>
       </div>
 
-      <div className="border-t border-border px-3 py-4">
+      <div className="px-3 py-4">
         <div className="text-xs uppercase text-muted-foreground px-3 mb-3">
           Agents
         </div>

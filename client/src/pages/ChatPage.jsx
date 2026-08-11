@@ -6,7 +6,7 @@ import ChatSidebar from "../components/chat/ChatSidebar";
 import TracePanel from "../components/chat/TracePanel";
 import ChatComposer from "../components/chat/ChatComposer";
 import MessageBubble from "../components/chat/MessageBubble";
-import { usePrimaryWorkspace } from "../hooks/useSettings";
+import { usePrimaryWorkspace, useUserWorkspaces } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
@@ -19,6 +19,18 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
+  const setActiveWorkspaceId = useUIStore((state) => state.setActiveWorkspaceId);
+  const { data: workspaces = [] } = useUserWorkspaces();
+
+  useEffect(() => {
+    if (workspaces.length > 0) {
+      const exists = workspaces.some((w) => w.id === activeWorkspaceId);
+      if (!activeWorkspaceId || !exists) {
+        setActiveWorkspaceId(workspaces[0].id);
+      }
+    }
+  }, [workspaces, activeWorkspaceId, setActiveWorkspaceId]);
+
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
   const { data: standaloneAgents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);

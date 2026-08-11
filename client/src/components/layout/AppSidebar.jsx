@@ -67,6 +67,7 @@ const groups = [
         label: "Chat",
         icon: MessageSquare,
         path: "/chat",
+        newWindow: true,
       },
       {
         label: "Analytics",
@@ -178,39 +179,44 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
             )}
 
             <div className="space-y-1">
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.label}
-                  to={item.path}
-                  end={item.path === "/"}
-                  onClick={onNavigate}
-                  title={collapsed ? item.label : undefined}
-                  className={({ isActive }) => `
-                    group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-200
-                    focus:outline-none focus:ring-2 focus:ring-primary/30
-                    ${
-                      isActive
-                        ? "bg-primary/10 text-primary shadow-sm"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }
-                    ${collapsed ? "justify-center" : ""}
-                  `}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span
-                        className={`absolute left-0 h-6 w-1 rounded-r-full bg-primary transition-opacity ${
-                          isActive ? "opacity-100" : "opacity-0"
-                        }`}
-                      />
+              {group.items.map((item) => {
+                const isNewWindow = item.newWindow;
+                return (
+                  <NavLink
+                    key={item.label}
+                    to={item.path}
+                    end={item.path === "/"}
+                    onClick={onNavigate}
+                    target={isNewWindow ? "_blank" : undefined}
+                    rel={isNewWindow ? "noopener noreferrer" : undefined}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) => `
+                      group relative flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-200
+                      focus:outline-none focus:ring-2 focus:ring-primary/30
+                      ${
+                        isActive && !isNewWindow
+                          ? "bg-primary/10 text-primary shadow-sm"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }
+                      ${collapsed ? "justify-center" : ""}
+                    `}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          className={`absolute left-0 h-6 w-1 rounded-r-full bg-primary transition-opacity ${
+                            isActive && !isNewWindow ? "opacity-100" : "opacity-0"
+                          }`}
+                        />
 
-                      <item.icon size={18} className="shrink-0" />
+                        <item.icon size={18} className="shrink-0" />
 
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         ))}
