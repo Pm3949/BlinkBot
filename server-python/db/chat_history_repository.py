@@ -205,6 +205,8 @@ async def delete_chat_session(session_id: str):
         - May raise database exceptions.
     """
     async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(cursor.execute, "DELETE FROM langgraph_checkpoints WHERE thread_id = %s::text", (session_id,))
+        await run_in_threadpool(cursor.execute, "DELETE FROM langgraph_writes WHERE thread_id = %s::text", (session_id,))
         await run_in_threadpool(cursor.execute, "DELETE FROM chat_sessions WHERE id = %s", (session_id,))
 
 
@@ -229,6 +231,16 @@ async def clear_agent_chat_history(agent_id: str):
         - May raise database exceptions.
     """
     async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM langgraph_checkpoints WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s);",
+            (agent_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM langgraph_writes WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s);",
+            (agent_id,)
+        )
         await run_in_threadpool(cursor.execute, "DELETE FROM chat_sessions WHERE agent_id = %s", (agent_id,))
 
 

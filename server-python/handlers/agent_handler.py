@@ -87,7 +87,8 @@ async def handle_get_agents(workspace_id: str, include_gateways: bool = False):
                 "endpoints": row[17] if len(row) > 17 else [],               # Custom REST webhook calls registered to agent
                 "code_interpreter_enabled": row[18] if len(row) > 18 else False, # True to allow running python scripts locally
                 "databases": json.loads(decrypt_key(row[19])) if len(row) > 19 and decrypt_key(row[19]) else [],  # Decrypted custom DB connection list
-                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else []  # Decrypted native API keys (Slack, etc.)
+                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else [],  # Decrypted native API keys (Slack, etc.)
+                "memory_enabled": row[21] if len(row) > 21 else True
             })
         
         # Log successful completion and count
@@ -200,20 +201,7 @@ async def handle_update_agent(agent_id: str, payload: dict):
             logger.error(f"Update failed: Agent with ID {agent_id} not found.")
             raise HTTPException(status_code=404, detail="Agent not found")
             
-        # Trigger an in-app workspace notification about the update
-        logger.debug("Triggering agent update dashboard notification...")
-        try:
-            from handlers.notification_handler import create_notification
-            await create_notification(
-                workspace_id=str(row["workspace_id"]),
-                title="Agent Settings Updated",
-                message=f"Settings for agent '{row['name']}' were updated.",
-                notification_type="agent_setting_updated"
-            )
-            logger.info("Agent settings update notification created and broadcast.")
-        except Exception as ne:
-            # We catch notification errors separately so a failure in the notification module doesn't crash the main update transaction
-            logger.error(f"Failed to create settings update notification: {str(ne)}", exc_info=True)
+        # Successfully updated agent, returning the newly saved data
             
         # Log success and return the newly saved data
         logger.info(f"Agent ID {agent_id} successfully updated.")
@@ -238,7 +226,8 @@ async def handle_update_agent(agent_id: str, payload: dict):
             "endpoints": row["endpoints"] if "endpoints" in row else [],
             "code_interpreter_enabled": row.get("code_interpreter_enabled", False),
             "databases": json.loads(decrypt_key(row["databases"])) if row.get("databases") and decrypt_key(row["databases"]) else [],
-            "native_integrations": json.loads(decrypt_key(row["native_integrations"])) if row.get("native_integrations") and decrypt_key(row["native_integrations"]) else []
+            "native_integrations": json.loads(decrypt_key(row["native_integrations"])) if row.get("native_integrations") and decrypt_key(row["native_integrations"]) else [],
+            "memory_enabled": row.get("memory_enabled", True)
         }
     except HTTPException:
         raise
@@ -361,7 +350,8 @@ async def handle_get_project_sub_agents(project_id: str):
                 "endpoints": row[17] if len(row) > 17 else [],
                 "code_interpreter_enabled": row[18] if len(row) > 18 else False,
                 "databases": json.loads(decrypt_key(row[19])) if len(row) > 19 and decrypt_key(row[19]) else [],
-                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else []
+                "native_integrations": json.loads(decrypt_key(row[20])) if len(row) > 20 and decrypt_key(row[20]) else [],
+                "memory_enabled": row[21] if len(row) > 21 else True
             })
             
         # Return parsed list

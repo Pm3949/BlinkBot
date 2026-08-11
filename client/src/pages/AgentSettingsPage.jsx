@@ -419,20 +419,20 @@ export default function AgentSettingsPage() {
   };
 
   const handleClearAllMemory = async () => {
-    if (!window.confirm("Are you sure you want to clear all negative feedback memory for this agent?")) return;
+    if (!window.confirm("Are you sure you want to permanently wipe all conversation history, chat threads, and logs for this agent? This action is irreversible.")) return;
     try {
       const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/memory`, {
         method: "DELETE",
         headers: getAuthHeaders()
       });
       if (res.ok) {
-        toast.success("Agent memory cleared successfully!");
+        toast.success("Agent conversation history wiped successfully!");
         setAgentMemory([]);
       } else {
-        toast.error("Failed to clear agent memory.");
+        toast.error("Failed to wipe agent conversation history.");
       }
     } catch (err) {
-      toast.error("Failed to clear agent memory.");
+      toast.error("Failed to wipe agent conversation history.");
     }
   };
 

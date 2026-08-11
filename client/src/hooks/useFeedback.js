@@ -5,7 +5,7 @@ import { getAuthHeaders } from "../lib/api";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-export function useFeedback() {
+export function useFeedback({ enableOpen = false, enablePending = false } = {}) {
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const queryClient = useQueryClient();
@@ -65,12 +65,12 @@ export function useFeedback() {
     openFeedbackQuery: useQuery({
       queryKey: ["feedback", "open", activeWorkspaceId],
       queryFn: getOpenFeedback,
-      enabled: !!activeWorkspaceId,
+      enabled: !!activeWorkspaceId && enableOpen,
     }),
     pendingVerificationsQuery: useQuery({
       queryKey: ["feedback", "pending", activeWorkspaceId],
       queryFn: getPendingVerification,
-      enabled: !!activeWorkspaceId,
+      enabled: !!activeWorkspaceId && enablePending,
     }),
     submitMutation: useMutation({
       mutationFn: submitFeedback,

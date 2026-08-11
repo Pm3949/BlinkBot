@@ -4,7 +4,7 @@ import { CheckCircle, XCircle } from "lucide-react";
 import { Button } from "../ui/button";
 
 export default function VerificationBanner({ onRetry }) {
-  const { pendingVerificationsQuery, verifyMutation } = useFeedback();
+  const { pendingVerificationsQuery, verifyMutation } = useFeedback({ enablePending: true });
   const { data: tickets = [] } = pendingVerificationsQuery;
   const [unsatisfiedTicketId, setUnsatisfiedTicketId] = useState(null);
   const [expandedTicketId, setExpandedTicketId] = useState(null);

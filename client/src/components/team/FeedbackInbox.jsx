@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 
 export default function FeedbackInbox() {
-  const { openFeedbackQuery, resolveMutation } = useFeedback();
+  const { openFeedbackQuery, resolveMutation } = useFeedback({ enableOpen: true });
   const { data: tickets = [], isLoading } = openFeedbackQuery;
   const [filter, setFilter] = useState("All");
 

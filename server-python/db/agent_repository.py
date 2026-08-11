@@ -244,7 +244,7 @@ async def update_agent(agent_id: str, payload: dict):
         values.append(agent_id)
         
         # Build the dynamic SQL query string.
-        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, parent_agent_id;"
+        query = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, created_at, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, parent_agent_id, memory_enabled;"
         
         # Execute the dynamic update query in a thread pool.
         await run_in_threadpool(cursor.execute, query, tuple(values))
@@ -501,6 +501,28 @@ async def delete_agent_project(project_id: str):
             (project_id,)
         )
         
+        # Delete langgraph checkpoints & writes.
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            DELETE FROM langgraph_checkpoints
+            WHERE thread_id IN (
+                SELECT id::text FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
+            )
+            """,
+            (project_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            DELETE FROM langgraph_writes
+            WHERE thread_id IN (
+                SELECT id::text FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)
+            )
+            """,
+            (project_id,)
+        )
+
         # Step 4: Delete the chat sessions themselves.
         await run_in_threadpool(cursor.execute, "DELETE FROM chat_sessions WHERE agent_id IN (SELECT id FROM agents WHERE project_id = %s)", (project_id,))
         # Step 5: Delete all agent configurations belonging to the project.

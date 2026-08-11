@@ -25,7 +25,6 @@ import { NavLink } from "react-router-dom";
 import { toast } from "sonner";
 import Logo from "../shared/Logo";
 import { useUIStore } from "../../store/useUIStore";
-import { useFeedback } from "../../hooks/useFeedback";
 import {
   Select,
   SelectContent,
@@ -113,11 +112,7 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
   const { data: workspaces = [], isLoading } = useUserWorkspaces();
-  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
   const { isOwner, isAdmin, canManageStudio, canManageModels } = useWorkspacePermissions();
-  
-  const { pendingVerificationsQuery } = useFeedback();
-  const pendingCount = pendingVerificationsQuery?.data?.length || 0;
 
   useEffect(() => {
     if (workspaces.length > 0) {
@@ -212,12 +207,6 @@ export default function AppSidebar({ onNavigate, forceExpanded = false }) {
                       <item.icon size={18} className="shrink-0" />
 
                       {!collapsed && <span className="truncate">{item.label}</span>}
-                      
-                      {item.path === "/chat" && pendingCount > 0 && (
-                        <div className={`flex items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground shadow-sm animate-in zoom-in ${collapsed ? "absolute top-1 right-1 h-3 w-3" : "ml-auto h-5 min-w-5 px-1.5"}`}>
-                          {!collapsed && pendingCount}
-                        </div>
-                      )}
                     </>
                   )}
                 </NavLink>

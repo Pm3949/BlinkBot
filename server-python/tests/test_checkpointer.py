@@ -160,22 +160,22 @@ async def run_tests():
         checkpoint_bytes = saver._serialize(checkpoint_1)
         metadata_bytes = saver._serialize(metadata_1)
         
-        # Insert checkpoint backdated by 15 days
+        # Insert checkpoint backdated by 4 days
         await run_in_threadpool(
             cursor.execute,
             """
             INSERT INTO langgraph_checkpoints (thread_id, checkpoint_id, checkpoint, metadata, created_at)
-            VALUES (%s, %s, %s, %s, NOW() - INTERVAL '15 days')
+            VALUES (%s, %s, %s, %s, NOW() - INTERVAL '4 days')
             """,
             (old_thread_id, old_checkpoint_id, checkpoint_bytes, metadata_bytes)
         )
         
-        # Insert write backdated by 15 days
+        # Insert write backdated by 4 days
         await run_in_threadpool(
             cursor.execute,
             """
             INSERT INTO langgraph_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, value, created_at)
-            VALUES (%s, 'test_ns', %s, 'task_old', 0, 'output', %s, NOW() - INTERVAL '15 days')
+            VALUES (%s, 'test_ns', %s, 'task_old', 0, 'output', %s, NOW() - INTERVAL '4 days')
             """,
             (old_thread_id, old_checkpoint_id, checkpoint_bytes)
         )
@@ -194,11 +194,11 @@ async def run_tests():
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "DELETE FROM langgraph_writes WHERE created_at < NOW() - INTERVAL '14 days'"
+            "DELETE FROM langgraph_writes WHERE created_at < NOW() - INTERVAL '3 days'"
         )
         await run_in_threadpool(
             cursor.execute,
-            "DELETE FROM langgraph_checkpoints WHERE created_at < NOW() - INTERVAL '14 days'"
+            "DELETE FROM langgraph_checkpoints WHERE created_at < NOW() - INTERVAL '3 days'"
         )
         
     # Verify the backdated data is gone

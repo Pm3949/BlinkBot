@@ -598,6 +598,21 @@ async def delete_agent(agent_id: str):
             )
             # Wipes document metadata.
             await run_in_threadpool(cursor.execute, "DELETE FROM documents WHERE agent_id = %s", (aid,))
+            # Wipes langgraph checkpoints & writes.
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                DELETE FROM langgraph_checkpoints
+                WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s)
+                """, (aid,)
+            )
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                DELETE FROM langgraph_writes
+                WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s)
+                """, (aid,)
+            )
             # Wipes chat message logs.
             await run_in_threadpool(
                 cursor.execute,
@@ -654,6 +669,16 @@ async def clear_agent_conversation_history(agent_id: str):
     Deletes all chat messages and sessions associated with the agent to clear conversation memory.
     """
     async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM langgraph_checkpoints WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s);",
+            (agent_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            "DELETE FROM langgraph_writes WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s);",
+            (agent_id,)
+        )
         await run_in_threadpool(
             cursor.execute,
             "DELETE FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE agent_id = %s);",
