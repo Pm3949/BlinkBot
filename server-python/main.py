@@ -242,7 +242,6 @@ class LoggingContextMiddleware(BaseHTTPMiddleware):
 
 
 # Register middlewares in reverse order of execution.
-app.add_middleware(PublicCORSMiddleware)
 app.add_middleware(LoggingContextMiddleware)
 
 app.add_middleware(
@@ -253,6 +252,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(PublicCORSMiddleware)
 
 
 # ==========================================
