@@ -3,13 +3,16 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAgentProjects, useProjectSubAgents, useUpdateAgent, useDeleteAgent } from '../hooks/useAgents';
 import { useSandboxChat } from '../hooks/useSandboxChat';
 import { useUIStore } from '../store/useUIStore';
-import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2, MessagesSquare } from 'lucide-react';
+import { ArrowLeft, Settings, Database, Bot, Activity, Plus, Trash2, MessagesSquare, Wrench, FileText, X, Loader2 } from 'lucide-react';
 import CreateAgentWizard from '../components/agents/CreateAgentWizard';
 import StudioSandboxChat from '../components/chat/StudioSandboxChat';
 import TracePanel from '../components/chat/TracePanel';
 import { Switch } from '../components/ui/switch';
 import { Button } from '../components/ui/button';
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Handle, Position } from '@xyflow/react';
+import { getAgentAttachedTools, getWorkspaceTools, attachToolToAgent, detachToolFromAgent } from '../services/workspaceToolsService';
+import { getDocuments } from '../services/documentService';
+import { useUploadDocument } from '../hooks/useDocuments';
 
 const MasterNode = ({ data }) => (
   <>
@@ -35,9 +38,66 @@ const AgentNode = ({ data }) => {
   );
 };
 
+const ToolNode = ({ data }) => (
+  <>
+    <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-amber-500 border-2 border-background" />
+    <div className="relative rounded-xl bg-card border border-amber-500/30 p-2.5 shadow-md flex items-center gap-2 max-w-[200px]">
+      <div className="h-7 w-7 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+        <Wrench size={14} />
+      </div>
+      <div className="overflow-hidden">
+        <div className="text-[12px] font-semibold text-foreground truncate" title={data.name}>{data.name}</div>
+        <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Tool</div>
+      </div>
+    </div>
+  </>
+);
+
+const KBNode = ({ data }) => (
+  <>
+    <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-teal-500 border-2 border-background" />
+    <div 
+      onClick={data.onClick}
+      className={`relative rounded-xl bg-card border transition-all duration-300 p-2.5 shadow-md flex items-center justify-between gap-3 min-w-[220px] cursor-pointer hover:border-teal-500/60 ${data.isExpanded ? 'ring-2 ring-teal-500/40 border-teal-500' : 'border-teal-500/30'}`}
+    >
+      <div className="flex items-center gap-2 overflow-hidden">
+        <div className="h-7 w-7 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-500 shrink-0">
+          <Database size={14} />
+        </div>
+        <div className="overflow-hidden">
+          <div className="text-[12px] font-semibold text-foreground truncate">Knowledge Base</div>
+          <div className="text-[10px] text-muted-foreground font-medium">{data.docCount} {data.docCount === 1 ? 'doc' : 'docs'}</div>
+        </div>
+      </div>
+      <div className="text-[10px] text-teal-500 font-semibold px-2 py-0.5 bg-teal-500/10 rounded-full shrink-0">
+        {data.isExpanded ? 'Hide' : 'Show Docs'}
+      </div>
+    </div>
+    <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-teal-500 border-2 border-background" />
+  </>
+);
+
+const DocNode = ({ data }) => (
+  <>
+    <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-sky-500 border-2 border-background" />
+    <div className="relative rounded-xl bg-card border border-sky-500/20 p-2 shadow-sm flex items-center gap-2 max-w-[180px]">
+      <div className="h-6 w-6 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-500 shrink-0">
+        <FileText size={12} />
+      </div>
+      <div className="overflow-hidden">
+        <div className="text-[10px] font-semibold text-foreground truncate" title={data.name}>{data.name}</div>
+        <div className="text-[9px] text-muted-foreground truncate">{data.status}</div>
+      </div>
+    </div>
+  </>
+);
+
 const nodeTypes = {
   masterNode: MasterNode,
   agentNode: AgentNode,
+  toolNode: ToolNode,
+  kbNode: KBNode,
+  docNode: DocNode,
 };
 import dagre from 'dagre';
 import '@xyflow/react/dist/style.css';
@@ -60,8 +120,19 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   dagreGraph.setGraph({ rankdir: direction });
 
   nodes.forEach((node) => {
-    // node dimensions are approximately 260x140
-    dagreGraph.setNode(node.id, { width: 320, height: 160 });
+    let width = 320;
+    let height = 160;
+    if (node.type === 'toolNode') {
+      width = 200;
+      height = 60;
+    } else if (node.type === 'kbNode') {
+      width = 220;
+      height = 60;
+    } else if (node.type === 'docNode') {
+      width = 180;
+      height = 50;
+    }
+    dagreGraph.setNode(node.id, { width, height });
   });
 
   edges.forEach((edge) => {
@@ -77,10 +148,22 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
     newNode.targetPosition = isHorizontal ? 'left' : 'top';
     newNode.sourcePosition = isHorizontal ? 'right' : 'bottom';
 
-    // Shift node to top-left to align properly
+    let width = 320;
+    let height = 160;
+    if (node.type === 'toolNode') {
+      width = 200;
+      height = 60;
+    } else if (node.type === 'kbNode') {
+      width = 220;
+      height = 60;
+    } else if (node.type === 'docNode') {
+      width = 180;
+      height = 50;
+    }
+
     newNode.position = {
-      x: nodeWithPosition.x - 320 / 2,
-      y: nodeWithPosition.y - 160 / 2,
+      x: nodeWithPosition.x - width / 2,
+      y: nodeWithPosition.y - height / 2,
     };
 
     return newNode;
@@ -106,6 +189,47 @@ export default function ProjectDetailsPage() {
   const [activeRoutingAgentId, setActiveRoutingAgentId] = useState(null);
   const [chatLanguage, setChatLanguage] = useState("en");
 
+  const [agentsTools, setAgentsTools] = useState({});
+  const [agentsDocs, setAgentsDocs] = useState({});
+  const [expandedKbs, setExpandedKbs] = useState(new Set());
+  const [loadingExtras, setLoadingExtras] = useState(false);
+
+  // Layout orientation TB (Vertical) or LR (Horizontal)
+  const [layoutDirection, setLayoutDirection] = useState('TB');
+
+  // Interactive Node Selection
+  const [selectedNode, setSelectedNode] = useState(null);
+
+  // Loading state when attaching/detaching tools
+  const [updatingToolId, setUpdatingToolId] = useState(null);
+
+  // Dynamic Highlight Execution States
+  const [activeExecutingTools, setActiveExecutingTools] = useState(new Set());
+
+  // Workspace tools list for quick attach drawer
+  const [allWorkspaceTools, setAllWorkspaceTools] = useState([]);
+
+  // File Upload states
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = React.useRef(null);
+  const uploadDocMutation = useUploadDocument(selectedNode?.id);
+
+  // Document view preview state
+  const [previewContent, setPreviewContent] = useState('');
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  const toggleKb = useCallback((agentId) => {
+    setExpandedKbs((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+      }
+      return next;
+    });
+  }, []);
+
   const {
     messages,
     loading,
@@ -130,6 +254,64 @@ export default function ProjectDetailsPage() {
       window.removeEventListener('agent_stream_end', handleStreamEnd);
     };
   }, []);
+
+  // Listen for socket events to animate executing tools & RAG searches
+  useEffect(() => {
+    const handleToolStart = (e) => {
+      const toolName = e.detail.tool_name;
+      setActiveExecutingTools(prev => {
+        const next = new Set(prev);
+        next.add(toolName.toLowerCase().replace(/_/g, '').replace(/\s/g, ''));
+        return next;
+      });
+    };
+    const handleToolEnd = (e) => {
+      const toolName = e.detail.tool_name;
+      setActiveExecutingTools(prev => {
+        const next = new Set(prev);
+        next.delete(toolName.toLowerCase().replace(/_/g, '').replace(/\s/g, ''));
+        return next;
+      });
+    };
+
+    window.addEventListener('agent_tool_start', handleToolStart);
+    window.addEventListener('agent_tool_end', handleToolEnd);
+    return () => {
+      window.removeEventListener('agent_tool_start', handleToolStart);
+      window.removeEventListener('agent_tool_end', handleToolEnd);
+    };
+  }, []);
+
+  // Fetch all workspace tools
+  useEffect(() => {
+    if (activeWorkspaceId) {
+      getWorkspaceTools(activeWorkspaceId)
+        .then(setAllWorkspaceTools)
+        .catch(err => console.error("Failed to load workspace tools:", err));
+    }
+  }, [activeWorkspaceId]);
+
+  // Fetch document preview contents when document node is selected
+  useEffect(() => {
+    if (selectedNode?.type === 'doc') {
+      setLoadingPreview(true);
+      setPreviewContent('');
+      const token = localStorage.getItem("access_token");
+      fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}/api/documents/${selectedNode.rawItem.id}/view`, {
+        headers: token ? { "Authorization": `Bearer ${token}` } : {}
+      })
+      .then(r => r.text())
+      .then(t => {
+        setPreviewContent(t);
+      })
+      .catch(() => {
+        setPreviewContent("Failed to load document text contents.");
+      })
+      .finally(() => {
+        setLoadingPreview(false);
+      });
+    }
+  }, [selectedNode]);
 
   const handleAddAgent = (parentId = null) => {
     setAddingParentId(parentId);
@@ -170,6 +352,40 @@ export default function ProjectDetailsPage() {
       toast.error("Failed to update agent status");
     }
   };
+
+  useEffect(() => {
+    if (!subAgents.length) return;
+    const loadExtras = async () => {
+      setLoadingExtras(true);
+      try {
+        const toolsMap = {};
+        const docsMap = {};
+        await Promise.all(
+          subAgents.map(async (agent) => {
+            try {
+              const [tools, docs] = await Promise.all([
+                getAgentAttachedTools(agent.id),
+                getDocuments(agent.id),
+              ]);
+              toolsMap[agent.id] = tools;
+              docsMap[agent.id] = docs;
+            } catch (err) {
+              console.error(`Failed to load extras for agent ${agent.id}:`, err);
+              toolsMap[agent.id] = [];
+              docsMap[agent.id] = [];
+            }
+          })
+        );
+        setAgentsTools(toolsMap);
+        setAgentsDocs(docsMap);
+      } catch (err) {
+        console.error("Failed to load agents extra details:", err);
+      } finally {
+        setLoadingExtras(false);
+      }
+    };
+    loadExtras();
+  }, [subAgents]);
 
   const createInitialNodes = () => {
     if (!subAgents.length) return [];
@@ -262,6 +478,54 @@ export default function ProjectDetailsPage() {
           )
         },
       });
+
+      // Add attached tools as nodes
+      const tools = agentsTools[agent.id] || [];
+      tools.forEach((tool) => {
+        const normalizedToolName = tool.name.toLowerCase().replace(/_/g, '').replace(/\s/g, '');
+        const isExecuting = activeExecutingTools.has(normalizedToolName);
+        
+        nodes.push({
+          id: `tool:${agent.id}:${tool.id}`,
+          type: 'toolNode',
+          position: { x: 0, y: 0 },
+          data: {
+            name: tool.name,
+            isExecuting,
+          }
+        });
+      });
+
+      // Add Knowledge Base node if agent has documents
+      const docs = agentsDocs[agent.id] || [];
+      const isKbExecuting = activeExecutingTools.has('searchknowledgebase');
+      if (docs.length > 0) {
+        nodes.push({
+          id: `kb:${agent.id}`,
+          type: 'kbNode',
+          position: { x: 0, y: 0 },
+          data: {
+            docCount: docs.length,
+            isExpanded: expandedKbs.has(agent.id),
+            isExecuting: isKbExecuting && (activeRoutingAgentId === agent.id),
+            onClick: () => toggleKb(agent.id),
+          }
+        });
+
+        if (expandedKbs.has(agent.id)) {
+          docs.forEach((doc) => {
+            nodes.push({
+              id: `doc:${agent.id}:${doc.id}`,
+              type: 'docNode',
+              position: { x: 0, y: 0 },
+              data: {
+                name: doc.filename,
+                status: doc.status || 'completed',
+              }
+            });
+          });
+        }
+      }
     });
 
     return nodes;
@@ -301,6 +565,46 @@ export default function ProjectDetailsPage() {
         };
       });
 
+    // Add edges for tools and KBs
+    subAgents.forEach((agent) => {
+      const tools = agentsTools[agent.id] || [];
+      tools.forEach((tool) => {
+        dynamicEdges.push({
+          id: `e-tool-${agent.id}-${tool.id}`,
+          source: agent.id,
+          target: `tool:${agent.id}:${tool.id}`,
+          type: 'smoothstep',
+          animated: false,
+          style: { stroke: '#f59e0b', strokeWidth: 1.5, strokeDasharray: '5,5' }
+        });
+      });
+
+      const docs = agentsDocs[agent.id] || [];
+      if (docs.length > 0) {
+        dynamicEdges.push({
+          id: `e-kb-${agent.id}`,
+          source: agent.id,
+          target: `kb:${agent.id}`,
+          type: 'smoothstep',
+          animated: false,
+          style: { stroke: '#14b8a6', strokeWidth: 1.5, strokeDasharray: '5,5' }
+        });
+
+        if (expandedKbs.has(agent.id)) {
+          docs.forEach((doc) => {
+            dynamicEdges.push({
+              id: `e-doc-${agent.id}-${doc.id}`,
+              source: `kb:${agent.id}`,
+              target: `doc:${agent.id}:${doc.id}`,
+              type: 'smoothstep',
+              animated: false,
+              style: { stroke: '#0ea5e9', strokeWidth: 1 }
+            });
+          });
+        }
+      }
+    });
+
     return dynamicEdges;
   };
 
@@ -315,10 +619,76 @@ export default function ProjectDetailsPage() {
     }
     const rawNodes = createInitialNodes();
     const rawEdges = createInitialEdges();
-    const layout = getLayoutedElements(rawNodes, rawEdges, 'TB');
+    const layout = getLayoutedElements(rawNodes, rawEdges, layoutDirection);
     setNodes(layout.nodes);
     setEdges(layout.edges);
-  }, [subAgents, activeRoutingAgentId, updateAgentMutation.isPending]);
+  }, [subAgents, activeRoutingAgentId, updateAgentMutation.isPending, agentsTools, agentsDocs, expandedKbs, layoutDirection]);
+
+  // Handle single node click to open details/actions drawer
+  const onNodeClick = useCallback((event, node) => {
+    if (node.type === 'agentNode' || node.type === 'masterNode') {
+      const agent = subAgents.find(a => a.id === node.id);
+      if (agent && (agent.name === 'Network Manager' || agent.name === 'General Assistant')) {
+        setSelectedNode(null);
+        return;
+      }
+      setSelectedNode({ type: 'agent', id: node.id, rawItem: agent });
+    } else {
+      setSelectedNode(null);
+    }
+  }, [subAgents]);
+
+  // Handle quick tool toggling in Agent Drawer
+  const handleToggleToolInDrawer = async (toolId, isCurrentlyAttached) => {
+    if (!selectedNode || selectedNode.type !== 'agent' || updatingToolId) return;
+    setUpdatingToolId(toolId);
+    try {
+      if (isCurrentlyAttached) {
+        await detachToolFromAgent(selectedNode.id, toolId);
+        setAgentsTools(prev => ({
+          ...prev,
+          [selectedNode.id]: (prev[selectedNode.id] || []).filter(t => t.id !== toolId)
+        }));
+        toast.success("Tool detached successfully");
+      } else {
+        await attachToolToAgent(selectedNode.id, toolId);
+        const newlyAttachedTool = allWorkspaceTools.find(t => t.id === toolId);
+        setAgentsTools(prev => ({
+          ...prev,
+          [selectedNode.id]: [...(prev[selectedNode.id] || []), newlyAttachedTool]
+        }));
+        toast.success("Tool attached successfully");
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to update tool connection");
+    } finally {
+      setUpdatingToolId(null);
+    }
+  };
+
+  // Handle document uploads from details drawer dropzone
+  const handleFileUpload = async (files) => {
+    if (!selectedNode || selectedNode.type !== 'agent') return;
+    const fileList = Array.from(files);
+    if (!fileList.length) return;
+    
+    toast.loading("Uploading and indexing documents...", { id: "graph-upload" });
+    try {
+      const promises = fileList.map(file => 
+        uploadDocMutation.mutateAsync({ agentId: selectedNode.id, file })
+      );
+      await Promise.all(promises);
+      toast.success(`${fileList.length} file(s) uploaded successfully!`, { id: "graph-upload" });
+      
+      const updatedDocs = await getDocuments(selectedNode.id);
+      setAgentsDocs(prev => ({
+        ...prev,
+        [selectedNode.id]: updatedDocs
+      }));
+    } catch (err) {
+      toast.error(err.message || "Failed to upload document", { id: "graph-upload" });
+    }
+  };
 
   const onConnect = useCallback(
     async (params) => {
@@ -397,6 +767,24 @@ export default function ProjectDetailsPage() {
 
       <div className="flex-1 relative flex overflow-hidden">
         <div className="flex-1 relative h-[calc(100vh-140px)]">
+          {/* Floating Controls for Layout and Testing */}
+          <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-card/85 backdrop-blur border border-border/50 rounded-xl p-1.5 shadow-lg">
+            <button
+              onClick={() => setLayoutDirection('TB')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${layoutDirection === 'TB' ? 'bg-indigo-600 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              title="Vertical Flow"
+            >
+              Vertical
+            </button>
+            <button
+              onClick={() => setLayoutDirection('LR')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${layoutDirection === 'LR' ? 'bg-indigo-600 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              title="Horizontal Flow"
+            >
+              Horizontal
+            </button>
+          </div>
+
           {!isSandboxOpen && (
             <button
               onClick={() => setIsSandboxOpen(true)}
@@ -415,6 +803,7 @@ export default function ProjectDetailsPage() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onEdgesDelete={onEdgesDelete}
+              onNodeClick={onNodeClick}
               nodeTypes={nodeTypes}
               fitView
               attributionPosition="bottom-right"
@@ -474,6 +863,175 @@ export default function ProjectDetailsPage() {
             }} />
           </>
         )}
+
+        {/* Info & Config Slide-over Drawer */}
+        {selectedNode && (
+          <div className="absolute top-0 right-0 h-full w-[400px] bg-card/95 backdrop-blur-md border-l border-border/50 shadow-2xl z-40 animate-in slide-in-from-right duration-300 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-border/50 bg-background/50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 border border-indigo-500/20">
+                  <Bot size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground leading-tight">Agent Configuration</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">Manage behavior and connections</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedNode(null)}
+                className="p-2 hover:bg-muted text-muted-foreground hover:text-foreground rounded-xl transition-all"
+                title="Close drawer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+              {selectedNode.type === 'agent' && (
+                <>
+                  {/* Premium Agent Profile Card */}
+                  <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-primary/5 via-transparent to-transparent p-5">
+                    <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-primary/10 blur-xl pointer-events-none" />
+                    
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/20 shrink-0">
+                        <Bot size={26} />
+                      </div>
+                      <div className="overflow-hidden">
+                        <h4 className="text-base font-bold text-foreground truncate">{selectedNode.rawItem?.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 text-[10px] font-bold uppercase tracking-wider">
+                            {selectedNode.rawItem?.llm_provider}
+                          </span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                          <span className="text-[11px] text-muted-foreground font-medium">Active Node</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedNode.rawItem?.description && (
+                      <p className="mt-4 text-xs text-muted-foreground leading-relaxed bg-background/40 rounded-xl p-3 border border-border/20">
+                        {selectedNode.rawItem.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Model specifications Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-muted/30 border border-border/30 rounded-xl p-3 space-y-1">
+                      <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">LLM Model</div>
+                      <div className="text-xs font-mono text-foreground truncate" title={selectedNode.rawItem?.llm_model}>
+                        {selectedNode.rawItem?.llm_model}
+                      </div>
+                    </div>
+                    <div className="bg-muted/30 border border-border/30 rounded-xl p-3 space-y-1">
+                      <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">Embedding</div>
+                      <div className="text-xs font-mono text-foreground truncate" title={selectedNode.rawItem?.embedding_model || 'all-MiniLM-L6-v2'}>
+                        {selectedNode.rawItem?.embedding_model || 'all-MiniLM-L6-v2'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Connected Tools Checklist */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                        <Wrench size={16} className="text-amber-500" /> Quick Attached Tools
+                      </h4>
+                      <span className="text-[10px] text-amber-500 font-bold px-2 py-0.5 bg-amber-500/10 rounded-full">
+                        {(agentsTools[selectedNode.id] || []).length} active
+                      </span>
+                    </div>
+                    <div className="border border-border/40 bg-background/50 rounded-2xl p-3 max-h-56 overflow-y-auto space-y-2 scrollbar-thin">
+                      {allWorkspaceTools.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-6">No workspace tools configured.</p>
+                      ) : (
+                        allWorkspaceTools.map((t) => {
+                          const isAttached = (agentsTools[selectedNode.id] || []).some(attached => attached.id === t.id);
+                          const isUpdating = updatingToolId === t.id;
+                          return (
+                            <div 
+                              key={t.id}
+                              onClick={() => {
+                                if (updatingToolId) return;
+                                handleToggleToolInDrawer(t.id, isAttached);
+                              }}
+                              className={`flex items-center justify-between p-3 rounded-xl transition-all duration-300 border ${
+                                isUpdating
+                                  ? 'opacity-65 cursor-not-allowed border-amber-500/20 bg-amber-500/5'
+                                  : updatingToolId
+                                    ? 'opacity-50 cursor-not-allowed border-border/30'
+                                    : isAttached 
+                                      ? 'border-amber-500/40 bg-amber-500/5 shadow-sm shadow-amber-500/5 cursor-pointer' 
+                                      : 'border-border/30 hover:border-border/60 hover:bg-muted/40 cursor-pointer'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 overflow-hidden">
+                                <Wrench size={14} className={isAttached ? 'text-amber-500' : 'text-foreground/60'} />
+                                <span className={`truncate max-w-[260px] text-sm font-semibold ${isAttached ? 'text-foreground font-bold' : 'text-foreground/80 font-medium'}`} title={t.name}>
+                                  {t.name}
+                                </span>
+                              </div>
+                              <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                                isAttached 
+                                  ? 'bg-amber-500 border-transparent text-white shadow-sm' 
+                                  : 'border-border/60 bg-background'
+                              }`}>
+                                {isUpdating ? (
+                                  <Loader2 size={10} className="animate-spin text-amber-500" />
+                                ) : isAttached ? (
+                                  <span className="text-[11px] font-bold">✓</span>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Document upload drop zone */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      <Database size={16} className="text-indigo-500" /> Vector Documents Ingestion
+                    </h4>
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                      onDragLeave={() => setIsDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragOver(false);
+                        handleFileUpload(e.dataTransfer.files);
+                      }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all duration-300 ${
+                        isDragOver 
+                          ? 'border-indigo-500 bg-indigo-500/5 shadow-lg shadow-indigo-500/10 scale-[0.99]' 
+                          : 'border-border/60 hover:border-indigo-500/50 hover:bg-muted/30'
+                      }`}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        multiple 
+                        onChange={(e) => handleFileUpload(e.target.files)} 
+                      />
+                      <div className="h-10 w-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-500 mx-auto mb-3 border border-indigo-500/20">
+                        <Database size={20} />
+                      </div>
+                      <p className="text-xs font-bold text-foreground">Drag & drop files here</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">Supports PDF, TXT, CSV (click to browse)</p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
 
 

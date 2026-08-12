@@ -65,6 +65,13 @@ export const useAgentSocket = (url) => {
             setAgentTextChunks((prev) => prev + data.content);
             setAgentStatus('');
           } else if (data.type === 'step') {
+            if (data.status.startsWith('tool_call_')) {
+              const toolName = data.status.replace('tool_call_', '');
+              window.dispatchEvent(new CustomEvent('agent_tool_start', { detail: { tool_name: toolName } }));
+            } else if (data.status.startsWith('tool_done_')) {
+              const toolName = data.status.replace('tool_done_', '');
+              window.dispatchEvent(new CustomEvent('agent_tool_end', { detail: { tool_name: toolName } }));
+            }
             // Upsert: update label if same status already exists, otherwise append
             setAgentSteps(prev => {
               const exists = prev.find(s => s.status === data.status);
