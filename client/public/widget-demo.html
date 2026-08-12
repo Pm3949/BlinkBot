@@ -8,8 +8,9 @@
   <!-- Modern Typography (Inter) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  
+  <!-- Marked library for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <style>
     :root {
       --primary: #4f46e5;
@@ -367,7 +368,7 @@
       40% { transform: scale(1.0); }
     }
 
-    /* Simple markdown-like styling inside widget chat */
+    /* Complete markdown-like styling inside widget chat */
     .message.bot p {
       margin-bottom: 8px;
     }
@@ -381,12 +382,61 @@
       margin-left: 20px;
       margin-bottom: 8px;
     }
+    .message.bot ul {
+      list-style-type: disc;
+    }
+    .message.bot ol {
+      list-style-type: decimal;
+    }
+    .message.bot li {
+      margin-bottom: 4px;
+    }
+    .message.bot h1, .message.bot h2, .message.bot h3, .message.bot h4, .message.bot h5, .message.bot h6 {
+      margin: 12px 0 6px 0;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .message.bot h1 { font-size: 1.3rem; }
+    .message.bot h2 { font-size: 1.2rem; }
+    .message.bot h3 { font-size: 1.1rem; }
+    .message.bot h4 { font-size: 1rem; }
+    .message.bot pre {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
     .message.bot code {
       background: rgba(0, 0, 0, 0.3);
       padding: 2px 4px;
       border-radius: 4px;
       font-family: monospace;
       font-size: 0.85em;
+    }
+    .message.bot pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+    }
+    .message.bot blockquote {
+      border-left: 4px solid #cbd5e1;
+      padding-left: 12px;
+      margin: 8px 0;
+      color: #94a3b8;
+    }
+    .message.bot table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+    }
+    .message.bot th, .message.bot td {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .message.bot th {
+      background: rgba(0, 0, 0, 0.2);
     }
   </style>
 </head>
@@ -489,18 +539,31 @@
       }
     }
 
-    // Basic markdown helper for widget replies
+    // Complete markdown helper for widget replies
     function formatMessage(text) {
-      // Escape HTML tags to prevent XSS
+      if (window.marked && typeof window.marked.parse === 'function') {
+        let safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return window.marked.parse(safeText);
+      }
+
+      // Robust fallback regex parser
       let safeText = text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
 
-      // bold **text**
-      safeText = safeText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      // inline code `code`
+      // Code blocks (```lang ... ```)
+      safeText = safeText.replace(/```(?:[a-zA-Z0-9]+)?\n([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+      // Inline code `code`
       safeText = safeText.replace(/`(.*?)`/g, '<code>$1</code>');
+      // Bold **text**
+      safeText = safeText.replace(/\*\*(.*?)\*\"/g, '<strong>$1</strong>');
+      // Headers
+      safeText = safeText.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+      safeText = safeText.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+      safeText = safeText.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+      // Blockquotes
+      safeText = safeText.replace(/^&gt; (.*?)$/gm, '<blockquote>$1</blockquote>');
       
       // lists (- item or * item)
       const lines = safeText.split("\n");
