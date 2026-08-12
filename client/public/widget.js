@@ -24,6 +24,18 @@
     fontFamily: 'system-ui'
   };
 
+  const isUrl = (str) => {
+    if (!str) return false;
+    return str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/');
+  };
+
+  const getAvatarHTML = (avatarStr, size = "24px") => {
+    if (isUrl(avatarStr)) {
+      return `<img src="${avatarStr}" style="width: ${size}; height: ${size}; border-radius: 50%; object-fit: cover; display: block;" alt="Avatar" />`;
+    }
+    return `<span style="font-size: ${size};">${avatarStr || '🤖'}</span>`;
+  };
+
   let chatHistory = [];
   let isOpen = false;
   let currentLanguage = 'en';
@@ -379,7 +391,7 @@
     bubble.id = 'blinkbot-bubble';
     bubble.style.backgroundColor = botSettings.themeColor;
     bubble.className = botSettings.position;
-    bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? `<span style="font-size: 24px;">${botSettings.avatar}</span>` : `
+    bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? getAvatarHTML(botSettings.avatar, "28px") : `
       <svg viewBox="0 0 24 24">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
       </svg>
@@ -394,8 +406,8 @@
     windowDiv.innerHTML = `
       <div class="rm-header" style="background-color: ${botSettings.themeColor}">
         <div style="display: flex; gap: 12px; align-items: center;">
-          <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 16px;">
-            ${botSettings.avatar || '🤖'}
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            ${getAvatarHTML(botSettings.avatar, "32px")}
           </div>
           <div>
             <h4>${botSettings.name}</h4>
