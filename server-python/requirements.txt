@@ -94,8 +94,8 @@ qrcode==8.2
 slowapi
 
 # --- Web Search Tool ---
-# duckduckgo-search: Executed by agents to query search engine index pages for external research.
-duckduckgo-search
+# ddgs: Executed by agents to query search engine index pages for external research.
+ddgs
 
 # --- Database ORM ---
 # SQLAlchemy: SQL toolkit and Object Relational Mapper for PostgreSQL queries.
@@ -156,3 +156,8 @@ langchain-anthropic
 # --- Security Linter ---
 # bandit: Python security linter used in `utils/security.py` to statically analyze user-submitted code.
 bandit
+
+# --- Wikipedia Research Tool ---
+# wikipedia: Used by agents to search Wikipedia pages for encyclopedic information.
+wikipedia
+

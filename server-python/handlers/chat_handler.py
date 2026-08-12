@@ -606,7 +606,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
 
 
     async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory, session_id):
-        config = {"configurable": {"thread_id": session_id}}
+        config = {
+            "configurable": {"thread_id": session_id},
+            "recursion_limit": 15
+        }
         current_inputs = inputs
         
         while True:
@@ -662,17 +665,23 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     async with get_db_cursor_async(commit=True) as cursor:
                                         await run_in_threadpool(
                                             cursor.execute,
-                                            """
-                                            INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
-                                            VALUES (%s, %s, %s, %s, %s, %s)
-                                            """,
-                                            (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
+                                            "SELECT 1 FROM auth.users WHERE id = %s",
+                                            (user_id,)
                                         )
+                                        user_exists = await run_in_threadpool(cursor.fetchone)
+                                        if user_exists:
+                                            await run_in_threadpool(
+                                                cursor.execute,
+                                                """
+                                                INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                                                VALUES (%s, %s, %s, %s, %s, %s)
+                                                """,
+                                                (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
+                                            )
+                                        else:
+                                            logger.warning(f"Skipping token log: User {user_id} not found in DB.")
                                 except Exception as db_err:
-                                    if "foreign key" in str(db_err).lower() or "violates foreign key constraint" in str(db_err).lower():
-                                        logger.warning("Skipping token log: Test user not found in DB.")
-                                    else:
-                                        logger.error(f"Failed to log token usage: {db_err}")
+                                    logger.error(f"Failed to log token usage: {db_err}")
                     
                 elif kind == "on_tool_start":
                     t_name = event["name"]
@@ -794,7 +803,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 if session_ctx:
                     graph = session_ctx["graph"]
                     session_id = session_ctx["session_id"]
-                    config = {"configurable": {"thread_id": session_id}}
+                    config = {
+                        "configurable": {"thread_id": session_id},
+                        "recursion_limit": 15
+                    }
                     
                     if decision == "reject":
                         from langchain_core.messages import ToolMessage
@@ -1186,6 +1198,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     from langchain_community.tools import DuckDuckGoSearchRun
                                     t_list.append(DuckDuckGoSearchRun())
                                 elif tool_key in ["wikipedia", "langgraph_wikipedia"]:
+                                    import wikipedia
+                                    wikipedia.set_user_agent("RAGMateBot/1.0 (contact@blinkbot.in)")
                                     from langchain_community.tools import WikipediaQueryRun
                                     from langchain_community.utilities import WikipediaAPIWrapper
                                     t_list.append(WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper()))
