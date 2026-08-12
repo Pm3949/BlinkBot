@@ -77,8 +77,9 @@ async def handle_get_analytics(user_id: str):
         # 4. Fetch recent logs/questions feed (real-time stream of what users are asking)
         logger.debug("Retrieving recent logs/questions feed...")
         q_rows = await analytics_repository.get_analytics_recent_questions(user_id)
-        # Convert datetime parameters to string formatting
-        recent_questions = [{"content": r[0], "created_at": str(r[1]), "agent_name": r[2]} for r in q_rows]
+        # Convert datetime parameters to string formatting and decrypt encrypted question content
+        from utils.data_vault import secure_unpack
+        recent_questions = [{"content": secure_unpack(r[0]), "created_at": str(r[1]), "agent_name": r[2]} for r in q_rows]
 
         # 5. Fetch feedback statistics (useful to measure satisfaction levels and upvote/downvote ratio)
         logger.debug("Retrieving customer feedback satisfaction metrics...")

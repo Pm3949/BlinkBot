@@ -195,10 +195,8 @@
         min-height: 380px;
         max-height: calc(100vh - 140px);
         max-width: calc(100vw - 60px);
-        background: rgba(255, 255, 255, 0.55);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.4);
+        background: #ffffff !important;
+        border: 1px solid rgba(226, 232, 240, 0.8);
         border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '24px' : '16px'};
         box-shadow: 0 20px 50px rgba(0,0,0,0.18);
         display: flex;
@@ -342,18 +340,17 @@
       }
       .rm-msg.bot {
         align-self: flex-start;
-        background: rgba(255, 255, 255, 0.75);
-        backdrop-filter: blur(4px);
-        color: #1e293b;
+        background: #f1f5f9 !important;
+        color: #1e293b !important;
         border-bottom-left-radius: 3px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
       }
 
       .rm-footer { background: transparent; flex-shrink: 0; }
       .rm-input-area {
         padding: 12px 16px;
-        background: rgba(255, 255, 255, 0.55);
-        border-top: 1px solid rgba(255, 255, 255, 0.3);
+        background: #f8fafc !important;
+        border-top: 1px solid #e2e8f0 !important;
         display: flex;
         gap: 8px;
         align-items: center;
@@ -362,12 +359,17 @@
         flex: 1;
         min-width: 0;
         border: 1.5px solid rgba(203, 213, 225, 0.8);
-        background: rgba(255,255,255,0.7);
+        background: #ffffff !important;
+        color: #1f2937 !important;
         border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '9999px' : '10px'};
         padding: 10px 14px;
         font-size: 0.9rem;
         outline: none;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .rm-input::placeholder {
+        color: #94a3b8 !important;
+        opacity: 1 !important;
       }
       .rm-input:focus {
         border-color: var(--blinkbot-accent, #4f46e5);
