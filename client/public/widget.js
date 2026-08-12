@@ -8,54 +8,26 @@
     return;
   }
 
-  // Configurations with local development fallbacks[cite: 1]
+  // Configurations with local development fallbacks
   const apiUrl = scriptTag.getAttribute('data-api-url');
-  const supabaseUrl = scriptTag.getAttribute('data-supabase-url');
-  const supabaseKey = scriptTag.getAttribute('data-supabase-key');
-
-  // Default Chatbot styling settings[cite: 1]
+  
+  // Default Chatbot styling settings
   let botSettings = {
     name: 'BlinkBot Assistant',
-    themeColor: '#4f46e5',
+    themeColor: '#4f46e5', // Matches the purple in your screenshot
     welcomeMessage: 'Hi there! How can I help you today?',
     position: 'bottom-right',
-    avatar: '🤖',
+    avatar: 'https://blinkbot.in/icon.png', // Updated default to your logo
     borderRadius: 'rounded',
     fontFamily: 'system-ui'
-  };
-
-  const isUrl = (str) => {
-    if (!str) return false;
-    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) return true;
-    if (str.includes('.') && (str.endsWith('.png') || str.endsWith('.jpg') || str.endsWith('.jpeg') || str.endsWith('.svg') || str.endsWith('.gif') || str.includes('/'))) return true;
-    return false;
-  };
-
-  const getImageUrl = (str) => {
-    if (!str) return "";
-    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) return str;
-    return 'https://' + str;
-  };
-
-  const getAvatarHTML = (avatarStr, size = "24px") => {
-    if (isUrl(avatarStr)) {
-      return `<img src="${getImageUrl(avatarStr)}" style="width: ${size}; height: ${size}; border-radius: 50%; object-fit: cover; display: block;" alt="Avatar" />`;
-    }
-    return `<span style="font-size: ${size};">${avatarStr || '🤖'}</span>`;
   };
 
   let chatHistory = [];
   let isOpen = false;
   let currentLanguage = 'en';
-  let isInitializing = true; // Added to track loading state
+  let isInitializing = true;
 
-  const LANGUAGES = [
-    { id: "en", name: "EN" }, { id: "es", name: "ES" }, { id: "fr", name: "FR" },
-    { id: "de", name: "DE" }, { id: "hi", name: "HI" }, { id: "zh-CN", name: "ZH" },
-    { id: "ja", name: "JA" }, { id: "ko", name: "KO" },
-  ];
-
-  // 2. Fetch Chatbot Config from API[cite: 1]
+  // 2. Fetch Chatbot Config from API
   async function fetchConfig() {
     try {
       const response = await fetch(`${apiUrl}/api/chatbots/${chatbotId}`, { cache: 'no-store' });
@@ -70,10 +42,6 @@
           if (parsedSettings) {
             botSettings.themeColor = parsedSettings.themeColor || botSettings.themeColor;
             botSettings.welcomeMessage = parsedSettings.welcomeMessage || botSettings.welcomeMessage;
-            botSettings.position = parsedSettings.position || botSettings.position;
-            botSettings.avatar = parsedSettings.avatar || botSettings.avatar;
-            botSettings.borderRadius = parsedSettings.borderRadius || botSettings.borderRadius;
-            botSettings.fontFamily = parsedSettings.fontFamily || botSettings.fontFamily;
           }
         }
       }
@@ -82,47 +50,37 @@
     }
   }
 
-  // 3. Inject CSS styles dynamically with improved UI[cite: 1]
+  // 3. Inject CSS styles dynamically to match the screenshot UI
   function injectStyles() {
     const styleEl = document.createElement('style');
     styleEl.innerHTML = `
       #blinkbot-bubble {
         position: fixed;
         bottom: 30px;
-        width: 64px;
-        height: 64px;
-        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '20px' : '50%'};
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
         color: white;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         z-index: 2147483640;
-        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
       #blinkbot-bubble:hover {
-        transform: scale(1.1) translateY(-5px);
-        box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.2);
       }
       #blinkbot-bubble.bottom-right { right: 30px; }
       #blinkbot-bubble.bottom-left { left: 30px; }
-      #blinkbot-bubble svg {
-        width: 32px;
-        height: 32px;
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
       
-      /* Initial Loader CSS */
       .rm-loader-spinner {
-        width: 28px;
-        height: 28px;
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-top: 4px solid white;
+        width: 24px;
+        height: 24px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-top: 3px solid white;
         border-radius: 50%;
         animation: rm-spin 1s linear infinite;
       }
@@ -131,28 +89,25 @@
       #blinkbot-window {
         position: fixed;
         bottom: 105px;
-        width: 400px;
+        width: 380px;
         height: 600px;
-        min-width: 320px;
-        min-height: 450px;
+        min-width: 300px;
+        min-height: 400px;
         max-height: calc(100vh - 140px);
         max-width: calc(100vw - 60px);
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '24px' : '16px'};
-        box-shadow: 0 16px 40px rgba(0,0,0,0.2);
+        background: #ffffff; /* Solid white background matching screenshot */
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.15);
         display: none;
         flex-direction: column;
-        overflow: hidden; /* Keeps child elements inside */
-        resize: both; /* Makes window resizable */
+        overflow: hidden;
+        resize: both;
         z-index: 2147483641;
         font-family: ${botSettings.fontFamily === 'system-ui' ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' : botSettings.fontFamily + ', sans-serif'};
-        animation: rm-fade-in 0.3s ease-out;
+        animation: rm-fade-in 0.2s ease-out;
       }
       @keyframes rm-fade-in {
-        from { opacity: 0; transform: translateY(15px); }
+        from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
       }
       #blinkbot-window.bottom-right { right: 30px; }
@@ -161,74 +116,66 @@
       
       .rm-header {
         color: white;
-        padding: 18px 24px;
+        padding: 16px 20px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        background: linear-gradient(135deg, ${botSettings.themeColor}, #333);
+        background: linear-gradient(135deg, #5b549e, #3a3668); /* Dark purple gradient matching screenshot */
         flex-shrink: 0;
       }
-      .rm-header h4 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.5px; }
-      .rm-header p { margin: 4px 0 0 0; font-size: 0.8rem; opacity: 0.9; }
+      .rm-header h4 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+      .rm-header p { margin: 2px 0 0 0; font-size: 0.75rem; opacity: 0.9; }
       
-      .rm-close { background: none; border: none; color: white; font-size: 1.8rem; cursor: pointer; opacity: 0.8; padding: 0; line-height: 1; transition: opacity 0.2s;}
+      .rm-close { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; opacity: 0.8; padding: 0; line-height: 1; }
       .rm-close:hover { opacity: 1; }
       
       .rm-messages {
         flex: 1;
         overflow-y: auto;
-        padding: 24px;
+        padding: 20px;
         display: flex;
         flex-direction: column;
         gap: 16px;
-        background: transparent;
+        background: #ffffff;
       }
-      /* Custom Scrollbar for UI polish */
-      .rm-messages::-webkit-scrollbar { width: 6px; }
-      .rm-messages::-webkit-scrollbar-track { background: transparent; }
-      .rm-messages::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
       
       .rm-msg {
         max-width: 85%;
         padding: 12px 16px;
-        border-radius: ${botSettings.borderRadius === 'square' ? '0' : '14px'};
+        border-radius: 12px;
         font-size: 0.95rem;
         line-height: 1.5;
         word-wrap: break-word;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
       }
       .rm-msg.user { align-self: flex-end; color: white; border-bottom-right-radius: 4px; }
-      .rm-msg.bot { align-self: flex-start; background: #f1f5f9; color: #1e293b; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; }
+      .rm-msg.bot { align-self: flex-start; background: #f3f4f6; color: #1f2937; border-bottom-left-radius: 4px; }
       
-      .rm-input-wrapper { background: white; padding: 16px; border-top: 1px solid #e2e8f0; flex-shrink: 0; }
+      .rm-input-wrapper { background: #ffffff; padding: 16px; flex-shrink: 0; }
       .rm-input-area {
-        display: flex; gap: 10px; align-items: center; background: #f8fafc;
-        border: 1px solid #e2e8f0; border-radius: 999px; padding: 6px 12px;
-        transition: border-color 0.2s;
+        display: flex; gap: 8px; align-items: center; background: #ffffff;
+        border: 1.5px solid ${botSettings.themeColor}; /* Purple border from screenshot */
+        border-radius: 9999px; /* Pill shape */
+        padding: 6px 6px 6px 16px;
       }
-      .rm-input-area:focus-within { border-color: ${botSettings.themeColor}; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-      .rm-input { flex: 1; border: none; background: transparent; padding: 8px; font-size: 0.95rem; outline: none; color: #334155; }
+      .rm-input { flex: 1; border: none; background: transparent; padding: 6px 0; font-size: 0.95rem; outline: none; color: #1f2937; }
       
       .rm-send {
-        border: none; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s, background-color 0.2s;
+        border: none; color: white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s;
       }
-      .rm-send:hover { transform: scale(1.05); filter: brightness(1.1); }
-      .rm-send svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; }
+      .rm-send:hover { transform: scale(1.05); }
+      .rm-send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; margin-left: -2px;}
       
-      .rm-brand { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 10px; font-weight: 500;}
+      .rm-brand { text-align: center; font-size: 10px; color: #9ca3af; margin-top: 8px; }
       
-      .rm-typing { display: flex; gap: 5px; align-items: center; padding: 8px; }
-      .rm-dot { width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; animation: rm-bounce 1.4s infinite ease-in-out both; }
+      .rm-typing { display: flex; gap: 4px; align-items: center; padding: 4px; }
+      .rm-dot { width: 5px; height: 5px; background: #9ca3af; border-radius: 50%; animation: rm-bounce 1.4s infinite ease-in-out both; }
       .rm-dot:nth-child(1) { animation-delay: -0.32s; } .rm-dot:nth-child(2) { animation-delay: -0.16s; }
       @keyframes rm-bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
-      
-      /* Add resize handle styling space (prevents text overlap over native resize handle) */
-      #blinkbot-window::after { content: ''; position: absolute; bottom: 0; right: 0; width: 15px; height: 15px; pointer-events: none; }
     `;
     document.head.appendChild(styleEl);
   }
 
-  // 4. Create and inject HTML elements[cite: 1]
+  // 4. Create and inject HTML elements
   function injectHTML() {
     // Bubble Trigger (Starts with Loader)
     const bubble = document.createElement('div');
@@ -239,15 +186,16 @@
     bubble.onclick = toggleChat;
     document.body.appendChild(bubble);
 
-    // Chat Window[cite: 1]
+    // Chat Window
     const windowDiv = document.createElement('div');
     windowDiv.id = 'blinkbot-window';
     windowDiv.className = `${botSettings.position}`;
     windowDiv.innerHTML = `
       <div class="rm-header">
-        <div style="display: flex; gap: 14px; align-items: center;">
-          <div style="width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
-            ${getAvatarHTML(botSettings.avatar, "38px")}
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <!-- Strict 1:1 square configuration for the brand logo -->
+          <div style="width: 38px; height: 38px; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: transparent;">
+            <img src="https://blinkbot.in/icon.png" style="width: 100%; height: 100%; object-fit: contain; aspect-ratio: 1/1;" alt="BlinkBot Logo" />
           </div>
           <div>
             <h4>${botSettings.name}</h4>
@@ -274,7 +222,6 @@
 
     document.body.appendChild(windowDiv);
 
-    // Add event listeners[cite: 1]
     document.getElementById('blinkbot-close-btn').onclick = toggleChat;
     document.getElementById('blinkbot-send-btn').onclick = handleSend;
     document.getElementById('blinkbot-input').onkeypress = function (e) {
@@ -282,18 +229,16 @@
     };
   }
 
-  // Update bubble after init finishes
   function finishLoading() {
     const bubble = document.getElementById('blinkbot-bubble');
     if (bubble) {
-        bubble.innerHTML = botSettings.avatar && botSettings.avatar !== "🤖" ? getAvatarHTML(botSettings.avatar, "32px") : `
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`;
+      bubble.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>`;
     }
     isInitializing = false;
   }
 
   function toggleChat() {
-    if(isInitializing) return; // Prevent opening while loading
+    if(isInitializing) return; 
     isOpen = !isOpen;
     const windowEl = document.getElementById('blinkbot-window');
     if (isOpen) {
@@ -304,7 +249,6 @@
     }
   }
 
-  // Basic formatting helper[cite: 1]
   function formatText(text) {
     if (window.marked && typeof window.marked.parse === 'function') {
       let clean = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -340,7 +284,6 @@
     inputEl.value = '';
     const messagesEl = document.getElementById('blinkbot-messages');
 
-    // 1. Append User Message[cite: 1]
     const userMsg = document.createElement('div');
     userMsg.className = 'rm-msg user';
     userMsg.style.backgroundColor = botSettings.themeColor;
@@ -348,7 +291,6 @@
     messagesEl.appendChild(userMsg);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    // 2. Append Typing/Bot container[cite: 1]
     const botMsg = document.createElement('div');
     botMsg.className = 'rm-msg bot';
     const typing = document.createElement('div');
@@ -393,7 +335,6 @@
     }
   }
 
-  // Load marked library dynamically[cite: 1]
   function loadMarked() {
     return new Promise((resolve) => {
       if (window.marked) { resolve(); return; }
@@ -405,13 +346,12 @@
     });
   }
 
-  // Initialization lifecycle[cite: 1]
   async function init() {
     injectStyles();
-    injectHTML(); // Inject UI early to show loader
+    injectHTML(); 
     await fetchConfig();
     await loadMarked();
-    finishLoading(); // Remove loader and show avatar
+    finishLoading(); 
   }
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
