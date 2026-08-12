@@ -26,12 +26,26 @@
 
   const isUrl = (str) => {
     if (!str) return false;
-    return str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/');
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) {
+      return true;
+    }
+    if (str.includes('.') && (str.endsWith('.png') || str.endsWith('.jpg') || str.endsWith('.jpeg') || str.endsWith('.svg') || str.endsWith('.gif') || str.includes('/'))) {
+      return true;
+    }
+    return false;
+  };
+
+  const getImageUrl = (str) => {
+    if (!str) return "";
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) {
+      return str;
+    }
+    return 'https://' + str;
   };
 
   const getAvatarHTML = (avatarStr, size = "24px") => {
     if (isUrl(avatarStr)) {
-      return `<img src="${avatarStr}" style="width: ${size}; height: ${size}; border-radius: 50%; object-fit: cover; display: block;" alt="Avatar" />`;
+      return `<img src="${getImageUrl(avatarStr)}" style="width: ${size}; height: ${size}; border-radius: 50%; object-fit: cover; display: block;" alt="Avatar" />`;
     }
     return `<span style="font-size: ${size};">${avatarStr || '🤖'}</span>`;
   };

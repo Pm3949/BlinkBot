@@ -119,6 +119,32 @@ export default function ChatbotWidget() {
   -H "x-api-key: ${apiKey || "YOUR_API_KEY"}" \\
   -d '{"message": "Hello!"}'`;
 
+  const isUrl = (str) => {
+    if (!str) return false;
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) {
+      return true;
+    }
+    if (str.includes('.') && (str.endsWith('.png') || str.endsWith('.jpg') || str.endsWith('.jpeg') || str.endsWith('.svg') || str.endsWith('.gif') || str.includes('/'))) {
+      return true;
+    }
+    return false;
+  };
+
+  const getImageUrl = (str) => {
+    if (!str) return "";
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('data:image/')) {
+      return str;
+    }
+    return 'https://' + str;
+  };
+
+  const renderAvatar = (avatarStr, sizeClass = "h-8 w-8") => {
+    if (isUrl(avatarStr)) {
+      return <img src={getImageUrl(avatarStr)} className={`${sizeClass} rounded-full object-cover`} alt="Avatar" />;
+    }
+    return <span>{avatarStr || "🤖"}</span>;
+  };
+
   const copyToClipboard = (text, setter) => {
     navigator.clipboard.writeText(text);
     setter(true);
@@ -220,15 +246,15 @@ export default function ChatbotWidget() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Avatar Emoji</label>
+                  <label className="text-sm font-medium">Avatar (Emoji or Logo URL)</label>
                   <input
                     type="text"
-                    maxLength="2"
                     value={settings.avatar || "🤖"}
                     onChange={(e) => setSettings({ ...settings, avatar: e.target.value })}
-                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-center text-xl focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder="e.g. 🤖 or https://example.com/logo.png"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                 </div>
                 
@@ -415,8 +441,8 @@ export default function ChatbotWidget() {
                   style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-sm">
-                      {settings.avatar || "🤖"}
+                    <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
+                      {renderAvatar(settings.avatar, "h-8 w-8")}
                     </div>
                     <span>{name || "Chatbot"}</span>
                   </div>
@@ -460,15 +486,14 @@ export default function ChatbotWidget() {
                 </div>
               </div>
 
-              {/* Launcher Button */}
               <div
-                className={`h-14 w-14 shadow-lg flex items-center justify-center text-white cursor-pointer hover:scale-105 transition-transform text-2xl ${
+                className={`h-14 w-14 shadow-lg flex items-center justify-center text-white cursor-pointer hover:scale-105 transition-transform overflow-hidden ${
                   settings.borderRadius === 'square' ? 'rounded-none' : 
                   settings.borderRadius === 'pill' ? 'rounded-[20px]' : 'rounded-full'
                 }`}
                 style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
               >
-                {settings.avatar && settings.avatar !== "🤖" ? settings.avatar : (
+                {settings.avatar && settings.avatar !== "🤖" ? renderAvatar(settings.avatar, "h-14 w-14 text-2xl") : (
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                 )}
               </div>
