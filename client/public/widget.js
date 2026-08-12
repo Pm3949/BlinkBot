@@ -300,6 +300,74 @@
         border-radius: 4px;
       }
       .rm-tts:hover { color: #64748b; background: rgba(0,0,0,0.05); }
+
+      /* Markdown Rendering styles */
+      .rm-msg.bot ul, .rm-msg.bot ol {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      .rm-msg.bot ul {
+        list-style-type: disc;
+      }
+      .rm-msg.bot ol {
+        list-style-type: decimal;
+      }
+      .rm-msg.bot li {
+        margin-bottom: 4px;
+      }
+      .rm-msg.bot p {
+        margin: 0 0 8px 0;
+      }
+      .rm-msg.bot p:last-child {
+        margin-bottom: 0;
+      }
+      .rm-msg.bot h1, .rm-msg.bot h2, .rm-msg.bot h3, .rm-msg.bot h4, .rm-msg.bot h5, .rm-msg.bot h6 {
+        margin: 12px 0 6px 0;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+      .rm-msg.bot h1 { font-size: 1.3rem; }
+      .rm-msg.bot h2 { font-size: 1.2rem; }
+      .rm-msg.bot h3 { font-size: 1.1rem; }
+      .rm-msg.bot h4 { font-size: 1rem; }
+      .rm-msg.bot pre {
+        background: rgba(0,0,0,0.05);
+        padding: 8px 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 8px 0;
+      }
+      .rm-msg.bot code {
+        font-family: monospace;
+        font-size: 0.85em;
+        background: rgba(0,0,0,0.05);
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      .rm-msg.bot pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      .rm-msg.bot blockquote {
+        border-left: 4px solid #cbd5e1;
+        padding-left: 12px;
+        margin: 8px 0;
+        color: #64748b;
+      }
+      .rm-msg.bot table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 8px 0;
+      }
+      .rm-msg.bot th, .rm-msg.bot td {
+        border: 1px solid #cbd5e1;
+        padding: 6px 10px;
+        text-align: left;
+      }
+      .rm-msg.bot th {
+        background: rgba(0,0,0,0.05);
+      }
     `;
     document.head.appendChild(styleEl);
   }
@@ -342,7 +410,7 @@
         </div>
       </div>
       <div class="rm-messages" id="blinkbot-messages">
-        <div class="rm-msg bot">${botSettings.welcomeMessage}</div>
+        <div class="rm-msg bot">${formatText(botSettings.welcomeMessage)}</div>
       </div>
       <div style="background: transparent;">
         <div class="rm-input-area">
@@ -445,8 +513,12 @@
     }
   }
 
-  // Basic formatting helper (bold, code, simple line breaks)
+  // Basic formatting helper (bold, code, simple line breaks) falling back if marked is not ready
   function formatText(text) {
+    if (window.marked && typeof window.marked.parse === 'function') {
+      let clean = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return window.marked.parse(clean);
+    }
     let clean = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     clean = clean.replace(/`(.*?)`/g, '<code>$1</code>');
@@ -623,9 +695,28 @@
     }
   }
 
+  // Load marked library dynamically
+  function loadMarked() {
+    return new Promise((resolve) => {
+      if (window.marked) {
+        resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+      script.onload = () => resolve();
+      script.onerror = () => {
+        console.warn('BlinkBot Widget: Failed to load marked library, falling back to basic parsing.');
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
+  }
+
   // Initialization lifecycle
   async function init() {
     await fetchConfig();
+    await loadMarked();
     injectStyles();
     injectHTML();
   }

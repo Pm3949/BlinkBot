@@ -1086,8 +1086,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         formatted_prompt += (
                             f"{mem_patch}\n\nCRITICAL GROUNDING RULES:\n"
                             f"1. Use the appropriate tool (e.g. search_knowledge_base, search_web, SQL/database tools, custom APIs) to gather facts before answering.\n"
-                            f"2. Base your response strictly on the tool output. If the search returns no results, politely inform the user.\n"
-                            f"3. Do NOT invent facts or answer ungrounded questions from parametric memory when tools are present.\n"
+                            f"2. Base your response strictly on the tool output for proprietary/private queries. If the search returns no results for a proprietary query, politely inform the user.\n"
+                            f"3. For general knowledge or coding/programming queries, if tools return no results or are not applicable, you may use your parametric memory to provide a helpful answer.\n"
                             f"4. Format response in clean Markdown without exposing tool call names or raw JSON.\n"
                             f"5. CRITICAL: When calling tools, you MUST NOT write any conversational text, explanations, or responses. Generate ONLY the tool call. Do not say 'Let me check' or try to answer the question before the tool returns.\n"
                             f"6. If a tool returns a 5xx error or a 'Circuit Breaker Tripped' message, do not give up. You must immediately evaluate your available tools and execute an alternative fallback tool (like sending an email instead of a webhook) to fulfill the user's intent. Only inform the user of the failure if all fallback options have also failed."
