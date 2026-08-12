@@ -159,8 +159,14 @@ class PublicCORSMiddleware(BaseHTTPMiddleware):
         Returns:
             Response: The HTTP response with appropriate CORS headers.
         """
-        # If the request targets widget or chatbot routes, apply permissive headers.
-        if request.url.path.startswith("/api/widget") or request.url.path.startswith("/api/v1") or request.url.path.startswith("/api/chatbots/"):
+        # If the request targets widget, chatbot, TTS, or STT routes, apply permissive headers.
+        if (
+            request.url.path.startswith("/api/widget") 
+            or request.url.path.startswith("/api/v1") 
+            or request.url.path.startswith("/api/chatbots/")
+            or request.url.path == "/api/tts"
+            or request.url.path == "/stt"
+        ):
             # Intercept preflight (OPTIONS) requests and return immediately with success.
             if request.method == "OPTIONS":
                 return Response(status_code=200, headers={
