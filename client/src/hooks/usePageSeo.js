@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 
-const DEFAULT_TITLE = 'BlinkBot — Build & Deploy Custom AI Chatbots in Minutes';
+const DEFAULT_TITLE = 'BlinkBot - Build Custom AI Agents in Minutes';
 const DEFAULT_DESCRIPTION =
-  'BlinkBot lets you create custom AI chatbots powered by your own documents and data. Upload PDFs, configure with any LLM, and embed a chat widget on your website — no code required.';
+  'Empower your business to build custom AI agents in minutes. Zero coding required. Deploy them as a chatbot on your website instantly, connect tools, and automate workflows safely.';
 
 /**
  * Sets document <title> and meta description on every route.
