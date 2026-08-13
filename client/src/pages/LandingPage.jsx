@@ -16,6 +16,33 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '';
 
+function formatMarkdown(text) {
+  if (!text) return "";
+  let clean = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  // Headers
+  clean = clean.replace(/^#### (.*?)\r?$/gm, '<h4 class="font-bold text-[11px] uppercase tracking-wider text-muted-foreground mt-3 mb-1">$1</h4>');
+  clean = clean.replace(/^### (.*?)\r?$/gm, '<h3 class="font-bold text-sm mt-3 mb-1">$1</h3>');
+  clean = clean.replace(/^## (.*?)\r?$/gm, '<h2 class="font-bold text-base mt-4 mb-1.5">$1</h2>');
+  clean = clean.replace(/^# (.*?)\r?$/gm, '<h1 class="font-extrabold text-lg mt-5 mb-2">$1</h1>');
+  
+  // Bold
+  clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Inline Code
+  clean = clean.replace(/`(.*?)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">$1</code>');
+  
+  // Bullets
+  clean = clean.replace(/^\* (.*?)\r?$/gm, '• $1');
+  clean = clean.replace(/^- (.*?)\r?$/gm, '• $1');
+  
+  // Line Breaks
+  return clean.split('\n').join('<br />');
+}
+
 // ─── LLM Provider Data ──────────────────────────────────────────────────────
 const LLM_PROVIDERS = [
   { name: "OpenRouter", badge: "Access to Everything", desc: "DeepSeek, Llama 3.3, Qwen & more." },
@@ -393,12 +420,34 @@ export default function LandingPage() {
     setHeroIsTyping(true);
     setHeroInput('');
 
-    setTimeout(() => {
+    // Transform chat history for the API payload
+    const history = heroChat.map(msg => ({
+      role: msg.role === 'bot' ? 'assistant' : 'user',
+      content: msg.text
+    }));
+
+    let socketOpened = false;
+    let streamedResponse = '';
+    
+    // Attempt real WebSocket connection to live chatbot
+    const clientId = Math.random().toString(36).substring(7);
+    const wsUrl = `wss://api.blinkbot.in/ws/widget/chat/${clientId}`;
+    const ws = new WebSocket(wsUrl);
+
+    // Timeout fallback if connection doesn't open in 2.5 seconds
+    const fallbackTimeout = setTimeout(() => {
+      if (!socketOpened) {
+        try { ws.close(); } catch (e) {}
+        triggerMockFallback();
+      }
+    }, 2500);
+
+    const triggerMockFallback = () => {
       let botResponse = "That's a great question! BlinkBot is a zero-code platform that lets you build, route, and deploy custom AI agent teams in minutes. Let me know if you want to know about features!";
       const textLower = textToSend.toLowerCase();
 
       if (textLower.includes('deploy') || textLower.includes('website') || textLower.includes('embed')) {
-        botResponse = "Deploying is simple: just copy your unique 1-line script tag from the dashboard and paste it into any website (WordPress, Shopify, React, etc.). It works instantly!";
+        botResponse = "Deploying is simple: just copy your unique 1-line script tag from the dashboard and paste it into any website. It works instantly!";
       } else if (textLower.includes('whatsapp') || textLower.includes('sms') || textLower.includes('message') || textLower.includes('channel')) {
         botResponse = "Yes! You can connect your agents directly to WhatsApp, SMS, or custom API webhooks to automate sending messages and running background tasks.";
       } else if (textLower.includes('secure') || textLower.includes('privacy') || textLower.includes('data')) {
@@ -409,7 +458,49 @@ export default function LandingPage() {
 
       setHeroChat([...nextChat, { role: 'bot', text: botResponse }]);
       setHeroIsTyping(false);
-    }, 800);
+    };
+
+    ws.onopen = () => {
+      socketOpened = true;
+      clearTimeout(fallbackTimeout);
+      ws.send(JSON.stringify({
+        type: 'chat_request',
+        payload: {
+          chatbot_id: '19802bcc-68a2-46c2-86fc-7e17049cfaa3',
+          message: textToSend,
+          history: history,
+          language: 'en'
+        }
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'text_chunk') {
+          setHeroIsTyping(false);
+          streamedResponse += data.content;
+          setHeroChat([...nextChat, { role: 'bot', text: streamedResponse }]);
+        } else if (data.type === 'stream_end') {
+          ws.close();
+        } else if (data.type === 'error') {
+          console.warn("WS error payload:", data.content);
+          ws.close();
+          triggerMockFallback();
+        }
+      } catch (err) {
+        console.error("WS message parse error:", err);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.warn("WS connection error:", err);
+      clearTimeout(fallbackTimeout);
+      try { ws.close(); } catch (e) {}
+      if (!socketOpened) {
+        triggerMockFallback();
+      }
+    };
   };
 
   const handleDemoSubmit = async (e) => {
@@ -637,7 +728,11 @@ export default function LandingPage() {
                           : 'bg-muted/75 text-foreground rounded-bl-xs'
                       }`}
                     >
-                      {msg.text}
+                      {msg.role === 'bot' ? (
+                        <div dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.text) }} />
+                      ) : (
+                        msg.text
+                      )}
                     </div>
                   </div>
                 ))}

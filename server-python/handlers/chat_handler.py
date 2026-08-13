@@ -1535,8 +1535,8 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         """
                     else:
                         grounding_rules = """
-                    1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-                    2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+                    1. For factual questions, ONLY answer using the provided internal knowledge.
+                    2. If the answer is NOT in your system knowledge, respond politely in the persona of the assistant, stating that you don't have that specific information in your system. NEVER use technical terms like "provided context", "context documents", "RAG", "uploaded files", or "documents". If you don't know, simply say: "I'm sorry, I don't have that information in my system right now." or "I have limited information about that topic."
                     3. Format response beautifully in Markdown.
                     4. Use the PREVIOUS CHAT HISTORY to understand context.
                     5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
@@ -1545,12 +1545,12 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
 
                     # Compile the final input prompt
                     prompt = f"""{formatted_system_prompt}{memory_patch}
-                    You are a strict, professional AI assistant grounded ONLY in the provided documents.
+                    You are a strict, professional AI assistant.
 
                     CRITICAL RULES:
                     {grounding_rules}
 
-                    CONTEXT DOCUMENTS:
+                    SYSTEM KNOWLEDGE:
                     {context}
 
                     PREVIOUS CHAT HISTORY:
@@ -1832,8 +1832,8 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
             """
         else:
             grounding_rules = """
-        1. For factual questions, ONLY answer using the provided CONTEXT DOCUMENTS.
-        2. If the answer is NOT in the context, DO NOT use general knowledge. Politely inform the user that you can only answer questions based on the uploaded documents.
+        1. For factual questions, ONLY answer using the provided internal knowledge.
+        2. If the answer is NOT in your system knowledge, respond politely in the persona of the assistant, stating that you don't have that specific information in your system. NEVER use technical terms like "provided context", "context documents", "RAG", "uploaded files", or "documents". If you don't know, simply say: "I'm sorry, I don't have that information in my system right now." or "I have limited information about that topic."
         3. Format response beautifully in Markdown.
         4. Use the PREVIOUS CHAT HISTORY to understand context.
         5. CHIT-CHAT RULE: For casual greetings, respond naturally in 1-2 sentences.
@@ -1841,12 +1841,12 @@ async def handle_api_v1_chat(message: str, session_id: Optional[str], language: 
             """
 
         prompt = f"""{formatted_system_prompt}{memory_patch}
-        You are a strict, professional AI assistant grounded ONLY in the provided documents.
+        You are a strict, professional AI assistant.
 
         CRITICAL RULES:
         {grounding_rules}
 
-        CONTEXT DOCUMENTS:
+        SYSTEM KNOWLEDGE:
         {context}
 
         PREVIOUS CHAT HISTORY:
