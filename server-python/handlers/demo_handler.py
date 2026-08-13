@@ -57,7 +57,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
-    notify_email = os.getenv("NOTIFY_EMAIL") or "techmate.ed@gmail.com"
+    notify_email = os.getenv("NOTIFY_EMAIL") or "blinkbot07@gmail.com"
  
     # Skip email notification if credentials are not configured in environment
     if not smtp_user or not smtp_pass or not notify_email:

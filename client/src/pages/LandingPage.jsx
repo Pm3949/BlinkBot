@@ -18,12 +18,12 @@ const API_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // ─── LLM Provider Data ──────────────────────────────────────────────────────
 const LLM_PROVIDERS = [
-  { name: "OpenRouter", badge: "Access to Everything", icon: "🔀", desc: "DeepSeek, Llama 3.3, Qwen & more." },
-  { name: "OpenAI", badge: "GPT-4o & More", icon: "⚡", desc: "The industry benchmark for conversational AI." },
-  { name: "Groq", badge: "Lightning Fast", icon: "🚀", desc: "Near-instant responses via hardware acceleration." },
-  { name: "HuggingFace", badge: "Open Source", icon: "🤗", desc: "Plug in any open-source embedding model." },
-  { name: "Anthropic", badge: "Claude Sonnet", icon: "🧠", desc: "Deep reasoning and careful long-form analysis." },
-  { name: "Google Gemini", badge: "Gemini Flash", icon: "✨", desc: "Handles massive documents effortlessly." },
+  { name: "OpenRouter", badge: "Access to Everything", desc: "DeepSeek, Llama 3.3, Qwen & more." },
+  { name: "OpenAI", badge: "GPT-4o & More", desc: "The industry benchmark for conversational AI." },
+  { name: "Groq", badge: "Lightning Fast", desc: "Near-instant responses via hardware acceleration." },
+  { name: "HuggingFace", badge: "Open Source", desc: "Plug in any open-source embedding model." },
+  { name: "Anthropic", badge: "Claude Sonnet", desc: "Deep reasoning and careful long-form analysis." },
+  { name: "Google Gemini", badge: "Gemini Flash", desc: "Handles massive documents effortlessly." },
 ];
 
 // ─── Demo Personas for Sandbox ───────────────────────────────────────────────
@@ -34,7 +34,7 @@ const DEMO_PERSONAS = [
     badge: 'Customer Support',
     docsCount: 'Trained on 12 Help Guides',
     avatarBg: 'bg-blue-500',
-    emoji: '🎧',
+    icon: MessagesSquare,
     questions: [
       "What is your refund policy?",
       "How do I add my team members?",
@@ -42,7 +42,7 @@ const DEMO_PERSONAS = [
     ],
     responses: {
       "What is your refund policy?": {
-        answer: "We offer a full 30-day money-back guarantee—no questions asked. You can cancel or switch your plan anytime from the Billing page in your workspace.",
+        answer: "We offer a full 30-day money-back guarantee, no questions asked. You can cancel or switch your plan anytime from the Billing page in your workspace.",
         sources: ["Refund_Policy.pdf", "Terms_of_Service.md"],
       },
       "How do I add my team members?": {
@@ -61,7 +61,7 @@ const DEMO_PERSONAS = [
     badge: 'Product Info',
     docsCount: 'Trained on Product Catalogs',
     avatarBg: 'bg-purple-500',
-    emoji: '💼',
+    icon: TrendingUp,
     questions: [
       "What pricing plans do you have?",
       "Do you support open-source models?",
@@ -73,7 +73,7 @@ const DEMO_PERSONAS = [
         sources: ["Pricing_2026.pdf"],
       },
       "Do you support open-source models?": {
-        answer: "Yes! Connect your OpenRouter or HuggingFace API key to access hundreds of open-source models like DeepSeek R1, Llama 3.3, Mistral, and Qwen—at near-zero cost.",
+        answer: "Yes! Connect your OpenRouter or HuggingFace API key to access hundreds of open-source models like DeepSeek R1, Llama 3.3, Mistral, and Qwen, at near-zero cost.",
         sources: ["Supported_Models.pdf"],
       },
       "Can I buy more messages later?": {
@@ -88,7 +88,7 @@ const DEMO_PERSONAS = [
     badge: 'HR & Policies',
     docsCount: 'Trained on Employee Handbook',
     avatarBg: 'bg-emerald-500',
-    emoji: '📋',
+    icon: Users,
     questions: [
       "Is our company data kept private?",
       "How do I request time off?",
@@ -104,7 +104,7 @@ const DEMO_PERSONAS = [
         sources: ["Employee_Handbook.pdf"],
       },
       "What are the office hours?": {
-        answer: "Core office hours are 9 AM to 5 PM, Monday through Friday. Most teams have flexible hours—coordinate with your manager. Remote-first teams should overlap at least 3 hours with the core window.",
+        answer: "Core office hours are 9 AM to 5 PM, Monday through Friday. Most teams have flexible hours: coordinate with your manager. Remote-first teams should overlap at least 3 hours with the core window.",
         sources: ["Office_Policies.pdf"],
       },
     },
@@ -115,7 +115,7 @@ const DEMO_PERSONAS = [
 const FAQS = [
   {
     q: "Which AI models can I use?",
-    a: "You can connect OpenRouter, OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace. Switch models any time without losing your data or settings—BlinkBot is completely model-agnostic.",
+    a: "You can connect OpenRouter, OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace. Switch models any time without losing your data or settings. BlinkBot is completely model-agnostic.",
   },
   {
     q: "Do I need to be a developer to use BlinkBot?",
@@ -131,11 +131,11 @@ const FAQS = [
   },
   {
     q: "What happens when I run out of messages?",
-    a: "Purchase a non-expiring top-up pack from the Billing page at any time. Extra credits stack on top of your monthly allowance and roll over—they never reset.",
+    a: "Purchase a non-expiring top-up pack from the Billing page at any time. Extra credits stack on top of your monthly allowance and roll over. They never reset.",
   },
   {
     q: "Can I invite my team to collaborate?",
-    a: "Yes. Invite colleagues to your workspace and assign granular roles—Admin, Member, or Viewer. Admins can manage agents and data; Viewers can only read. Fine-grained permission toggles let you control exactly what each member can access.",
+    a: "Yes. Invite colleagues to your workspace and assign granular roles like Admin, Member, or Viewer. Admins can manage agents and data; Viewers can only read. Fine-grained permission toggles let you control exactly what each member can access.",
   },
 ];
 
@@ -143,27 +143,27 @@ const FAQS = [
 const HOW_IT_WORKS = [
   {
     step: "01",
-    icon: Upload,
-    title: "Upload Your Documents",
-    desc: "Drop in PDFs, text files, or paste website URLs. BlinkBot parses, chunks, and vectorizes everything automatically—your knowledge base is ready in under 60 seconds.",
+    icon: Sparkles,
+    title: "Prompt to Create Team",
+    desc: "Describe your workflow in a single plain-English prompt. BlinkBot instantly generates and configures a whole team of specialized agents with tools assigned.",
     accent: "from-blue-500/20 to-blue-500/5",
     iconColor: "text-blue-500",
     iconBg: "bg-blue-500/10",
   },
   {
     step: "02",
-    icon: Cpu,
-    title: "Configure Your AI",
-    desc: "Choose your LLM provider, define a personality with a system prompt (or let AI generate one for you), and tune your embedding strategy. No PhD required.",
+    icon: Upload,
+    title: "Connect Knowledge & Tools",
+    desc: "Upload PDFs, URLs, or Google Drive files to give them knowledge, and plug in external tools like WhatsApp, SMS, or custom API webhooks.",
     accent: "from-purple-500/20 to-purple-500/5",
     iconColor: "text-purple-500",
     iconBg: "bg-purple-500/10",
   },
   {
     step: "03",
-    icon: Globe,
-    title: "Deploy in One Click",
-    desc: "Copy the generated script tag and paste it into any website. Your branded AI assistant goes live instantly—no servers, no infrastructure headaches.",
+    icon: ShieldCheck,
+    title: "Deploy with Approvals",
+    desc: "Embed your widgets or launch channels with Human-in-the-Loop settings. Agents will pause and request permission before taking sensitive actions.",
     accent: "from-orange-500/20 to-orange-500/5",
     iconColor: "text-primary",
     iconBg: "bg-primary/10",
@@ -173,10 +173,10 @@ const HOW_IT_WORKS = [
 // ─── Core Feature Cards ───────────────────────────────────────────────────────
 const FEATURE_CARDS = [
   {
-    icon: Brain,
-    title: "Auto-Prompt Generation",
-    badge: "AI Assisted",
-    desc: "Describe what you want your bot to do in plain English. BlinkBot generates the perfect system prompt and rules for it automatically.",
+    icon: Sparkles,
+    title: "Zero-Code Agent Creation",
+    badge: "1-Prompt Deploy",
+    desc: "Describe what you need in plain English. BlinkBot builds, routes, and deploys a custom team of agents with correct tools assigned automatically.",
     gradient: "from-violet-500/10 to-violet-500/0",
     borderHover: "hover:border-violet-500/40",
     iconBg: "bg-violet-500/10",
@@ -186,27 +186,27 @@ const FEATURE_CARDS = [
     icon: Database,
     title: "Chat with Your Data",
     badge: "RAG Engine",
-    desc: "Upload manuals, policies, or website links. The AI reads and understands them instantly to answer questions grounded in your content—not hallucinations.",
+    desc: "Upload manuals, policies, or website links. The AI reads and understands them instantly to answer questions grounded in your content, not hallucinations.",
     gradient: "from-blue-500/10 to-blue-500/0",
     borderHover: "hover:border-blue-500/40",
     iconBg: "bg-blue-500/10",
     iconColor: "text-blue-500",
   },
   {
-    icon: Cpu,
-    title: "Bring Your Own AI",
-    badge: "Model Choice",
-    desc: "Prefer OpenAI, Claude, or open-source models? Plug in your API keys and switch between providers with a single click—no vendor lock-in.",
+    icon: Wrench,
+    title: "Seamless Tool Integration",
+    badge: "Connected APIs",
+    desc: "Connect your agents to any external software, databases, CRM systems, or messaging networks. Automate actions across all your favorite platforms natively.",
     gradient: "from-cyan-500/10 to-cyan-500/0",
     borderHover: "hover:border-cyan-500/40",
     iconBg: "bg-cyan-500/10",
     iconColor: "text-cyan-500",
   },
   {
-    icon: Globe,
-    title: "No-Code Website Widget",
-    badge: "1-Line Embed",
-    desc: "Paste one script tag into your site's HTML and your AI chat widget goes live. Works on WordPress, Shopify, React, and everything in between.",
+    icon: ShieldCheck,
+    title: "Human-in-the-Loop",
+    badge: "Safe Automation",
+    desc: "Configure sensitive tools (like processing refunds or databases) to pause and require manual admin approval before execution.",
     gradient: "from-primary/10 to-primary/0",
     borderHover: "hover:border-primary/40",
     iconBg: "bg-primary/10",
@@ -223,17 +223,17 @@ const FEATURE_CARDS = [
     iconColor: "text-emerald-500",
   },
   {
-    icon: Search,
-    title: "Real-Time Web Search",
-    badge: "Live Context",
-    desc: "Toggle on the live web search integration to blend your private knowledge base with real-time internet context via DuckDuckGo—best of both worlds.",
+    icon: Cpu,
+    title: "Bring Your Own AI",
+    badge: "Model Choice",
+    desc: "Prefer OpenAI, Claude, or open-source models? Plug in your API keys and switch between providers with a single click, with no vendor lock-in.",
     gradient: "from-amber-500/10 to-amber-500/0",
     borderHover: "hover:border-amber-500/40",
     iconBg: "bg-amber-500/10",
     iconColor: "text-amber-500",
   },
   {
-    icon: ShieldCheck,
+    icon: Lock,
     title: "Enterprise-Grade Security",
     badge: "RLS + Encryption",
     desc: "PostgreSQL Row-Level Security enforces tenant isolation at the database kernel. Your API keys are encrypted at rest. Rate limiting protects every endpoint.",
@@ -246,7 +246,7 @@ const FEATURE_CARDS = [
     icon: Wrench,
     title: "Self-Correcting AI",
     badge: "Fix & Learn",
-    desc: "Flag wrong answers directly in the chat interface and add your correction. The bot incorporates your feedback instantly—no model retraining needed.",
+    desc: "Flag wrong answers directly in the chat interface and add your correction. The bot incorporates your feedback instantly, with no model retraining needed.",
     gradient: "from-teal-500/10 to-teal-500/0",
     borderHover: "hover:border-teal-500/40",
     iconBg: "bg-teal-500/10",
@@ -257,18 +257,18 @@ const FEATURE_CARDS = [
 // ─── Pain Points (Why BlinkBot) ───────────────────────────────────────────────
 const PAIN_POINTS = [
   {
-    pain: "Your team is drowning in repetitive support tickets that all have the same answers buried in a PDF.",
-    solve: "BlinkBot reads that PDF and answers every question automatically, 24/7.",
+    pain: "Repetitive support requests and notifications are overwhelming your operations and team.",
+    solve: "BlinkBot automatically routes queries, handles SMS/WhatsApp alerts, and resolves them 24/7.",
     icon: AlertCircle,
   },
   {
-    pain: "You've tried ChatGPT but it keeps making things up—hallucinations kill customer trust.",
-    solve: "BlinkBot only answers from your documents. No guessing, always cited.",
+    pain: "You want to automate workflows but fear AI will make costly mistakes or perform unauthorized actions.",
+    solve: "BlinkBot pauses execution and requests manual human approval for sensitive integrations.",
     icon: AlertCircle,
   },
   {
-    pain: "Setting up a custom AI chatbot requires a backend engineer, a DevOps team, and weeks of work.",
-    solve: "BlinkBot gets you from zero to live AI assistant in under 10 minutes.",
+    pain: "Setting up custom integrations and agent routing requires senior developers and complex codebases.",
+    solve: "BlinkBot creates and deploys tool-equipped agent teams via a single plain-English prompt.",
     icon: AlertCircle,
   },
 ];
@@ -305,9 +305,34 @@ export default function LandingPage() {
   const [customWidgetPosition, setCustomWidgetPosition] = useState('right');
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
+  // Hero Interactive Chat Widget State
+  const [heroChat, setHeroChat] = useState([
+    { role: 'bot', text: "Hi! I am your BlinkBot Assistant. Try clicking one of the questions below or type your own!" }
+  ]);
+  const [heroIsTyping, setHeroIsTyping] = useState(false);
+  const [heroInput, setHeroInput] = useState('');
+
   // Feature scroll ref & FAQ state
   const featureScrollRef = useRef(null);
   const [openFaq, setOpenFaq] = useState(0);
+
+  // Auto-scroll refs
+  const sandboxScrollRef = useRef(null);
+  const heroChatScrollRef = useRef(null);
+
+  // Auto-scroll for Sandbox Chat
+  useEffect(() => {
+    if (sandboxScrollRef.current) {
+      sandboxScrollRef.current.scrollTop = sandboxScrollRef.current.scrollHeight;
+    }
+  }, [simChatHistory, isSimTyping]);
+
+  // Auto-scroll for Hero Demo Chat
+  useEffect(() => {
+    if (heroChatScrollRef.current) {
+      heroChatScrollRef.current.scrollTop = heroChatScrollRef.current.scrollHeight;
+    }
+  }, [heroChat, heroIsTyping]);
 
   // Animated counter for hero stats
   const [statsVisible, setStatsVisible] = useState(false);
@@ -358,6 +383,33 @@ export default function LandingPage() {
       setSimChatHistory([...updated, { role: 'bot', text: response.answer, sources: response.sources }]);
       setIsSimTyping(false);
     }, 700);
+  };
+
+  const handleHeroChatSend = (textToSend) => {
+    if (!textToSend.trim() || heroIsTyping) return;
+    const userMsg = { role: 'user', text: textToSend };
+    const nextChat = [...heroChat, userMsg];
+    setHeroChat(nextChat);
+    setHeroIsTyping(true);
+    setHeroInput('');
+
+    setTimeout(() => {
+      let botResponse = "That's a great question! BlinkBot is a zero-code platform that lets you build, route, and deploy custom AI agent teams in minutes. Let me know if you want to know about features!";
+      const textLower = textToSend.toLowerCase();
+
+      if (textLower.includes('deploy') || textLower.includes('website') || textLower.includes('embed')) {
+        botResponse = "Deploying is simple: just copy your unique 1-line script tag from the dashboard and paste it into any website (WordPress, Shopify, React, etc.). It works instantly!";
+      } else if (textLower.includes('whatsapp') || textLower.includes('sms') || textLower.includes('message') || textLower.includes('channel')) {
+        botResponse = "Yes! You can connect your agents directly to WhatsApp, SMS, or custom API webhooks to automate sending messages and running background tasks.";
+      } else if (textLower.includes('secure') || textLower.includes('privacy') || textLower.includes('data')) {
+        botResponse = "Absolutely. Your data is kept 100% private and secure within your team's isolated workspace. We never share or use your proprietary documents to train public AI models.";
+      } else if (textLower.includes('zero') || textLower.includes('code') || textLower.includes('minutes') || textLower.includes('create')) {
+        botResponse = "BlinkBot is completely zero-code. Describe what you need in a single plain-English prompt, and our system automatically provisions your agents, links their knowledge, and configures their tools.";
+      }
+
+      setHeroChat([...nextChat, { role: 'bot', text: botResponse }]);
+      setHeroIsTyping(false);
+    }, 800);
   };
 
   const handleDemoSubmit = async (e) => {
@@ -435,6 +487,12 @@ export default function LandingPage() {
                 {label}
               </a>
             ))}
+            <Link to="/about" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              About Us
+            </Link>
+            <Link to="/user-guide" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              User Documentation
+            </Link>
           </div>
 
           <div className="flex items-center gap-3">
@@ -464,7 +522,7 @@ export default function LandingPage() {
       {/* ═══════════════════════════════════════════════════════════════════
           HERO SECTION
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="relative pt-36 md:pt-44 pb-24 md:pb-32 flex flex-col items-center text-center px-6 overflow-hidden">
+      <section className="relative pt-32 md:pt-40 pb-20 md:pb-28 px-6 overflow-hidden bg-background">
         {/* Animated background orbs */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div
@@ -481,69 +539,163 @@ export default function LandingPage() {
           />
         </div>
 
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-primary/30 bg-primary/8 text-primary text-xs sm:text-sm font-semibold mb-8 shadow-sm">
-          <Sparkles size={14} className="animate-pulse" />
-          <span>Turn your documents into a 24/7 AI expert — in minutes</span>
-        </div>
+        <div className="grid lg:grid-cols-12 gap-12 items-center max-w-7xl mx-auto w-full relative z-10 text-left">
+          {/* Left Column: Text & CTAs */}
+          <div className="lg:col-span-7 flex flex-col items-start">
 
-        {/* Headline */}
-        <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.1] text-foreground">
-          Your Knowledge Base.{' '}
-          <br className="hidden sm:inline" />
-          <span className="relative inline-block">
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
-            >
-              Your AI Assistant.
-            </span>
-          </span>
-          <br className="hidden sm:inline" />
-          <span className="text-foreground/70 font-medium text-3xl sm:text-4xl md:text-5xl mt-2 block">
-            Zero Code. Full Control.
-          </span>
-        </h1>
 
-        {/* Sub-headline */}
-        <p className="mt-8 text-lg sm:text-xl text-muted-foreground max-w-2xl leading-relaxed">
-          Upload your PDFs and docs. Pick your favorite AI model. Watch your private, citation-grounded assistant 
-          answer every question — then embed it on your website in seconds.
-        </p>
-        {/* CTAs */}
-        <div className="mt-10 flex flex-col sm:flex-row items-center gap-4">
-          <Link
-            to="/login"
-            className="w-full sm:w-auto btn-primary px-8 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
-          >
-            Start Building — It's Free
-            <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
-          </Link>
-          <a
-            href="#sandbox"
-            className="w-full sm:w-auto px-8 py-4 rounded-full text-base font-semibold border border-border bg-card hover:bg-muted transition-all flex items-center justify-center gap-2 shadow-xs"
-          >
-            <Play size={15} className="text-primary fill-primary" /> See It Live
-          </a>
-        </div>
+            {/* Headline */}
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-foreground">
+              Empowering businesses to build{' '}
+              <span className="relative inline-block">
+                <span
+                  className="bg-clip-text text-transparent"
+                  style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
+                >
+                  custom AI agents
+                </span>
+              </span>{' '}
+              in minutes.
+              <br />
+              <span className="text-foreground/75 font-semibold text-2xl sm:text-3xl md:text-4xl mt-3 block">
+                Zero coding required. Deploy them as a chatbot on your website instantly.
+              </span>
+            </h1>
 
-        {/* Trust badges */}
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-6 sm:gap-8 text-xs text-muted-foreground font-medium">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={15} className="text-emerald-500" />
-            Free Starter Plan Included
+            {/* Sub-headline */}
+            <p className="mt-6 text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+              Connect any tools you want to automate your work. With just one plain-English prompt, deploy a secure agent team to handle your tasks, complete with manual approvals.
+            </p>
+
+            {/* CTAs */}
+            <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+              <Link
+                to="/login"
+                className="w-full sm:w-auto btn-primary px-8 py-3.5 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
+              >
+                Start Building for Free
+                <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+              <a
+                href="#sandbox"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-full text-base font-semibold border border-border bg-card hover:bg-muted transition-all flex items-center justify-center gap-2 shadow-xs"
+              >
+                <Play size={15} className="text-primary fill-primary" /> See It Live
+              </a>
+            </div>
+
+            {/* Trust badges */}
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-muted-foreground font-medium">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                Free Starter Plan
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                No Credit Card Required
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                Omnichannel Tools
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={15} className="text-emerald-500" />
-            No credit card required
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={15} className="text-emerald-500" />
-            6 LLM providers supported
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 size={15} className="text-emerald-500" />
-            Embed in 1 line of HTML
+
+          {/* Right Column: Premium Interactive Chat Widget Mockup */}
+          <div className="lg:col-span-5 relative w-full flex justify-center">
+            <div className="w-full max-w-md bg-card/75 backdrop-blur-md border border-border/80 rounded-3xl p-5 shadow-xl relative overflow-hidden flex flex-col gap-3 min-h-[380px]">
+              {/* Window Header */}
+              <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-primary">
+                    <Bot size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-foreground">BlinkBot Assistant</div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-[10px] text-muted-foreground font-medium">Online</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-[10px] font-mono text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border/30">
+                  Demo Chat
+                </div>
+              </div>
+
+              {/* Chat Messages Area */}
+              <div ref={heroChatScrollRef} className="flex-1 overflow-y-auto max-h-[200px] flex flex-col gap-2.5 pr-1" style={{ scrollbarWidth: 'none' }}>
+                {heroChat.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`text-xs rounded-2xl px-3.5 py-2 max-w-[80%] leading-relaxed ${
+                        msg.role === 'user'
+                          ? 'bg-primary text-white rounded-br-xs'
+                          : 'bg-muted/75 text-foreground rounded-bl-xs'
+                      }`}
+                    >
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Typing Indicator */}
+                {heroIsTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted/75 text-muted-foreground text-xs rounded-2xl rounded-bl-xs px-3.5 py-2 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"></span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.2s]"></span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.4s]"></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Suggested Questions */}
+              <div className="flex flex-wrap gap-1.5 pt-2">
+                {[
+                  "How to deploy?",
+                  "Do you support WhatsApp?",
+                  "Is it secure?"
+                ].map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => handleHeroChatSend(q)}
+                    className="text-[10px] font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border/80 px-2.5 py-1 rounded-full transition-all"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input Footer */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleHeroChatSend(heroInput);
+                }}
+                className="flex items-center gap-1.5 border-t border-border/40 pt-3"
+              >
+                <input
+                  type="text"
+                  value={heroInput}
+                  onChange={(e) => setHeroInput(e.target.value)}
+                  placeholder="Type a question..."
+                  className="flex-1 bg-muted/50 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/60"
+                />
+                <button
+                  type="submit"
+                  disabled={!heroInput.trim() || heroIsTyping}
+                  className="h-8 w-8 rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center justify-center transition-all disabled:opacity-50"
+                >
+                  <Send size={12} />
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </section>
@@ -663,7 +815,7 @@ export default function LandingPage() {
               to="/login"
               className="inline-flex items-center gap-2 btn-primary px-8 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
             >
-              Try It Right Now — Free <ArrowRight size={18} />
+              Try It Right Now for Free <ArrowRight size={18} />
             </Link>
           </div>
         </div>
@@ -745,12 +897,11 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {LLM_PROVIDERS.map((provider, i) => (
+             {LLM_PROVIDERS.map((provider, i) => (
               <div
                 key={i}
                 className="p-5 rounded-2xl bg-background border border-border text-center transition-all hover:-translate-y-1 hover:shadow-md hover:border-primary/30 cursor-default"
               >
-                <div className="text-2xl mb-2">{provider.icon}</div>
                 <div className="font-bold text-sm text-foreground mb-1">{provider.name}</div>
                 <div className="text-[11px] font-semibold text-primary mb-1.5">{provider.badge}</div>
                 <div className="text-[10px] text-muted-foreground leading-tight">{provider.desc}</div>
@@ -770,13 +921,12 @@ export default function LandingPage() {
               <Terminal size={13} /> Interactive Live Sandbox
             </div>
             <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Ask it anything.
+              Test-drive the agent teams.
               <br />
-              Watch it cite its sources.
+              See how they respond.
             </h2>
             <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
-              These are real demo bots trained on sample documents. Every answer includes transparent citation tags 
-              showing exactly which document the AI pulled from.
+              These are live demo agents designed to showcase how specialized teams retrieve knowledge and handle tasks in real-time. Try asking them a question below.
             </p>
           </div>
 
@@ -792,7 +942,7 @@ export default function LandingPage() {
                     : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
                 }`}
               >
-                <span>{persona.emoji}</span>
+                <persona.icon size={16} />
                 {persona.name}
               </button>
             ))}
@@ -803,8 +953,8 @@ export default function LandingPage() {
             {/* Header */}
             <div className="px-6 py-4 border-b border-border bg-muted/30 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl ${activePersona.avatarBg} flex items-center justify-center text-lg shadow-xs`}>
-                  {activePersona.emoji}
+                <div className={`w-10 h-10 rounded-xl ${activePersona.avatarBg} flex items-center justify-center text-white shadow-xs`}>
+                  <activePersona.icon size={20} />
                 </div>
                 <div>
                   <div className="font-bold text-sm flex items-center gap-2 text-foreground">
@@ -817,14 +967,11 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-500 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                RAG Context Active
-              </div>
+
             </div>
 
             {/* Chat Messages */}
-            <div className="p-6 md:p-8 space-y-4 min-h-[300px] max-h-[400px] overflow-y-auto bg-card">
+            <div ref={sandboxScrollRef} className="p-6 md:p-8 space-y-4 min-h-[300px] max-h-[400px] overflow-y-auto bg-card">
               {simChatHistory.map((msg, idx) => (
                 <div
                   key={idx}
@@ -902,7 +1049,7 @@ export default function LandingPage() {
               Your brand. Your bot.
             </h2>
             <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
-              Customize the accent color, header title, and screen position. The script snippet updates instantly — just copy and paste.
+              Customize the accent color, header title, and screen position. The script snippet updates instantly, just copy and paste.
             </p>
           </div>
 
@@ -1076,7 +1223,7 @@ export default function LandingPage() {
               Simple, transparent pricing.
             </h2>
             <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
-              Start for free—no credit card needed. Scale up only when your team needs more.
+              Start for free, with no credit card needed. Scale up only when your team needs more.
             </p>
 
             {/* Billing Toggle */}
@@ -1306,24 +1453,21 @@ export default function LandingPage() {
           />
 
           <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-primary/30 bg-primary/8 text-primary text-xs font-bold uppercase tracking-wider mb-6">
-              <Sparkles size={13} className="animate-pulse" /> Start Today
-            </div>
+
 
             <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight text-foreground leading-tight">
-              Your documents are just
+              Your workflow tasks are just
               <br />
               <span
                 className="bg-clip-text text-transparent"
                 style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
               >
-                sitting there.
+                waiting to be automated.
               </span>
             </h2>
 
             <p className="mt-6 text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              Turn your PDFs, manuals, and policies into a brilliant AI assistant that works 24/7, 
-              cites its sources, and deploys in under 10 minutes. For free.
+              Turn your business processes into secure, automated AI agent teams that run tools, connect systems, and deploy in minutes. Completely zero-code.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -1332,7 +1476,7 @@ export default function LandingPage() {
                 className="w-full sm:w-auto btn-primary px-10 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
               >
                 <Rocket size={18} />
-                Build Your AI Assistant — Free
+                Build Your AI Agent Team for Free
                 <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
               </Link>
             </div>
@@ -1381,7 +1525,7 @@ export default function LandingPage() {
               <ul className="space-y-3 text-sm text-muted-foreground">
                 <li><Link to="/about" className="hover:text-primary transition-colors">About Us</Link></li>
                 <li><Link to="/terms" className="hover:text-primary transition-colors">Terms of Service</Link></li>
-                <li><a href="mailto:techmate.ed@gmail.com" className="hover:text-primary transition-colors">Contact Support</a></li>
+                <li><a href="mailto:blinkbot07@gmail.com" className="hover:text-primary transition-colors">Contact Support</a></li>
               </ul>
             </div>
           </div>
@@ -1391,7 +1535,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-6 font-medium">
               <Link to="/terms" className="hover:text-primary transition-colors">Privacy & Terms</Link>
               <Link to="/about" className="hover:text-primary transition-colors">About</Link>
-              <a href="mailto:techmate.ed@gmail.com" className="hover:text-primary transition-colors">Support</a>
+              <a href="mailto:blinkbot07@gmail.com" className="hover:text-primary transition-colors">Support</a>
             </div>
           </div>
         </div>

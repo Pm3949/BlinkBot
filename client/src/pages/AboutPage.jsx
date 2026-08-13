@@ -4,7 +4,7 @@ import { ChevronLeft, Heart, Zap, Shield, Globe, Users, Bot } from 'lucide-react
 import Logo from '../components/shared/Logo';
 
 export default function AboutPage() {
-  usePageSeo('About Us', 'Learn about BlinkBot — our mission to help every business build custom AI bots powered by their own data, without needing any code.');
+  usePageSeo('About Us', 'Learn about BlinkBot, and our mission to help every business build secure, zero-code AI agent teams powered by their own data and tools.');
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <nav className="flex items-center justify-between px-6 md:px-8 py-6 max-w-4xl mx-auto border-b border-border/50">
@@ -22,9 +22,9 @@ export default function AboutPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
             <Heart size={14} /> About Us
           </div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">We're building the future of custom AI.</h1>
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">We're building the future of secure AI automation.</h1>
           <p className="text-lg text-muted-foreground mt-4 max-w-2xl mx-auto leading-relaxed">
-            BlinkBot is an AI bot platform that lets businesses and developers create, train, and deploy intelligent conversational agents — all powered by their own proprietary data.
+            BlinkBot is a zero-code AI agent platform that lets businesses create, deploy, and manage intelligent agent teams, equipped with tools and grounded securely in company data.
           </p>
         </div>
 
@@ -35,9 +35,7 @@ export default function AboutPage() {
               <Zap className="text-primary" size={24} /> Our Mission
             </h2>
             <p className="text-muted-foreground leading-relaxed text-lg">
-              We believe every business deserves an AI that actually understands their world — not a generic chatbot that hallucinates answers. 
-              BlinkBot makes it effortless to build custom AI bots that are grounded in your real documents, trained on your real data, 
-              and deployed exactly where your customers need them.
+              We believe automation shouldn't require complex code or compromise security. BlinkBot makes it effortless to build intelligent, multi-agent teams from a single prompt, connect them to your tools like WhatsApp and SMS, and secure them with built-in human verification.
             </p>
           </div>
         </section>
@@ -48,23 +46,23 @@ export default function AboutPage() {
           <div className="grid md:grid-cols-2 gap-6">
             <ValueCard 
               icon={Shield} 
-              title="Privacy First" 
-              desc="Your data is never used to train public models. We process, embed, and store your documents in isolated, secure workspaces."
+              title="Human-in-Control" 
+              desc="Safety first. Agents running critical workflows can be set to pause and request manual human approval before execution."
             />
             <ValueCard 
               icon={Zap} 
-              title="Speed & Simplicity" 
-              desc="Go from zero to a fully deployed AI bot in under 5 minutes. No machine learning expertise required."
+              title="Zero-Code Simplicity" 
+              desc="Describe your workflow in a single prompt and watch a fully-routed, tool-equipped agent team spin up instantly."
             />
             <ValueCard 
               icon={Globe} 
-              title="Open & Flexible" 
-              desc="We support multiple LLM providers (Groq, OpenAI, Ollama) and never lock you into a single ecosystem."
+              title="Omnichannel & Connected" 
+              desc="We integrate seamlessly with user-facing channels like WhatsApp, SMS, and custom API webhooks."
             />
             <ValueCard 
               icon={Users} 
-              title="Built for Teams" 
-              desc="Multi-workspace, role-based access, team invites — BlinkBot scales with your organization from day one."
+              title="Enterprise Security" 
+              desc="PostgreSQL Row-Level Security keeps workspaces completely isolated, protecting your private company documents."
             />
           </div>
         </section>
@@ -74,11 +72,11 @@ export default function AboutPage() {
           <h2 className="text-2xl font-bold mb-8 text-center">What BlinkBot Offers</h2>
           <div className="space-y-4">
             {[
-              { icon: Bot, text: "Custom AI bots built on your documents, with a 4-step guided wizard" },
-              { icon: Zap, text: "AI Auto-Configure — describe your bot in one sentence, we do the rest" },
-              { icon: Globe, text: "Embeddable chat widgets for your website (HTML, React, REST API)" },
-              { icon: Shield, text: "Self-learning feedback loops — bots improve from user corrections" },
-              { icon: Users, text: "Team collaboration with multi-workspace support and role management" },
+              { icon: Bot, text: "Zero-code creation of specialized agent teams using a single prompt" },
+              { icon: Zap, text: "Automated integrations for WhatsApp, SMS, and custom API endpoints" },
+              { icon: Shield, text: "Human-in-the-Loop approvals for sensitive actions" },
+              { icon: Globe, text: "Embeddable website chat widgets (1-line script tags)" },
+              { icon: Users, text: "Private workspaces with role-based access control (RBAC)" },
             ].map((item, i) => (
               <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 transition-all">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -94,10 +92,10 @@ export default function AboutPage() {
         <section className="text-center bg-card border border-border/50 rounded-[24px] p-8 md:p-10">
           <h2 className="text-2xl font-bold mb-3">Get in Touch</h2>
           <p className="text-muted-foreground mb-6">Have questions, partnership ideas, or feedback? We'd love to hear from you.</p>
-          <a href="mailto:techmate.ed@gmail.com" className="btn-primary px-8 py-3 rounded-full font-bold text-sm inline-flex items-center gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all">
+          <a href="mailto:blinkbot07@gmail.com" className="btn-primary px-8 py-3 rounded-full font-bold text-sm inline-flex items-center gap-2 shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all">
             Contact Us
           </a>
-          <p className="text-xs text-muted-foreground mt-4">techmate.ed@gmail.com</p>
+          <p className="text-xs text-muted-foreground mt-4">blinkbot07@gmail.com</p>
         </section>
       </main>
     </div>

@@ -213,6 +213,8 @@ async def handle_update_chatbot(chatbot_id: str, payload: dict):
         for key, value in payload.items():
             if value is None:
                 continue
+            if key == "api_key" and value == "":
+                value = None
             if key in ["name", "api_key", "allowed_domains"]:
                 # Append basic placeholders
                 set_clauses.append(f"{key} = %s")
