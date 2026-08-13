@@ -11,3 +11,7 @@ Action Webhooks (Tools): Give agents the ability to trigger real-world actions. 
 API Key Generation: Allow users to generate their own API keys from the settings page so they can programmatically query their RAG agents from their own external apps or servers without using the widget.
 Chat Exports: Add a button for users to easily export entire chat sessions as a beautiful PDF or Markdown file.
 Do any of these catch your eye, or do you have a specific direction you want to take the app next?
+
+
+Counter question to the user from the agent, Prposed By Soni.
+suggestion question in chat , Poposed By Bhavya.
