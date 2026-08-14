@@ -128,14 +128,14 @@ export default function ChatbotsPage() {
               {canManageAgents && (
                 <div className="grid grid-cols-2 gap-3 mt-6">
                   <Link
-                    to={`/chatbots/${chatbot.id}`}
+                    to={`/chatbots/${chatbot.id}?tab=settings`}
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl border border-border hover:bg-muted text-sm font-medium transition"
                   >
                     <Settings2 size={16} /> Customize
                   </Link>
 
                   <Link
-                    to={`/chatbots/${chatbot.id}`}
+                    to={`/chatbots/${chatbot.id}?tab=embed`}
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl btn-primary text-white text-sm font-medium transition"
                   >
                     <Code size={16} /> Embed

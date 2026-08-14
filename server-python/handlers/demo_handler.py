@@ -57,6 +57,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
+    sender_email = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
     notify_email = os.getenv("NOTIFY_EMAIL") or "blinkbot07@gmail.com"
  
     # Skip email notification if credentials are not configured in environment
@@ -67,7 +68,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     # Build the multipart container to hold HTML layouts
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"🚀 New Demo Request from {req.get('name')} — BlinkBot"
-    msg["From"] = f"BlinkBot <{smtp_user}>"
+    msg["From"] = f"BlinkBot <{sender_email}>"
     msg["To"] = notify_email
 
     # HTML body template for the notification email
@@ -113,7 +114,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
         with smtplib.SMTP(smtp_host, smtp_port) as server:
             server.starttls()                        # Start Transport Layer Security (TLS) encryption
             server.login(smtp_user, smtp_pass)       # Authenticate with credentials
-            server.sendmail(smtp_user, notify_email, msg.as_string())  # Dispatch email
+            server.sendmail(sender_email, notify_email, msg.as_string())  # Dispatch email
         logger.info(f"Demo request notification email successfully sent to {notify_email}")
     except Exception as smtp_err:
         logger.error(f"Failed to send demo notification email: {str(smtp_err)}", exc_info=True)
@@ -139,6 +140,7 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
+    sender_email = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
  
     if not smtp_user or not smtp_pass:
         logger.warning("SMTP not configured in environment, skipping demo meeting invite email.")
@@ -146,7 +148,7 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "🚀 BlinkBot Demo - Meeting Scheduled"
-    msg["From"] = f"BlinkBot <{smtp_user}>"
+    msg["From"] = f"BlinkBot <{sender_email}>"
     msg["To"] = email
 
     html = f"""
@@ -174,7 +176,7 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
         with smtplib.SMTP(smtp_host, smtp_port) as server:
             server.starttls()
             server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, email, msg.as_string())
+            server.sendmail(sender_email, email, msg.as_string())
         logger.info(f"Demo meeting scheduled invitation successfully sent to {email}")
     except Exception as smtp_err:
         logger.error(f"Failed to send demo meeting invitation email: {str(smtp_err)}", exc_info=True)
@@ -196,6 +198,7 @@ def _send_feedback_email(name: str, email: str):
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
+    sender_email = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
  
     if not smtp_user or not smtp_pass:
         logger.warning("SMTP not configured in environment, skipping demo feedback follow-up email.")
@@ -203,7 +206,7 @@ def _send_feedback_email(name: str, email: str):
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "How was your BlinkBot demo?"
-    msg["From"] = f"BlinkBot <{smtp_user}>"
+    msg["From"] = f"BlinkBot <{sender_email}>"
     msg["To"] = email
 
     html = f"""
@@ -229,7 +232,7 @@ def _send_feedback_email(name: str, email: str):
         with smtplib.SMTP(smtp_host, smtp_port) as server:
             server.starttls()
             server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, email, msg.as_string())
+            server.sendmail(sender_email, email, msg.as_string())
         logger.info(f"Demo feedback follow-up email successfully sent to {email}")
     except Exception as smtp_err:
         logger.error(f"Failed to send demo feedback email: {str(smtp_err)}", exc_info=True)

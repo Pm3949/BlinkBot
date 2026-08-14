@@ -78,6 +78,7 @@ SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587)) # Default SMTP port (using TLS)
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
 
 
 # ==========================================
@@ -224,7 +225,7 @@ def send_otp_email(to_email: str, otp: str):
         
     # Configure mail headers.
     msg = MIMEMultipart("alternative")
-    msg['From'] = f"BlinkBot <{SMTP_USER}>"
+    msg['From'] = f"BlinkBot <{SENDER_EMAIL}>"
     msg['To'] = to_email
     msg['Subject'] = "Your BlinkBot Verification Code"
 
@@ -262,7 +263,7 @@ def send_otp_email(to_email: str, otp: str):
         # Log in with SMTP user credentials.
         server.login(SMTP_USER, SMTP_PASSWORD)
         # Send email.
-        server.sendmail(SMTP_USER, to_email, msg.as_string())
+        server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
         # Close connection.
         server.quit()
         logger.info(f"OTP email dispatched successfully to {to_email}")
@@ -296,7 +297,7 @@ def send_password_reset_email(to_email: str, otp: str):
         return
         
     msg = MIMEMultipart("alternative")
-    msg['From'] = f"BlinkBot <{SMTP_USER}>"
+    msg['From'] = f"BlinkBot <{SENDER_EMAIL}>"
     msg['To'] = to_email
     msg['Subject'] = "Reset your BlinkBot Password"
 
@@ -327,7 +328,7 @@ def send_password_reset_email(to_email: str, otp: str):
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
         server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_USER, to_email, msg.as_string())
+        server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
         server.quit()
         logger.info(f"Password reset email dispatched successfully to {to_email}")
     except Exception as e:

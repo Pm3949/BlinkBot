@@ -21,7 +21,9 @@
     position: 'bottom-right',
     avatar: '🤖',
     borderRadius: 'rounded',
-    fontFamily: 'system-ui'
+    fontFamily: 'system-ui',
+    popupMessage: '',
+    predefinedQuestions: []
   };
 
   const isUrl = (str) => {
@@ -97,6 +99,8 @@
             botSettings.avatar = parsedSettings.avatar || botSettings.avatar;
             botSettings.borderRadius = parsedSettings.borderRadius || botSettings.borderRadius;
             botSettings.fontFamily = parsedSettings.fontFamily || botSettings.fontFamily;
+            botSettings.popupMessage = parsedSettings.popupMessage || botSettings.popupMessage;
+            botSettings.predefinedQuestions = parsedSettings.predefinedQuestions || botSettings.predefinedQuestions;
           }
         }
       }
@@ -184,6 +188,84 @@
         stroke-width: 2;
         stroke-linecap: round;
         stroke-linejoin: round;
+      }
+
+      /* Closed widget popup message bubble styling */
+      #blinkbot-popup {
+        position: fixed;
+        bottom: 100px;
+        background: var(--blinkbot-accent, #4f46e5) !important;
+        color: #ffffff !important;
+        padding: 10px 14px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        border: none !important;
+        z-index: 2147483639;
+        font-family: ${botSettings.fontFamily === 'system-ui' ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' : botSettings.fontFamily + ', sans-serif'};
+        font-size: 0.85rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 260px;
+        animation: blinkbot-pop 0.35s cubic-bezier(.34,1.56,.64,1);
+        border-radius: ${botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '18px' : '10px'};
+        cursor: pointer;
+      }
+      #blinkbot-popup.bottom-right { right: 30px; }
+      #blinkbot-popup.bottom-left { left: 30px; }
+      #blinkbot-popup-arrow {
+        position: absolute;
+        bottom: -5px;
+        width: 10px;
+        height: 10px;
+        background: var(--blinkbot-accent, #4f46e5) !important;
+        border: none !important;
+        transform: rotate(45deg);
+      }
+      #blinkbot-popup.bottom-right #blinkbot-popup-arrow { right: 24px; }
+      #blinkbot-popup.bottom-left #blinkbot-popup-arrow { left: 24px; }
+      #blinkbot-popup-close {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.75) !important;
+        cursor: pointer;
+        font-size: 1.15rem;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        transition: color 0.15s ease;
+      }
+      #blinkbot-popup-close:hover { color: #ffffff !important; }
+
+      /* Predefined quick start questions pills styling */
+      .blinkbot-pills-container {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+        width: 100%;
+      }
+      .blinkbot-pill {
+        display: inline-block;
+        background: #ffffff !important;
+        color: var(--blinkbot-accent, #4f46e5) !important;
+        border: 1.5px solid var(--blinkbot-accent, #4f46e5) !important;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+        text-align: left;
+        width: fit-content;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+      .blinkbot-pill:hover {
+        background: var(--blinkbot-accent, #4f46e5) !important;
+        color: #ffffff !important;
+        transform: translateY(-1px);
+      }
+      .blinkbot-pill:active {
+        transform: translateY(0);
       }
 
       #blinkbot-window {
@@ -516,6 +598,21 @@
 
     const isRightPos = botSettings.position !== 'bottom-left';
 
+    // Build predefined questions layout if any exist
+    let pillsHtml = '';
+    if (botSettings.predefinedQuestions && botSettings.predefinedQuestions.filter(q => q && q.trim() !== '').length > 0) {
+      const validQuestions = botSettings.predefinedQuestions.filter(q => q && q.trim() !== '');
+      pillsHtml = `
+        <div class="blinkbot-pills-container" id="blinkbot-pills-container">
+          ${validQuestions.map((q, idx) => `
+            <button class="blinkbot-pill" data-question-idx="${idx}" style="border-radius: ${
+              botSettings.borderRadius === 'square' ? '0' : botSettings.borderRadius === 'pill' ? '20px' : '10px'
+            };">${q.replace(/"/g, '&quot;')}</button>
+          `).join('')}
+        </div>
+      `;
+    }
+
     // Chat Window
     const windowDiv = document.createElement('div');
     windowDiv.id = 'blinkbot-window';
@@ -543,7 +640,10 @@
         </div>
       </div>
       <div class="rm-messages" id="blinkbot-messages">
-        <div class="rm-msg bot">${formatText(botSettings.welcomeMessage)}</div>
+        <div class="rm-msg bot">
+          ${formatText(botSettings.welcomeMessage)}
+          ${pillsHtml}
+        </div>
       </div>
       <div class="rm-footer">
         <div class="rm-input-area">
@@ -568,6 +668,21 @@
     document.getElementById('blinkbot-lang-select').onchange = function (e) {
       currentLanguage = e.target.value;
     };
+
+    // Predefined pills click listener
+    const pillsContainer = document.getElementById('blinkbot-pills-container');
+    if (pillsContainer) {
+      pillsContainer.addEventListener('click', (e) => {
+        const pill = e.target.closest('.blinkbot-pill');
+        if (pill) {
+          const questionText = pill.textContent;
+          const inputEl = document.getElementById('blinkbot-input');
+          inputEl.value = questionText;
+          handleSend();
+          pillsContainer.remove();
+        }
+      });
+    }
   }
 
   // 6. Manual drag-to-resize for the chat window (grows from the free corner,
@@ -702,14 +817,54 @@
     }
   }
 
+  let popupDismissed = false;
+
+  function showPopupMessage() {
+    if (isOpen || popupDismissed || !botSettings.popupMessage) return;
+    
+    let popup = document.getElementById('blinkbot-popup');
+    if (popup) return;
+
+    popup = document.createElement('div');
+    popup.id = 'blinkbot-popup';
+    popup.className = botSettings.position;
+    popup.innerHTML = `
+      <span id="blinkbot-popup-arrow"></span>
+      <div style="flex: 1; word-break: break-word;" id="blinkbot-popup-text">${botSettings.popupMessage}</div>
+      <button id="blinkbot-popup-close" aria-label="Dismiss">&times;</button>
+    `;
+
+    document.body.appendChild(popup);
+
+    document.getElementById('blinkbot-popup-text').onclick = () => {
+      toggleChat();
+    };
+
+    document.getElementById('blinkbot-popup-close').onclick = (e) => {
+      e.stopPropagation();
+      dismissPopup();
+    };
+  }
+
+  function dismissPopup() {
+    popupDismissed = true;
+    const popup = document.getElementById('blinkbot-popup');
+    if (popup) {
+      popup.remove();
+    }
+  }
+
   function toggleChat() {
     isOpen = !isOpen;
     const windowEl = document.getElementById('blinkbot-window');
+    const popup = document.getElementById('blinkbot-popup');
     if (isOpen) {
       windowEl.classList.add('open');
       document.getElementById('blinkbot-input').focus();
+      if (popup) popup.remove();
     } else {
       windowEl.classList.remove('open');
+      showPopupMessage();
     }
   }
 
@@ -933,11 +1088,13 @@
       await loadMarked();
       injectStyles();
       injectHTML(bubble);
+      showPopupMessage();
     } catch (err) {
       console.error('BlinkBot Widget: Failed to initialize, falling back to defaults.', err);
       try {
         injectStyles();
         injectHTML(bubble);
+        showPopupMessage();
       } catch (err2) {
         console.error('BlinkBot Widget: Unrecoverable init error.', err2);
       }

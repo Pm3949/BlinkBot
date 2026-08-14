@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Save, Code, Copy, CheckCircle2, Palette, Shield, Key, Globe, Terminal, RefreshCw } from "lucide-react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Save, Code, Copy, CheckCircle2, Palette, Shield, Key, Globe, Terminal, RefreshCw, Plus, Trash2, HelpCircle, MessageSquare } from "lucide-react";
 import { useChatbotById, useUpdateChatbot } from "../hooks/useChatbots";
 import { useUIStore } from "../store/useUIStore";
 import {
@@ -15,6 +15,9 @@ import { toast } from "sonner";
 
 export default function ChatbotEditorPage() {
   const { chatbotId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") === "embed" ? "embed" : "settings";
+
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { data: chatbot, isLoading, isError } = useChatbotById(chatbotId);
   const updateChatbotMutation = useUpdateChatbot(activeWorkspaceId);
@@ -27,6 +30,8 @@ export default function ChatbotEditorPage() {
     avatar: "🤖",
     borderRadius: "rounded",
     fontFamily: "system-ui",
+    popupMessage: "",
+    predefinedQuestions: [],
   });
   const [allowedDomains, setAllowedDomains] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -34,6 +39,7 @@ export default function ChatbotEditorPage() {
   const [copiedReact, setCopiedReact] = useState(false);
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   const DATA_API_URL = "https://api.blinkbot.in";
 
@@ -57,6 +63,8 @@ export default function ChatbotEditorPage() {
         avatar: parsedSettings?.avatar || "🤖",
         borderRadius: parsedSettings?.borderRadius || "rounded",
         fontFamily: parsedSettings?.fontFamily || "system-ui",
+        popupMessage: parsedSettings?.popupMessage || "",
+        predefinedQuestions: parsedSettings?.predefinedQuestions || [],
       });
       setAllowedDomains(chatbot.allowed_domains || "");
       setApiKey(chatbot.api_key || "");
@@ -182,82 +190,165 @@ export default function ChatbotWidget() {
         </button>
       </div>
 
+      {/* Tabs Selector */}
+      <div className="flex border-b border-border gap-6">
+        <button
+          onClick={() => setSearchParams({ tab: "settings" })}
+          className={`pb-3 text-sm font-semibold border-b-2 transition ${
+            activeTab === "settings"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Customize Appearance
+        </button>
+        <button
+          onClick={() => setSearchParams({ tab: "embed" })}
+          className={`pb-3 text-sm font-semibold border-b-2 transition ${
+            activeTab === "embed"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Embed & Integration
+        </button>
+      </div>
+
       <div className="grid lg:grid-cols-2 gap-8 mt-6">
         {/* Customization Panel */}
         <div className="space-y-6">
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-2 mb-6 text-lg font-semibold">
-              <Palette size={20} className="text-primary" />
-              Appearance
-            </div>
-
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Chatbot Name (Public)</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
+          {activeTab === "settings" ? (
+            <div className="glass-card p-6 space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold border-b border-border pb-3">
+                <Palette size={20} className="text-primary" />
+                Appearance & Customization
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Welcome Message</label>
-                <input
-                  type="text"
-                  value={settings.welcomeMessage || ""}
-                  onChange={(e) => setSettings({ ...settings, welcomeMessage: e.target.value })}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Theme Color</label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="color"
-                    value={settings.themeColor || "#3B82F6"}
-                    onChange={(e) => setSettings({ ...settings, themeColor: e.target.value })}
-                    className="h-10 w-14 rounded-lg cursor-pointer bg-transparent border-0 p-0"
-                  />
-                  <input
-                    type="text"
-                    value={settings.themeColor || "#3B82F6"}
-                    onChange={(e) => setSettings({ ...settings, themeColor: e.target.value })}
-                    className="flex-1 rounded-xl border border-border bg-background px-4 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Widget Position</label>
-                <Select
-                  value={settings.position || "bottom-right"}
-                  onValueChange={(value) => setSettings({ ...settings, position: value })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select position" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="bottom-right">Bottom Right</SelectItem>
-                    <SelectItem value="bottom-left">Bottom Left</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Avatar (Emoji or Logo URL)</label>
+                  <label className="text-sm font-medium">Chatbot Name (Public)</label>
                   <input
                     type="text"
-                    value={settings.avatar || "🤖"}
-                    onChange={(e) => setSettings({ ...settings, avatar: e.target.value })}
-                    placeholder="e.g. 🤖 or https://example.com/logo.png"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                 </div>
-                
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Welcome Message</label>
+                  <input
+                    type="text"
+                    value={settings.welcomeMessage || ""}
+                    onChange={(e) => setSettings({ ...settings, welcomeMessage: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+
+                {/* Closed Widget Popup Message */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <MessageSquare size={16} className="text-primary" />
+                    Closed Widget Popup Message
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.popupMessage || ""}
+                    onChange={(e) => setSettings({ ...settings, popupMessage: e.target.value })}
+                    placeholder="e.g. Need help? Ask us a question!"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A short pop-up bubble that prompts the user to open the widget when it is closed.
+                  </p>
+                </div>
+
+                {/* Predefined Questions (Quick Start) */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-1.5">
+                    <HelpCircle size={16} className="text-primary" />
+                    Predefined Questions (Quick Start)
+                  </label>
+                  <div className="space-y-2">
+                    {(settings.predefinedQuestions || []).map((q, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={q}
+                          onChange={(e) => {
+                            const newQuestions = [...settings.predefinedQuestions];
+                            newQuestions[idx] = e.target.value;
+                            setSettings({ ...settings, predefinedQuestions: newQuestions });
+                          }}
+                          placeholder={`Question ${idx + 1}`}
+                          className="flex-1 rounded-xl border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newQuestions = settings.predefinedQuestions.filter((_, i) => i !== idx);
+                            setSettings({ ...settings, predefinedQuestions: newQuestions });
+                          }}
+                          className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    {(settings.predefinedQuestions || []).length < 4 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSettings({
+                            ...settings,
+                            predefinedQuestions: [...(settings.predefinedQuestions || []), ""],
+                          });
+                        }}
+                        className="flex items-center gap-1.5 text-xs text-primary hover:underline font-medium mt-1"
+                      >
+                        <Plus size={14} /> Add Question
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Add up to 4 suggested questions that visitors can click to instantly submit.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Theme Color</label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="color"
+                      value={settings.themeColor || "#3B82F6"}
+                      onChange={(e) => setSettings({ ...settings, themeColor: e.target.value })}
+                      className="h-10 w-14 rounded-lg cursor-pointer bg-transparent border-0 p-0"
+                    />
+                    <input
+                      type="text"
+                      value={settings.themeColor || "#3B82F6"}
+                      onChange={(e) => setSettings({ ...settings, themeColor: e.target.value })}
+                      className="flex-1 rounded-xl border border-border bg-background px-4 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Widget Position</label>
+                  <Select
+                    value={settings.position || "bottom-right"}
+                    onValueChange={(value) => setSettings({ ...settings, position: value })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select position" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bottom-right">Bottom Right</SelectItem>
+                      <SelectItem value="bottom-left">Bottom Left</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Border Radius</label>
                   <Select
@@ -274,145 +365,167 @@ export default function ChatbotWidget() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Font Family</label>
-                <Select
-                  value={settings.fontFamily || "system-ui"}
-                  onValueChange={(value) => setSettings({ ...settings, fontFamily: value })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select font" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system-ui">System Default</SelectItem>
-                    <SelectItem value="Inter">Inter</SelectItem>
-                    <SelectItem value="Roboto">Roboto</SelectItem>
-                    <SelectItem value="Outfit">Outfit</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Font Family</label>
+                  <Select
+                    value={settings.fontFamily || "system-ui"}
+                    onValueChange={(value) => setSettings({ ...settings, fontFamily: value })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="system-ui">System Default</SelectItem>
+                      <SelectItem value="Inter">Inter</SelectItem>
+                      <SelectItem value="Roboto">Roboto</SelectItem>
+                      <SelectItem value="Outfit">Outfit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="glass-card p-6 border-indigo-500/20 bg-indigo-500/5">
-            <div className="flex items-center gap-2 mb-6 text-lg font-semibold text-indigo-600 dark:text-indigo-400">
-              <Shield size={20} />
-              Security & Integration
-            </div>
-
-            <div className="space-y-6">
-              {/* Allowed Domains */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  <Globe size={16} className="text-muted-foreground" />
-                  Allowed Domains
-                </label>
-                <input
-                  type="text"
-                  value={allowedDomains}
-                  onChange={(e) => setAllowedDomains(e.target.value)}
-                  placeholder="e.g. example.com, myapp.dev (comma separated)"
-                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Restrict the widget to only load on these domains. Leave empty to allow any domain.
-                </p>
+          ) : (
+            <div className="glass-card p-6 border-indigo-500/20 bg-indigo-500/5 space-y-6">
+              <div className="flex items-center gap-2 text-lg font-semibold text-indigo-600 dark:text-indigo-400 border-b border-indigo-500/20 pb-3">
+                <Shield size={20} />
+                Security & Integration
               </div>
 
-              {/* API Key */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  <Key size={16} className="text-muted-foreground" />
-                  Developer API Key
-                </label>
-                <div className="flex items-center gap-2">
+              <div className="space-y-6">
+                {/* Allowed Domains */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Globe size={16} className="text-muted-foreground" />
+                    Allowed Domains
+                  </label>
                   <input
                     type="text"
-                    value={apiKey}
-                    readOnly
-                    placeholder="No API key generated yet"
-                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none font-mono text-muted-foreground"
+                    value={allowedDomains}
+                    onChange={(e) => setAllowedDomains(e.target.value)}
+                    placeholder="e.g. example.com, myapp.dev (comma separated)"
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
-                  <button
-                    onClick={generateApiKey}
-                    title="Generate new API Key"
-                    className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition"
-                  >
-                    <RefreshCw size={18} />
-                  </button>
-                  <button
-                    onClick={() => copyToClipboard(apiKey, setCopiedKey)}
-                    title="Copy API Key"
-                    className="p-2.5 rounded-xl bg-muted text-muted-foreground hover:text-foreground transition"
-                  >
-                    {copiedKey ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Use this key for programmatic server-side access to your chatbot.
-                </p>
-              </div>
-
-              {/* Code Snippets */}
-              <div className="space-y-4 pt-4 border-t border-border">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  <Code size={16} className="text-muted-foreground" />
-                  Integration Snippets
-                </label>
-
-                {/* HTML Script */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase">HTML Script Tag</span>
-                    <button onClick={() => copyToClipboard(embedCode, setCopiedScript)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
-                      {copiedScript ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedScript ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
-                    <code className="text-xs text-indigo-300 whitespace-pre">{embedCode}</code>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Restrict the widget to only load on these domains. Leave empty to allow any domain.
+                  </p>
                 </div>
 
-                {/* React */}
+                {/* API Key */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase">React Component</span>
-                    <button onClick={() => copyToClipboard(reactCode, setCopiedReact)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
-                      {copiedReact ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedReact ? "Copied" : "Copy"}
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Key size={16} className="text-muted-foreground" />
+                    Developer API Key
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={apiKey}
+                      readOnly
+                      placeholder="No API key generated yet"
+                      className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none font-mono text-muted-foreground"
+                    />
+                    <button
+                      onClick={generateApiKey}
+                      title="Generate new API Key"
+                      className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition"
+                    >
+                      <RefreshCw size={18} />
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(apiKey, setCopiedKey)}
+                      title="Copy API Key"
+                      className="p-2.5 rounded-xl bg-muted text-muted-foreground hover:text-foreground transition"
+                    >
+                      {copiedKey ? <CheckCircle2 size={18} /> : <Copy size={18} />}
                     </button>
                   </div>
-                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
-                    <code className="text-xs text-indigo-300 whitespace-pre">{reactCode}</code>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use this key for programmatic server-side access to your chatbot.
+                  </p>
                 </div>
 
-                {/* cURL */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase">REST API (cURL)</span>
-                    <button onClick={() => copyToClipboard(curlCode, setCopiedCurl)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
-                      {copiedCurl ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedCurl ? "Copied" : "Copy"}
-                    </button>
+                {/* Code Snippets */}
+                <div className="space-y-4 pt-4 border-t border-border">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Code size={16} className="text-muted-foreground" />
+                    Integration Snippets
+                  </label>
+
+                  {/* HTML Script */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase">HTML Script Tag</span>
+                      <button onClick={() => copyToClipboard(embedCode, setCopiedScript)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                        {copiedScript ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedScript ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                      <code className="text-xs text-indigo-300 whitespace-pre">{embedCode}</code>
+                    </div>
                   </div>
-                  <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
-                    <code className="text-xs text-indigo-300 whitespace-pre">{curlCode}</code>
+
+                  {/* React */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase">React Component</span>
+                      <button onClick={() => copyToClipboard(reactCode, setCopiedReact)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                        {copiedReact ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedReact ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                      <code className="text-xs text-indigo-300 whitespace-pre">{reactCode}</code>
+                    </div>
+                  </div>
+
+                  {/* cURL */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase">REST API (cURL)</span>
+                      <button onClick={() => copyToClipboard(curlCode, setCopiedCurl)} className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition">
+                        {copiedCurl ? <CheckCircle2 size={12} /> : <Copy size={12} />} {copiedCurl ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="bg-slate-950 rounded-xl p-3 overflow-x-auto">
+                      <code className="text-xs text-indigo-300 whitespace-pre">{curlCode}</code>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Live Preview Panel */}
         <div className="glass-card flex flex-col h-[600px] overflow-hidden sticky top-6">
-          <div className="border-b border-border p-4 bg-muted/30">
-            <h3 className="font-semibold flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-green-500"></span>
-              Live Preview
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">This is how the widget will appear on your site.</p>
+          <div className="border-b border-border p-4 bg-muted/30 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2 text-foreground">
+                <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                Live Preview
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">This is how the widget will appear on your site.</p>
+            </div>
+            <div className="flex bg-muted rounded-lg p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className={`px-3 py-1.5 rounded-md font-medium transition ${
+                  previewOpen ? "bg-background text-foreground shadow-sm animate-fade-in" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Opened
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className={`px-3 py-1.5 rounded-md font-medium transition ${
+                  !previewOpen ? "bg-background text-foreground shadow-sm animate-fade-in" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Closed
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 bg-white relative p-4">
@@ -426,67 +539,124 @@ export default function ChatbotWidget() {
 
             {/* Fake Widget UI */}
             <div
-              className={`absolute bottom-6 flex flex-col transition-all ${settings.position === 'bottom-left' ? 'left-6 items-start' : 'right-6 items-end'
-                }`}
+              className={`absolute bottom-6 flex flex-col transition-all ${
+                settings.position === 'bottom-left' ? 'left-6 items-start' : 'right-6 items-end'
+              }`}
               style={{ fontFamily: settings.fontFamily || 'system-ui' }}
             >
-              {/* Chat Window */}
-              <div className={`w-[340px] bg-white border border-gray-200 shadow-2xl mb-4 overflow-hidden flex flex-col h-[400px] ${
-                settings.borderRadius === 'square' ? 'rounded-none' : 
-                settings.borderRadius === 'pill' ? 'rounded-[24px]' : 'rounded-2xl'
-              }`}>
-                {/* Header */}
+              {/* Closed State Popup Speech Bubble */}
+              {!previewOpen && settings.popupMessage && (
                 <div
-                  className="p-4 text-white font-semibold flex items-center justify-between"
-                  style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
+                  className="mb-2.5 p-3 shadow-xl relative max-w-[220px] transition-all animate-bounce"
+                  style={{
+                    borderRadius: settings.borderRadius === 'square' ? '0' : settings.borderRadius === 'pill' ? '18px' : '12px',
+                    backgroundColor: settings.themeColor || '#3B82F6',
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    lineHeight: '1.4',
+                    border: 'none',
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
-                      {renderAvatar(settings.avatar, "h-8 w-8")}
-                    </div>
-                    <span>{name || "Chatbot"}</span>
+                  <span
+                    className="absolute bottom-[-5px] w-2.5 h-2.5 transform rotate-45"
+                    style={{
+                      backgroundColor: settings.themeColor || '#3B82F6',
+                      [settings.position === 'bottom-left' ? 'left' : 'right']: '24px',
+                    }}
+                  ></span>
+                  <div className="pr-4 select-none cursor-pointer" onClick={() => setPreviewOpen(true)}>
+                    {settings.popupMessage}
                   </div>
-                  <span className="opacity-70 cursor-pointer">✕</span>
+                  <button
+                    className="absolute top-1 right-1 text-white/75 hover:text-white font-bold text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewOpen(true);
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
+              )}
 
-                {/* Messages */}
-                <div className="flex-1 p-4 bg-gray-50 flex flex-col gap-3">
-                  <div className={`bg-white border border-gray-100 p-3 shadow-sm text-sm text-gray-800 self-start max-w-[85%] ${
-                    settings.borderRadius === 'square' ? 'rounded-none' : 'rounded-2xl rounded-tl-sm'
-                  }`}>
-                    {settings.welcomeMessage || "Hi there! How can I help you today?"}
+              {/* Chat Window */}
+              {previewOpen && (
+                <div className={`w-[340px] bg-white border border-gray-200 shadow-2xl mb-4 overflow-hidden flex flex-col h-[400px] ${
+                  settings.borderRadius === 'square' ? 'rounded-none' : 
+                  settings.borderRadius === 'pill' ? 'rounded-[24px]' : 'rounded-2xl'
+                }`}>
+                  {/* Header */}
+                  <div
+                    className="p-4 text-white font-semibold flex items-center justify-between"
+                    style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
+                        {renderAvatar(settings.avatar, "h-8 w-8")}
+                      </div>
+                      <span>{name || "Chatbot"}</span>
+                    </div>
+                    <span className="opacity-70 cursor-pointer" onClick={() => setPreviewOpen(false)}>✕</span>
                   </div>
-                </div>
 
-                {/* Input */}
-                <div className="p-3 border-t border-gray-100 bg-white">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Type your message..."
-                      className={`w-full bg-gray-50 border border-gray-200 px-4 py-2.5 text-sm focus:outline-none ${
-                        settings.borderRadius === 'square' ? 'rounded-none' : 
-                        settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-xl'
-                      }`}
-                      disabled
-                    />
-                    <div
-                      className={`absolute right-1.5 top-1.5 h-7 w-7 flex items-center justify-center text-white ${
-                        settings.borderRadius === 'square' ? 'rounded-none' : 
-                        settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-lg'
-                      }`}
-                      style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  {/* Messages */}
+                  <div className="flex-1 p-4 bg-gray-55 flex flex-col gap-3 overflow-y-auto">
+                    <div className={`bg-white border border-gray-100 p-3 shadow-sm text-sm text-gray-800 self-start max-w-[85%] ${
+                      settings.borderRadius === 'square' ? 'rounded-none' : 'rounded-2xl rounded-tl-sm'
+                    }`}>
+                      {settings.welcomeMessage || "Hi there! How can I help you today?"}
+                    </div>
+
+                    {/* Predefined Questions Preview */}
+                    {settings.predefinedQuestions && settings.predefinedQuestions.filter(q => q && q.trim() !== "").length > 0 && (
+                      <div className="flex flex-col gap-1.5 mt-2 max-w-[85%] self-start">
+                        {settings.predefinedQuestions.filter(q => q && q.trim() !== "").map((q, idx) => (
+                          <div
+                            key={idx}
+                            className="text-xs px-3 py-2 bg-white border border-gray-200 hover:border-primary hover:text-primary transition cursor-pointer text-gray-700 shadow-sm font-medium"
+                            style={{
+                              borderRadius: settings.borderRadius === 'square' ? '0' : settings.borderRadius === 'pill' ? '9999px' : '10px'
+                            }}
+                          >
+                            {q}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Input */}
+                  <div className="p-3 border-t border-gray-100 bg-white">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Type your message..."
+                        className={`w-full bg-gray-50 border border-gray-200 px-4 py-2.5 text-sm focus:outline-none ${
+                          settings.borderRadius === 'square' ? 'rounded-none' : 
+                          settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-xl'
+                        }`}
+                        disabled
+                      />
+                      <div
+                        className={`absolute right-1.5 top-1.5 h-7 w-7 flex items-center justify-center text-white ${
+                          settings.borderRadius === 'square' ? 'rounded-none' : 
+                          settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-lg'
+                        }`}
+                        style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                      </div>
+                    </div>
+                    <div className="text-center mt-2">
+                      <span className="text-[10px] text-gray-400 font-medium">Powered by BlinkBot</span>
                     </div>
                   </div>
-                  <div className="text-center mt-2">
-                    <span className="text-[10px] text-gray-400 font-medium">Powered by BlinkBot</span>
-                  </div>
                 </div>
-              </div>
+              )}
 
               <div
+                onClick={() => setPreviewOpen(!previewOpen)}
                 className={`h-14 w-14 shadow-lg flex items-center justify-center text-white cursor-pointer hover:scale-105 transition-transform overflow-hidden ${
                   settings.borderRadius === 'square' ? 'rounded-none' : 
                   settings.borderRadius === 'pill' ? 'rounded-[20px]' : 'rounded-full'

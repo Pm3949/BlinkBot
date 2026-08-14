@@ -110,6 +110,7 @@ def send_invite_email(
     smtp_port = int(os.getenv("SMTP_PORT", 587))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
+    sender_email = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
 
     if not all([smtp_host, smtp_user, smtp_pass]):
         _logger.warning("⚠️ SMTP settings are missing. Email not sent.")
@@ -118,22 +119,33 @@ def send_invite_email(
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"Invitation to join '{workspace_name}' workspace on BlinkBot"
-        msg["From"] = f"BlinkBot Team <{smtp_user}>"
+        msg["From"] = f"BlinkBot Team <{sender_email}>"
         msg["To"] = to_email
 
-        # Basic inline-styled HTML for maximum email client compatibility
+        # Modern inline-styled HTML matching the orange brand theme
         html_content = f"""
         <html>
-          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <h2 style="color: #4f46e5; margin-bottom: 20px;">You are invited!</h2>
-              <p>Hello,</p>
-              <p><strong>{invited_by}</strong> has invited you to collaborate in the workspace <strong>{workspace_name}</strong> on BlinkBot.</p>
-              <p>To accept this invitation and access the workspace, click the button below to sign up or log in:</p>
-              <p style="text-align: center; margin: 30px 0;">
-                <a href="{signup_url}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Accept Invitation</a>
+          <body style="font-family: 'Inter', Arial, sans-serif; background-color: #f4f4f5; padding: 40px 0; margin: 0;">
+            <div style="margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 24px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02); text-align: center; max-width: 450px;">
+              <h1 style="color: #ff4d00; font-size: 28px; margin-bottom: 5px; font-weight: 800; letter-spacing: -0.5px; margin-top: 0;">BlinkBot</h1>
+              <h2 style="color: #09090b; font-size: 20px; font-weight: 600; margin-bottom: 25px;">You are invited!</h2>
+              
+              <div style="text-align: left; background-color: #fafafa; border: 1px solid #e4e4e7; border-radius: 16px; padding: 20px; margin-bottom: 30px;">
+                <p style="color: #27272a; font-size: 15px; line-height: 1.6; margin: 0 0 10px 0;">Hello,</p>
+                <p style="color: #52525b; font-size: 15px; line-height: 1.6; margin: 0;">
+                  <strong>{invited_by}</strong> has invited you to collaborate in the workspace <strong>{workspace_name}</strong> on BlinkBot.
+                </p>
+              </div>
+
+              <p style="color: #52525b; font-size: 14px; margin-bottom: 30px; line-height: 1.5;">
+                To accept this invitation and access the workspace, click the button below:
               </p>
-              <p style="font-size: 12px; color: #718096; margin-top: 30px;">
+
+              <div style="margin-bottom: 35px;">
+                <a href="{signup_url}" style="background-color: #ff4d00; color: white; padding: 14px 28px; text-decoration: none; border-radius: 12px; font-weight: bold; display: inline-block; font-size: 15px; box-shadow: 0 4px 12px rgba(255, 77, 0, 0.2);">Accept Invitation</a>
+              </div>
+
+              <p style="color: #a1a1aa; font-size: 12px; margin: 0; line-height: 1.5;">
                 If you did not expect this invitation, you can safely ignore this email.
               </p>
             </div>
@@ -146,7 +158,7 @@ def send_invite_email(
             # Start TLS encryption for the SMTP connection
             server.starttls()
             server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, to_email, msg.as_string())
+            server.sendmail(sender_email, to_email, msg.as_string())
 
         _logger.info(f"📧 Invite email sent successfully to {to_email}")
         return True
