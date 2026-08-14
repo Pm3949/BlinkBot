@@ -11,31 +11,46 @@ function LoadingSkeleton({ className }) {
 }
 
 async function fetchAdminStats(user) {
-  const res = await fetch(`${API_URL}/admin/stats?user_id=${user.id}`);
+  const token = localStorage.getItem('adminToken');
+  const res = await fetch(`${API_URL}/admin/stats?user_id=${user.id}`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
   if (!res.ok) throw new Error("Failed to load admin stats");
   return res.json();
 }
 
 async function fetchAdminUsers(user) {
-  const res = await fetch(`${API_URL}/admin/users?user_id=${user.id}`);
+  const token = localStorage.getItem('adminToken');
+  const res = await fetch(`${API_URL}/admin/users?user_id=${user.id}`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
   if (!res.ok) throw new Error("Failed to load admin users");
   return res.json();
 }
 
 async function fetchAdminWorkspaces(user) {
-  const res = await fetch(`${API_URL}/admin/workspaces?user_id=${user.id}`);
+  const token = localStorage.getItem('adminToken');
+  const res = await fetch(`${API_URL}/admin/workspaces?user_id=${user.id}`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
   if (!res.ok) throw new Error("Failed to load admin workspaces");
   return res.json();
 }
 
 async function fetchAdminDemoRequests(user) {
-  const res = await fetch(`${API_URL}/admin/demo-requests?user_id=${user.id}`);
+  const token = localStorage.getItem('adminToken');
+  const res = await fetch(`${API_URL}/admin/demo-requests?user_id=${user.id}`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
   if (!res.ok) throw new Error("Failed to load admin demo requests");
   return res.json();
 }
 
 async function fetchScheduledDemoRequests(user) {
-  const res = await fetch(`${API_URL}/admin/demo-requests/scheduled?user_id=${user.id}`);
+  const token = localStorage.getItem('adminToken');
+  const res = await fetch(`${API_URL}/admin/demo-requests/scheduled?user_id=${user.id}`, {
+    headers: { "Authorization": `Bearer ${token}` }
+  });
   if (!res.ok) throw new Error("Failed to load scheduled demo requests");
   return res.json();
 }
@@ -105,9 +120,13 @@ export default function App() {
 
   const updateSubMutation = useMutation({
     mutationFn: async ({ targetUserId, newPlan, password }) => {
+      const token = localStorage.getItem('adminToken');
       const res = await fetch(`${API_URL}/admin/users/${targetUserId}/subscription`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ plan_tier: newPlan, admin_user_id: currentUser.id, admin_action_password: password })
       });
       if (!res.ok) throw new Error("Failed to update subscription");
@@ -122,9 +141,13 @@ export default function App() {
 
   const updateSuperAdminMutation = useMutation({
     mutationFn: async ({ targetUserId, isSuperAdmin, password }) => {
+      const token = localStorage.getItem('adminToken');
       const res = await fetch(`${API_URL}/admin/users/${targetUserId}/super_admin`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ is_super_admin: isSuperAdmin, admin_user_id: currentUser.id, admin_action_password: password })
       });
       if (!res.ok) throw new Error("Failed to update super admin status");
@@ -139,9 +162,13 @@ export default function App() {
 
   const updateDemoStatusMutation = useMutation({
     mutationFn: async ({ requestId, newStatus, password }) => {
+      const token = localStorage.getItem('adminToken');
       const res = await fetch(`${API_URL}/admin/demo-requests/${requestId}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ status: newStatus, admin_user_id: currentUser.id, admin_action_password: password })
       });
       if (!res.ok) throw new Error("Failed to update status");
@@ -156,9 +183,13 @@ export default function App() {
 
   const scheduleMeetingMutation = useMutation({
     mutationFn: async ({ requestId, date, time, meeting_link, password }) => {
+      const token = localStorage.getItem('adminToken');
       const res = await fetch(`${API_URL}/admin/demo-requests/${requestId}/schedule`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ date, time, meeting_link, admin_user_id: currentUser.id, admin_action_password: password })
       });
       if (!res.ok) throw new Error("Failed to schedule meeting");
