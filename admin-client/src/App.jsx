@@ -859,7 +859,8 @@ function SystemModels({ currentUser, requirePassword }) {
       credits_per_1k_tokens: parseFloat(creditsPer1k),
       requires_key: requiresKey,
       base_url: baseUrl,
-      is_active: isActive
+      is_active: isActive,
+      is_system: true
     };
 
     if (editingModel) {

@@ -105,8 +105,9 @@ async def handle_create_model(payload: dict, user_id: str = None):
             admin_status = await admin_repository.get_user_super_admin_status(user_id)
             is_admin = bool(admin_status and admin_status[0])
 
-        # If user is a super admin, clear user_id to insert as system model
-        effective_user_id = None if is_admin else user_id
+        # Only create a system model if the user is a super admin AND explicitly requests it
+        is_system = bool(payload.get("is_system", False) and is_admin)
+        effective_user_id = None if is_system else user_id
 
         # Write record to the DB
         model = await model_repository.create_model(payload, user_id=effective_user_id)

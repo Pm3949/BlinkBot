@@ -92,46 +92,51 @@ def calculate_subscription_price(
     chatbot_messages_limit: int
 ) -> float:
     """
-    Computes subscription prices based on tier and active resource quotas.
+    Computes subscription prices based on tier and billing cycle.
+
+    Pricing (BlinkBot Final Model):
+      - Starter:  ₹0  / month  (Free)
+      - Pro:      ₹699 / month  (~$8) — 20% off annually → ₹559/month
+      - Business: ₹1,999 / month (~$24) — 20% off annually → ₹1,599/month
     """
     if plan_tier == "Pro":
-        monthly_total = 1900
+        monthly_total = 699
         final_amount = (
             (monthly_total * 12) * 0.8
             if billing_cycle == "annually"
             else monthly_total
         )
-    elif plan_tier == "Enterprise":
-        monthly_total = 9900
+    elif plan_tier == "Business":
+        monthly_total = 1999
+        final_amount = (
+            (monthly_total * 12) * 0.8
+            if billing_cycle == "annually"
+            else monthly_total
+        )
+    elif plan_tier == "Custom":
+        # Custom plan add-on rates:
+        # Platform base: ₹99
+        # Workspace:     ₹99 each
+        # Agent:         ₹39 each
+        # AI Messages:   ₹9 per 1,000
+        # Storage:       ₹29 per 1 GB
+        # Chatbot:       ₹229 each
+        monthly_total = (
+            99
+            + (workspaces_limit * 99)
+            + (agents_limit * 39)
+            + (agent_messages_limit / 1000.0 * 9)
+            + (storage_mb_limit / 1024.0 * 29)
+            + (chatbots_limit * 229)
+        )
         final_amount = (
             (monthly_total * 12) * 0.8
             if billing_cycle == "annually"
             else monthly_total
         )
     else:
-        # Custom plan configuration
-        base_price = 800
-        workspaces_price = workspaces_limit * 500
-        agents_price = agents_limit * 400
-        agent_msg_price = (agent_messages_limit / 1000.0) * 160
-        storage_price = (storage_mb_limit / 100.0) * 50
-        chatbots_price = chatbots_limit * 800
-        chatbot_msg_price = (chatbot_messages_limit / 1000.0) * 200
-
-        monthly_total = (
-            base_price
-            + workspaces_price
-            + agents_price
-            + agent_msg_price
-            + storage_price
-            + chatbots_price
-            + chatbot_msg_price
-        )
-        final_amount = (
-            (monthly_total * 12) * 0.8
-            if billing_cycle == "annually"
-            else monthly_total
-        )
+        # Starter is free, fallback to 0
+        final_amount = 0.0
     return float(final_amount)
 
 

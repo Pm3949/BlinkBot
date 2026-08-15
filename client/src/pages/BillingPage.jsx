@@ -85,35 +85,39 @@ export default function BillingPage() {
 
   // Custom Plan Slider States
   const [customWorkspaces, setCustomWorkspaces] = useState(1);
-  const [customAgents, setCustomAgents] = useState(3);
+  const [customAgents, setCustomAgents] = useState(10);
   const [customMessages, setCustomMessages] = useState(15000);
-  const [customStorage, setCustomStorage] = useState(1000);
-  const [customChatbots, setCustomChatbots] = useState(2);
+  const [customStorage, setCustomStorage] = useState(1024);
+  const [customChatbots, setCustomChatbots] = useState(0);
 
-  // Custom Pricing Formula in INR & USD
-  const basePrice = 499;
-  const workspacesPrice = (customWorkspaces - 1) * 299;
-  const agentsPrice = (customAgents - 1) * 199;
-  const messagesPrice = Math.floor(customMessages / 1000) * 49;
-  const storagePrice = Math.floor(customStorage / 100) * 19;
-  const chatbotsPrice = customChatbots * 299;
+  // Custom Pricing Formula — BlinkBot Add-On Rates:
+  // Base Platform:    ₹99
+  // Workspace:        ₹99 each
+  // Agent:            ₹39 each
+  // AI Messages:      ₹9 per 1,000
+  // Storage:          ₹29 per 1 GB
+  // Embedded Chatbot: ₹229 each
+  const basePrice = 99;
+  const workspacesPrice = customWorkspaces * 99;
+  const agentsPrice = customAgents * 39;
+  const messagesPrice = Math.floor(customMessages / 1000) * 9;
+  const storagePrice = Math.floor(customStorage / 1024) * 29;
+  const chatbotsPrice = customChatbots * 229;
 
   const monthlyTotal = basePrice + workspacesPrice + agentsPrice + messagesPrice + storagePrice + chatbotsPrice;
   const finalTotal = annualBilling ? Math.round(monthlyTotal * 0.8) : monthlyTotal;
-  const usdEquivalent = Math.round(finalTotal / 83);
+  const usdEquivalent = Math.round(finalTotal / 84);
 
   const handleCheckout = async (planTier = "Pro", customLimits = null) => {
     try {
+      // Pro: 1 Workspace, 5 Agents, 10,000 Messages, 1 GB Storage, 1 Chatbot
       let finalLimits = customLimits || {
-        workspaces: 3, agents: 5, agentMessages: 10000, storage: 1000, chatbots: 3, chatbotMessages: 5000
+        workspaces: 1, agents: 5, agentMessages: 10000, storage: 1024, chatbots: 1, chatbotMessages: 10000
       };
       
       if (planTier === "Business") {
-        finalLimits = { workspaces: 999999, agents: 20, agentMessages: 50000, storage: 10000, chatbots: 999, chatbotMessages: 50000 };
-      } else if (planTier === "TopUp5k") {
-        finalLimits = { workspaces: 1, agents: 1, agentMessages: 5000, storage: 500, chatbots: 1, chatbotMessages: 5000 };
-      } else if (planTier === "TopUp20k") {
-        finalLimits = { workspaces: 1, agents: 1, agentMessages: 20000, storage: 2000, chatbots: 1, chatbotMessages: 20000 };
+        // Business: Unlimited Workspaces, Unlimited Agents, 50,000 Messages, 10 GB Storage, Unlimited Chatbots
+        finalLimits = { workspaces: 999999, agents: 999999, agentMessages: 50000, storage: 10240, chatbots: 999999, chatbotMessages: 999999 };
       }
 
       await checkoutMutation.mutateAsync({
@@ -162,46 +166,49 @@ export default function BillingPage() {
       title: "Starter",
       priceInr: "0",
       priceUsd: "0",
-      description: "Perfect for testing and building your first AI Agent.",
+      description: "Free hook — perfect for testing and building your first AI Agent.",
       icon: Zap,
       features: [
         "1 Active Workspace",
         "1 AI Agent per Workspace",
-        "1,000 AI Messages / month",
-        "100 MB Document Storage",
-        "1 Public Website Chatbot",
+        "500 AI Messages / month",
+        "5 MB Document & Asset Storage",
+        "Platform-managed system models only",
+        "BYOK: Not Allowed",
         "Community Support"
       ]
     },
     {
       title: "Pro",
-      priceInr: annualBilling ? "799" : "999",
-      priceUsd: annualBilling ? "10" : "12",
-      description: "Best for growing teams, creators, and active projects.",
+      priceInr: annualBilling ? "559" : "699",
+      priceUsd: annualBilling ? "7" : "8",
+      description: "For growing teams & small businesses.",
       icon: Sparkles,
       isPopular: true,
       features: [
-        "3 Active Workspaces",
+        "1 Active Workspace",
         "5 AI Agents per Workspace",
         "10,000 AI Messages / month",
-        "1 GB Vector Storage",
-        "3 Public Website Chatbots",
+        "1 GB Vector & Asset Storage",
+        "1 Embedded Website Chatbots",
+        "BYOK: Allowed",
         "Granular Studio & Model Permissions",
         "Priority Support"
       ]
     },
     {
       title: "Business",
-      priceInr: annualBilling ? "3,199" : "3,999",
-      priceUsd: annualBilling ? "39" : "49",
-      description: "For agencies and scaling applications requiring full capacity.",
+      priceInr: annualBilling ? "1,599" : "1,999",
+      priceUsd: annualBilling ? "19" : "24",
+      description: "For agencies & scaling applications.",
       icon: Building2,
       features: [
         "Unlimited Workspaces",
-        "20 AI Agents per Workspace",
+        "Unlimited AI Agents per Workspace",
         "50,000 AI Messages / month",
-        "10 GB Vector Storage",
-        "Unlimited Public Chatbots",
+        "10 GB Vector & Asset Storage",
+        "Unlimited Embedded Chatbots",
+        "BYOK: Allowed",
         "Full Audit Logging & RBAC Controls",
         "Dedicated Support Manager"
       ]
@@ -276,7 +283,7 @@ export default function BillingPage() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {currentPlanTier === "Starter" 
-                ? "Free tier includes 1 Workspace, 1 Agent, and 1,000 monthly AI Messages." 
+                ? "Free tier includes 1 Workspace, 1 Agent, 500 monthly AI Messages, and 5 MB storage." 
                 : "Your subscription renews automatically. Change tiers anytime below."}
             </p>
           </div>
@@ -552,21 +559,24 @@ export default function BillingPage() {
         {/* Sliders Column */}
         <div className="lg:col-span-2 space-y-6">
           <div className="glass-card p-8 space-y-6">
-            <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
-              <Sliders className="text-primary" size={20} /> Configure Custom Limits
-            </h3>
+            <div>
+              <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
+                <Sliders className="text-primary" size={20} /> Build a Custom Plan
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">Pay only for what you need. 20% off when billed annually.</p>
+            </div>
 
             {/* Workspaces Slider */}
             <div className="space-y-3">
               <div className="flex justify-between items-end">
                 <div>
                   <label className="text-sm font-semibold flex items-center gap-2"><Building2 size={16} /> Workspaces</label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Isolated environments for different projects.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">₹99 / workspace</p>
                 </div>
-                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customWorkspaces} Workspaces</span>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customWorkspaces} Workspace{customWorkspaces > 1 ? 's' : ''}</span>
               </div>
-              <input 
-                type="range" min="1" max="10" step="1" 
+              <input
+                type="range" min="1" max="20" step="1"
                 value={customWorkspaces} onChange={(e) => setCustomWorkspaces(parseInt(e.target.value))}
                 className="w-full accent-primary h-2 cursor-pointer"
               />
@@ -577,12 +587,12 @@ export default function BillingPage() {
               <div className="flex justify-between items-end">
                 <div>
                   <label className="text-sm font-semibold flex items-center gap-2"><Cpu size={16} /> Agents per Workspace</label>
-                  <p className="text-xs text-muted-foreground mt-0.5">AI Agents deployed per workspace.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">₹39 / agent</p>
                 </div>
                 <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customAgents} Agents/ws</span>
               </div>
-              <input 
-                type="range" min="1" max="30" step="1" 
+              <input
+                type="range" min="1" max="100" step="1"
                 value={customAgents} onChange={(e) => setCustomAgents(parseInt(e.target.value))}
                 className="w-full accent-primary h-2 cursor-pointer"
               />
@@ -593,12 +603,12 @@ export default function BillingPage() {
               <div className="flex justify-between items-end">
                 <div>
                   <label className="text-sm font-semibold flex items-center gap-2"><MessageSquare size={16} /> AI Messages / Month</label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Queries processed by your AI Agents & Chatbots.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">₹9 per 1,000 messages</p>
                 </div>
                 <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customMessages.toLocaleString()} Msgs</span>
               </div>
-              <input 
-                type="range" min="5000" max="100000" step="5000" 
+              <input
+                type="range" min="1000" max="200000" step="1000"
                 value={customMessages} onChange={(e) => setCustomMessages(parseInt(e.target.value))}
                 className="w-full accent-primary h-2 cursor-pointer"
               />
@@ -608,29 +618,29 @@ export default function BillingPage() {
             <div className="space-y-3">
               <div className="flex justify-between items-end">
                 <div>
-                  <label className="text-sm font-semibold flex items-center gap-2"><Database size={16} /> Vector Storage</label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Storage for PDF, DOCX, and website embeddings.</p>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Database size={16} /> Vector & Asset Storage</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">₹29 per GB</p>
                 </div>
-                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customStorage >= 1000 ? `${customStorage / 1000} GB` : `${customStorage} MB`}</span>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customStorage >= 1024 ? `${(customStorage / 1024).toFixed(0)} GB` : `${customStorage} MB`}</span>
               </div>
-              <input 
-                type="range" min="200" max="10000" step="200" 
+              <input
+                type="range" min="1024" max="51200" step="1024"
                 value={customStorage} onChange={(e) => setCustomStorage(parseInt(e.target.value))}
                 className="w-full accent-primary h-2 cursor-pointer"
               />
             </div>
 
-            {/* Public Chatbots Slider */}
+            {/* Embedded Chatbots Slider */}
             <div className="space-y-3">
               <div className="flex justify-between items-end">
                 <div>
-                  <label className="text-sm font-semibold flex items-center gap-2"><Globe size={16} /> Public Website Chatbots</label>
-                  <p className="text-xs text-muted-foreground mt-0.5">Embeddable widgets for public website visitors.</p>
+                  <label className="text-sm font-semibold flex items-center gap-2"><Globe size={16} /> Embedded Website Chatbots</label>
+                  <p className="text-xs text-muted-foreground mt-0.5">₹229 / chatbot</p>
                 </div>
-                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customChatbots} Chatbots</span>
+                <span className="font-mono bg-muted px-3 py-1 rounded-md text-xs font-bold">{customChatbots} Chatbot{customChatbots !== 1 ? 's' : ''}</span>
               </div>
-              <input 
-                type="range" min="1" max="20" step="1" 
+              <input
+                type="range" min="0" max="20" step="1"
                 value={customChatbots} onChange={(e) => setCustomChatbots(parseInt(e.target.value))}
                 className="w-full accent-primary h-2 cursor-pointer"
               />
@@ -642,32 +652,34 @@ export default function BillingPage() {
         <div className="lg:col-span-1">
           <div className="glass-card p-6 sticky top-6 space-y-6 border-primary/30">
             <h3 className="text-lg font-bold text-foreground">Custom Summary</h3>
-            
-            <div className="space-y-3 text-xs border-b border-border/50 pb-4">
+
+            <div className="space-y-2.5 text-xs border-b border-border/50 pb-4">
               <div className="flex justify-between text-muted-foreground">
-                <span>Base Platform</span>
+                <span>Platform Base</span>
                 <span className="font-medium text-foreground">₹{basePrice}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Workspaces ({customWorkspaces})</span>
+                <span>{customWorkspaces} Workspace{customWorkspaces > 1 ? 's' : ''} × ₹99</span>
                 <span className="font-medium text-foreground">₹{workspacesPrice}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Agents ({customAgents}/ws)</span>
+                <span>{customAgents} Agents/ws × ₹39</span>
                 <span className="font-medium text-foreground">₹{agentsPrice}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>AI Messages ({customMessages.toLocaleString()})</span>
+                <span>{(customMessages / 1000).toFixed(0)}k Msgs × ₹19/k</span>
                 <span className="font-medium text-foreground">₹{messagesPrice}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Storage ({customStorage} MB)</span>
+                <span>{(customStorage / 1024).toFixed(0)} GB Storage × ₹29</span>
                 <span className="font-medium text-foreground">₹{storagePrice}</span>
               </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Public Chatbots ({customChatbots})</span>
-                <span className="font-medium text-foreground">₹{chatbotsPrice}</span>
-              </div>
+              {customChatbots > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{customChatbots} Chatbot{customChatbots > 1 ? 's' : ''} × ₹229</span>
+                  <span className="font-medium text-foreground">₹{chatbotsPrice}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -681,7 +693,7 @@ export default function BillingPage() {
               )}
             </div>
 
-            <Button 
+            <Button
               disabled={checkoutMutation.isPending}
               onClick={() => handleCheckout("Custom", {
                 workspaces: customWorkspaces,

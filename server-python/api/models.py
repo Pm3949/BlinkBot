@@ -48,6 +48,7 @@ class ModelCreate(BaseModel):
     output_cost_per_1m: Optional[float] = 0.0
     credits_per_1k_tokens: Optional[float] = 0.0
     badge: Optional[str] = ""
+    is_system: Optional[bool] = False
 
 
 class ModelUpdate(BaseModel):
