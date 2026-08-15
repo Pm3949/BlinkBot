@@ -254,3 +254,31 @@ async def test_single_model(payload: SingleModelTestRequest, current_user: dict 
     # Test the model execution.
     return await model_handler.handle_test_single_model(payload.dict(), user_id=user_id)
 
+
+@router.get("/api/models/available")
+async def get_available_models(current_user: dict = Depends(get_current_user)):
+    """
+    Retrieves available system and user custom models, along with BYOK authorization status.
+    """
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+    
+    # Check if BYOK is allowed
+    from database import get_db_cursor_async
+    from fastapi.concurrency import run_in_threadpool
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
+            (user_id,)
+        )
+        row = await run_in_threadpool(cursor.fetchone)
+        allow_byok = row[0] if row else False
+
+    active_models = await model_handler.handle_get_active_models(user_id=user_id)
+    return {
+        "allow_byok": allow_byok,
+        "providers": active_models.get("providers", {}),
+        "models": active_models.get("models", [])
+    }
+
+

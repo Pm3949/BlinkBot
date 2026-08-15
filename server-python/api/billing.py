@@ -140,3 +140,84 @@ async def verify_razorpay_payment(req: RazorpayVerifyRequest, current_user: dict
         req.chatbot_messages_limit
     )
 
+
+# ==========================================
+# WALLET AND CREDIT ENDPOINTS
+# ==========================================
+
+from pydantic import BaseModel
+
+class RechargeRequest(BaseModel):
+    amount: float
+
+class RechargeSettingsRequest(BaseModel):
+    enabled: bool
+    threshold: float
+    amount_usd: float
+
+
+@router.get("/api/billing/wallet")
+async def get_wallet_info(current_user: dict = Depends(get_current_user)):
+    """
+    Retrieves the wallet configuration, credit balance, and transaction history.
+    """
+    user_id = current_user["sub"]
+    from db import billing_repository
+    
+    wallet = await billing_repository.get_wallet_details(user_id)
+    history = await billing_repository.get_credit_transactions(user_id, limit=50)
+    
+    return {
+        "status": "success",
+        "wallet": wallet,
+        "history": history
+    }
+
+
+@router.post("/api/billing/wallet/recharge")
+async def recharge_wallet(req: RechargeRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Adds credits to the user's prepaid wallet (Phase 1 Simulated / Decoupled gateway recharge).
+    """
+    user_id = current_user["sub"]
+    from db import billing_repository
+    
+    # Recharge the wallet
+    await billing_repository.topup_wallet_credits(user_id, req.amount)
+    
+    # Log the top-up transaction
+    await billing_repository.create_credit_transaction(
+        user_id=user_id,
+        agent_id=None,
+        amount_credits=req.amount,
+        transaction_type="topup",
+        model_used=None
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Successfully recharged wallet with {req.amount} credits."
+    }
+
+
+@router.post("/api/billing/wallet/settings")
+async def update_recharge_settings(req: RechargeSettingsRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Saves automatic refill thresholds and rules.
+    """
+    user_id = current_user["sub"]
+    from db import billing_repository
+    
+    await billing_repository.update_wallet_recharge_settings(
+        user_id=user_id,
+        enabled=req.enabled,
+        threshold=req.threshold,
+        amount_usd=req.amount_usd
+    )
+    
+    return {
+        "status": "success",
+        "message": "Wallet recharge settings updated successfully."
+    }
+
+

@@ -133,7 +133,7 @@ async def get_agent_for_chat(agent_id: str):
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled FROM agents WHERE id = %s",
+            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled, use_byok FROM agents WHERE id = %s",
             (agent_id,),
         )
         return await run_in_threadpool(cursor.fetchone)
@@ -186,7 +186,7 @@ async def get_agent_routing_info(agent_id: str):
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled FROM agents WHERE id = %s",
+            "SELECT name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled, use_byok FROM agents WHERE id = %s",
             (agent_id,),
         )
         return await run_in_threadpool(cursor.fetchone)

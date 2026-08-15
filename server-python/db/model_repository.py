@@ -182,327 +182,388 @@ async def init_ai_models_table():
 async def get_active_models(user_id: str = None):
     """
     Retrieves all currently active AI models available to a specific user.
-
-    Purpose:
-        Provides options for user settings and agent creation forms. Retrieves global active models
-        (`user_id IS NULL`) plus custom models created by the user requesting the active list.
-
-    Parameters:
-        user_id (str, optional): Unique database user identifier. Defaults to None.
-
-    Returns:
-        list of dict: A list of model configuration dictionaries. API keys are decrypted
-                      and masked before formatting.
-
-    Side Effects / State Changes:
-        - None. Read-only query.
-
-    Errors / Exceptions:
-        - May raise database-related errors.
+    Retrieves active models from system_ai_models plus user custom models from user_ai_models.
     """
+    models = []
+    # 1. Fetch system active models
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, provider, model_id, name, description, requires_key, base_url, category, created_at, user_id, api_key
-            FROM ai_models
-            WHERE is_active = TRUE AND (user_id IS NULL OR user_id = %s)
+            SELECT id, provider, id as model_id, name, 'System model' as description, FALSE as requires_key, 
+                   '' as base_url, category, created_at, credits_per_1k_tokens, tier_badge
+            FROM system_ai_models
+            WHERE is_active = TRUE
             ORDER BY provider ASC, name ASC
-            """,
-            (user_id,)
+            """
         )
-        rows = await run_in_threadpool(cursor.fetchall)
-        # Parse output tuple array to standard Python dictionary structures.
-        return [
-            {
+        sys_rows = await run_in_threadpool(cursor.fetchall)
+        for r in sys_rows:
+            models.append({
                 "id": r[0],
                 "provider": r[1],
                 "model_id": r[2],
                 "name": r[3],
-                "description": r[4] or "",
+                "description": r[4],
                 "requires_key": r[5],
-                "base_url": r[6] or "",
+                "base_url": r[6],
                 "category": r[7] or "General",
-                # Convert timestamps to standardized ISO formats.
                 "created_at": r[8].isoformat() if r[8] else None,
-                "user_id": str(r[9]) if r[9] else None,
-                # Crucial security protection: decrypt key and mask it so the full token is never exposed in API payloads.
-                "api_key": mask_key(decrypt_key(r[10])) if r[10] else ""
-            }
-            for r in rows
-        ]
+                "user_id": None,
+                "api_key": "",
+                "credits_per_1k_tokens": float(r[9]),
+                "tier_badge": r[10]
+            })
+
+    # 2. Fetch user's custom models
+    if user_id:
+        async with get_db_cursor_async(commit=False) as cursor:
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                SELECT id, provider, model_identifier, name, base_url, created_at, user_id, api_key
+                FROM user_ai_models
+                WHERE is_active = TRUE AND user_id = %s
+                ORDER BY provider ASC, name ASC
+                """,
+                (user_id,)
+            )
+            user_rows = await run_in_threadpool(cursor.fetchall)
+            for r in user_rows:
+                models.append({
+                    "id": str(r[0]),
+                    "provider": r[1],
+                    "model_id": r[2],
+                    "name": r[3],
+                    "description": f"Custom user model: {r[2]}",
+                    "requires_key": True,
+                    "base_url": r[4],
+                    "category": "General",
+                    "created_at": r[5].isoformat() if r[5] else None,
+                    "user_id": str(r[6]),
+                    "api_key": mask_key(decrypt_key(r[7])) if r[7] else "",
+                    "credits_per_1k_tokens": 0.0,
+                    "tier_badge": "Custom"
+                })
+
+    return models
 
 
 async def get_all_models(user_id: str = None):
     """
-    Retrieves all models (both active and inactive) scoped to the user.
-
-    Purpose:
-        Populates administrative listings, enabling users to toggle active states or view
-        unconfigured integrations.
-
-    Parameters:
-        user_id (str, optional): Unique database user identifier. Defaults to None.
-
-    Returns:
-        list of dict: A list of model configuration dictionaries.
-
-    Side Effects / State Changes:
-        - None. Read-only.
-
-    Errors / Exceptions:
-        - May raise database exceptions.
+    Retrieves all models (both active and inactive) scoped to the user/admin.
     """
+    models = []
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key
-            FROM ai_models
-            WHERE user_id IS NULL OR user_id = %s
-            ORDER BY provider ASC, created_at DESC
-            """,
-            (user_id,)
+            SELECT id, provider, id as model_id, name, 'System model' as description, FALSE as requires_key, 
+                   '' as base_url, is_active, category, created_at, credits_per_1k_tokens, tier_badge
+            FROM system_ai_models
+            ORDER BY provider ASC, name ASC
+            """
         )
-        rows = await run_in_threadpool(cursor.fetchall)
-        return [
-            {
+        sys_rows = await run_in_threadpool(cursor.fetchall)
+        for r in sys_rows:
+            models.append({
                 "id": r[0],
                 "provider": r[1],
                 "model_id": r[2],
                 "name": r[3],
-                "description": r[4] or "",
+                "description": r[4],
                 "requires_key": r[5],
-                "base_url": r[6] or "",
+                "base_url": r[6],
                 "is_active": r[7],
                 "category": r[8] or "General",
                 "created_at": r[9].isoformat() if r[9] else None,
-                "user_id": str(r[10]) if r[10] else None,
-                # Decrypt and mask secret keys.
-                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
-            }
-            for r in rows
-        ]
+                "user_id": None,
+                "api_key": "",
+                "credits_per_1k_tokens": float(r[10]),
+                "tier_badge": r[11]
+            })
+
+    if user_id:
+        async with get_db_cursor_async(commit=False) as cursor:
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                SELECT id, provider, model_identifier, name, base_url, is_active, created_at, user_id, api_key
+                FROM user_ai_models
+                WHERE user_id = %s
+                ORDER BY provider ASC, created_at DESC
+                """,
+                (user_id,)
+            )
+            user_rows = await run_in_threadpool(cursor.fetchall)
+            for r in user_rows:
+                models.append({
+                    "id": str(r[0]),
+                    "provider": r[1],
+                    "model_id": r[2],
+                    "name": r[3],
+                    "description": f"Custom user model: {r[2]}",
+                    "requires_key": True,
+                    "base_url": r[4],
+                    "is_active": r[5],
+                    "category": "General",
+                    "created_at": r[6].isoformat() if r[6] else None,
+                    "user_id": str(r[7]),
+                    "api_key": mask_key(decrypt_key(r[8])) if r[8] else "",
+                    "credits_per_1k_tokens": 0.0,
+                    "tier_badge": "Custom"
+                })
+
+    return models
 
 
 async def create_model(data: dict, user_id: str = None):
     """
-    Adds a new model configuration to the catalog.
-
-    Purpose:
-        Allows users to register custom API models (such as custom HuggingFace endpoints).
-        Encrypts provided credentials before saving them.
-
-    Parameters:
-        data (dict): Model definition attributes:
-            - provider (str): Endpoint provider.
-            - model_id (str): Model name ID.
-            - name (str): Display title.
-            - description (str, optional): Summary.
-            - requires_key (bool, optional): Indicates if authentication credentials are required.
-            - base_url (str, optional): Target base endpoint URL.
-            - category (str, optional): Group category labels.
-            - api_key (str, optional): Plaintext credentials key.
-        user_id (str, optional): Unique database user identifier. Defaults to None.
-
-    Returns:
-        dict | None: The created model configuration dictionary, or None if creation failed.
-
-    Side Effects / State Changes:
-        - Writes a new row to the `ai_models` table.
-        - Commits modifications to the database (commit=True).
-
-    Errors / Exceptions:
-        - May raise database constraint errors.
+    Registers a new model entry.
+    If user_id is provided, creates in user_ai_models.
+    If user_id is None, creates in system_ai_models (Admin only).
     """
     async with get_db_cursor_async(commit=True) as cursor:
-        raw_key = data.get("api_key", "")
-        # Protect credentials: encrypt keys using the core security module.
-        enc_key = encrypt_key(raw_key) if raw_key else None
-        
-        await run_in_threadpool(
-            cursor.execute,
-            """
-            INSERT INTO ai_models (provider, model_id, name, description, requires_key, base_url, category, is_active, user_id, api_key)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, %s, %s)
-            RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key;
-            """,
-            (
-                data.get("provider", "openai"),
-                data.get("model_id"),
-                data.get("name"),
-                data.get("description", ""),
-                data.get("requires_key", False),
-                data.get("base_url", ""),
-                data.get("category", "General"),
-                user_id,
-                enc_key
+        if user_id:
+            raw_key = data.get("api_key", "")
+            enc_key = encrypt_key(raw_key) if raw_key else None
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                INSERT INTO user_ai_models (user_id, name, provider, model_identifier, base_url, api_key, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id, provider, model_identifier, name, base_url, is_active, created_at, user_id, api_key;
+                """,
+                (
+                    user_id,
+                    data.get("name"),
+                    data.get("provider", "openai"),
+                    data.get("model_id"),
+                    data.get("base_url", ""),
+                    enc_key
+                )
             )
-        )
-        r = await run_in_threadpool(cursor.fetchone)
-        if r:
-            return {
-                "id": r[0],
-                "provider": r[1],
-                "model_id": r[2],
-                "name": r[3],
-                "description": r[4] or "",
-                "requires_key": r[5],
-                "base_url": r[6] or "",
-                "is_active": r[7],
-                "category": r[8] or "General",
-                "created_at": r[9].isoformat() if r[9] else None,
-                "user_id": str(r[10]) if r[10] else None,
-                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
-            }
+            r = await run_in_threadpool(cursor.fetchone)
+            if r:
+                return {
+                    "id": str(r[0]),
+                    "provider": r[1],
+                    "model_id": r[2],
+                    "name": r[3],
+                    "description": f"Custom user model: {r[2]}",
+                    "requires_key": True,
+                    "base_url": r[4],
+                    "is_active": r[5],
+                    "category": "General",
+                    "created_at": r[6].isoformat() if r[6] else None,
+                    "user_id": str(r[7]),
+                    "api_key": mask_key(decrypt_key(r[8])) if r[8] else "",
+                    "credits_per_1k_tokens": 0.0,
+                    "tier_badge": "Custom"
+                }
+        else:
+            # System model admin creation
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                INSERT INTO system_ai_models (id, name, provider, category, credits_per_1k_tokens, tier_badge, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id, name, provider, category, credits_per_1k_tokens, tier_badge, is_active, created_at;
+                """,
+                (
+                    data.get("model_id"),
+                    data.get("name"),
+                    data.get("provider"),
+                    data.get("category", "General"),
+                    data.get("credits_per_1k_tokens", 0.1),
+                    data.get("tier_badge", "Low Burn")
+                )
+            )
+            r = await run_in_threadpool(cursor.fetchone)
+            if r:
+                return {
+                    "id": r[0],
+                    "provider": r[2],
+                    "model_id": r[0],
+                    "name": r[1],
+                    "description": "System model",
+                    "requires_key": False,
+                    "base_url": "",
+                    "is_active": r[6],
+                    "category": r[3],
+                    "created_at": r[7].isoformat() if r[7] else None,
+                    "user_id": None,
+                    "api_key": "",
+                    "credits_per_1k_tokens": float(r[4]),
+                    "tier_badge": r[5]
+                }
         return None
 
 
 async def update_model(model_db_id: str, data: dict, user_id: str = None):
     """
-    Updates the configuration or active status of a model in the catalog.
-
-    Purpose:
-        Modifies properties of a model catalog entry. Enforces access control permissions:
-        1. Users can toggle the `is_active` flag of system models, but cannot edit other fields.
-        2. Users can modify all fields of custom models they created.
-        3. Users cannot edit or toggle models owned by other users.
-
-    Parameters:
-        model_db_id (str): Database key UUID of the target model.
-        data (dict): Key-value pairs containing model updates.
-        user_id (str, optional): Unique user database ID. Defaults to None.
-
-    Returns:
-        dict | None: The updated model configuration dictionary, or None.
-
-    Side Effects / State Changes:
-        - Modifies columns in `ai_models`.
-        - Commits changes to the database.
-
-    Errors / Exceptions:
-        - May raise database exceptions.
+    Updates a model catalog entry configuration or active status.
+    Determines system vs user model by parsing model_db_id.
     """
+    is_user_model = False
+    try:
+        import uuid
+        uuid.UUID(str(model_db_id))
+        is_user_model = True
+    except ValueError:
+        is_user_model = False
+
     async with get_db_cursor_async(commit=True) as cursor:
-        # Step 1: Query database to verify permissions.
-        await run_in_threadpool(
-            cursor.execute,
-            "SELECT user_id, api_key FROM ai_models WHERE id = %s",
-            (model_db_id,)
-        )
-        existing = await run_in_threadpool(cursor.fetchone)
-        # Exit early if the model does not exist.
-        if not existing:
-            return None
-        
-        db_user_id, db_api_key = existing
-        # Access Check: If the model has a user owner, confirm it matches the caller's user_id.
-        if db_user_id is not None and str(db_user_id) != user_id:
-            # Unauthorized to modify this model.
-            return None
-        # Access Check: If it is a global system model (`db_user_id IS NULL`), users can only toggle `is_active`.
-        if db_user_id is None and "is_active" not in data:
-            # Unauthorized to edit properties on a global system model.
-            return None
+        if is_user_model:
+            # 1. Update user custom model
+            await run_in_threadpool(
+                cursor.execute,
+                "SELECT user_id, api_key FROM user_ai_models WHERE id = %s",
+                (model_db_id,)
+            )
+            existing = await run_in_threadpool(cursor.fetchone)
+            if not existing or (user_id and str(existing[0]) != user_id):
+                return None
 
-        set_clauses = []
-        values = []
-        
-        # Step 2: Handle API key encryption updates specifically.
-        if "api_key" in data:
-            raw_key = data["api_key"]
-            # If the user inputted a new plaintext key (not the masked placeholder starting with stars), encrypt and store it.
-            if raw_key and not raw_key.startswith("********"):
-                enc_key = encrypt_key(raw_key)
-                set_clauses.append("api_key = %s")
-                values.append(enc_key)
-            # If they cleared the key, set the column to NULL.
-            elif not raw_key:
-                set_clauses.append("api_key = NULL")
+            set_clauses = []
+            values = []
 
-        # Step 3: Loop through other allowed whitelisted columns.
-        allowed_keys = ["name", "description", "requires_key", "base_url", "is_active", "category", "provider", "model_id"]
-        for key in allowed_keys:
-            if key in data:
-                # Double-check rules: skip updating metadata columns on global system models (only allow is_active).
-                if db_user_id is None and key != "is_active":
-                    continue
-                set_clauses.append(f"{key} = %s")
-                values.append(data[key])
+            if "api_key" in data:
+                raw_key = data["api_key"]
+                if raw_key and not raw_key.startswith("********"):
+                    enc_key = encrypt_key(raw_key)
+                    set_clauses.append("api_key = %s")
+                    values.append(enc_key)
+                elif not raw_key:
+                    set_clauses.append("api_key = NULL")
 
-        # If no clauses were generated (e.g. invalid keys), exit early.
-        if not set_clauses:
-            return None
+            allowed_keys = ["name", "is_active", "base_url", "provider", "model_id"]
+            for key in allowed_keys:
+                if key in data:
+                    db_col = "model_identifier" if key == "model_id" else key
+                    set_clauses.append(f"{db_col} = %s")
+                    values.append(data[key])
 
-        # Bind the model ID to the final WHERE clause query parameter.
-        values.append(model_db_id)
-        # Format update statement query.
-        query = f"""
-        UPDATE ai_models
-        SET {', '.join(set_clauses)}
-        WHERE id = %s
-        RETURNING id, provider, model_id, name, description, requires_key, base_url, is_active, category, created_at, user_id, api_key;
-        """
-        # Execute query.
-        await run_in_threadpool(cursor.execute, query, tuple(values))
-        r = await run_in_threadpool(cursor.fetchone)
-        if r:
-            return {
-                "id": r[0],
-                "provider": r[1],
-                "model_id": r[2],
-                "name": r[3],
-                "description": r[4] or "",
-                "requires_key": r[5],
-                "base_url": r[6] or "",
-                "is_active": r[7],
-                "category": r[8] or "General",
-                "created_at": r[9].isoformat() if r[9] else None,
-                "user_id": str(r[10]) if r[10] else None,
-                "api_key": mask_key(decrypt_key(r[11])) if r[11] else ""
-            }
+            if not set_clauses:
+                return None
+
+            values.append(model_db_id)
+            query = f"""
+            UPDATE user_ai_models
+            SET {', '.join(set_clauses)}
+            WHERE id = %s
+            RETURNING id, provider, model_identifier, name, base_url, is_active, created_at, user_id, api_key;
+            """
+            await run_in_threadpool(cursor.execute, query, tuple(values))
+            r = await run_in_threadpool(cursor.fetchone)
+            if r:
+                return {
+                    "id": str(r[0]),
+                    "provider": r[1],
+                    "model_id": r[2],
+                    "name": r[3],
+                    "description": f"Custom user model: {r[2]}",
+                    "requires_key": True,
+                    "base_url": r[4],
+                    "is_active": r[5],
+                    "category": "General",
+                    "created_at": r[6].isoformat() if r[6] else None,
+                    "user_id": str(r[7]),
+                    "api_key": mask_key(decrypt_key(r[8])) if r[8] else "",
+                    "credits_per_1k_tokens": 0.0,
+                    "tier_badge": "Custom"
+                }
+        else:
+            # 2. Update system model
+            await run_in_threadpool(
+                cursor.execute,
+                "SELECT id FROM system_ai_models WHERE id = %s",
+                (model_db_id,)
+            )
+            existing = await run_in_threadpool(cursor.fetchone)
+            if not existing:
+                return None
+
+            # Standard users can only toggle is_active. Admin (user_id = None) can update everything.
+            set_clauses = []
+            values = []
+
+            if user_id:
+                # Regular user toggling status
+                if "is_active" in data:
+                    set_clauses.append("is_active = %s")
+                    values.append(data["is_active"])
+            else:
+                # Admin updating system model attributes
+                allowed_keys = ["name", "is_active", "provider", "category", "credits_per_1k_tokens", "tier_badge"]
+                for key in allowed_keys:
+                    if key in data:
+                        set_clauses.append(f"{key} = %s")
+                        values.append(data[key])
+
+            if not set_clauses:
+                return None
+
+            values.append(model_db_id)
+            query = f"""
+            UPDATE system_ai_models
+            SET {', '.join(set_clauses)}
+            WHERE id = %s
+            RETURNING id, name, provider, category, credits_per_1k_tokens, tier_badge, is_active, created_at;
+            """
+            await run_in_threadpool(cursor.execute, query, tuple(values))
+            r = await run_in_threadpool(cursor.fetchone)
+            if r:
+                return {
+                    "id": r[0],
+                    "provider": r[2],
+                    "model_id": r[0],
+                    "name": r[1],
+                    "description": "System model",
+                    "requires_key": False,
+                    "base_url": "",
+                    "is_active": r[6],
+                    "category": r[3],
+                    "created_at": r[7].isoformat() if r[7] else None,
+                    "user_id": None,
+                    "api_key": "",
+                    "credits_per_1k_tokens": float(r[4]),
+                    "tier_badge": r[5]
+                }
         return None
 
 
 async def delete_model(model_db_id: str, user_id: str = None):
     """
-    Deletes a model entry from the database.
-
-    Purpose:
-        Permanently deletes a custom model definition from the database catalog. Enforces permissions
-        so that users can only delete custom models they created.
-
-    Parameters:
-        model_db_id (str): The unique database UUID of the target model.
-        user_id (str, optional): The unique database ID of the user requesting deletion. Defaults to None.
-
-    Returns:
-        int: The number of rows affected by the deletion statement (typically 1).
-
-    Side Effects / State Changes:
-        - Deletes a row in `ai_models`.
-        - Commits change.
-
-    Errors / Exceptions:
-        - May raise database-related errors.
+    Deletes a user custom model entry from user_ai_models.
+    Only allows users to delete their own custom models.
     """
+    is_user_model = False
+    try:
+        import uuid
+        uuid.UUID(str(model_db_id))
+        is_user_model = True
+    except ValueError:
+        is_user_model = False
+
+    if not is_user_model:
+        return 0
+
     async with get_db_cursor_async(commit=True) as cursor:
-        # Check permissions: verify ownership before execution.
         await run_in_threadpool(
             cursor.execute,
-            "SELECT user_id FROM ai_models WHERE id = %s",
+            "SELECT user_id FROM user_ai_models WHERE id = %s",
             (model_db_id,)
         )
         row = await run_in_threadpool(cursor.fetchone)
-        # Deny deletion if the model is a global system model (`row[0] is None`) or belongs to someone else.
-        if not row or row[0] is None or str(row[0]) != user_id:
+        if not row or (user_id and str(row[0]) != user_id):
             return 0
-            
-        # Execute deletion statement.
+
         await run_in_threadpool(
             cursor.execute,
-            "DELETE FROM ai_models WHERE id = %s AND user_id = %s",
+            "DELETE FROM user_ai_models WHERE id = %s AND user_id = %s",
             (model_db_id, user_id)
         )
         return cursor.rowcount
+
 

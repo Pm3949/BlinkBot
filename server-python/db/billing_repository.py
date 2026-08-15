@@ -120,3 +120,183 @@ async def upsert_user_subscription(user_id: str, plan_tier: str, billing_cycle: 
             (user_id, plan_tier, billing_cycle, limits_json),
         )
 
+
+async def get_wallet_balance(user_id: str) -> float:
+    """
+    Retrieves the current credit balance of the user's wallet.
+    Defaults to 0.0 if no wallet is found.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT credit_balance FROM user_wallets WHERE user_id = %s",
+            (user_id,)
+        )
+        row = await run_in_threadpool(cursor.fetchone)
+        if row:
+            return float(row[0])
+        return 0.0
+
+
+async def get_wallet_details(user_id: str) -> dict:
+    """
+    Retrieves the full wallet configuration and balance.
+    Creates a wallet if one doesn't exist.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO user_wallets (user_id, credit_balance, auto_recharge_enabled, recharge_threshold, recharge_amount_usd)
+            VALUES (%s, 0.0000, FALSE, 10.0000, 20.00)
+            ON CONFLICT (user_id) DO NOTHING;
+            """,
+            (user_id,)
+        )
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT credit_balance, auto_recharge_enabled, recharge_threshold, recharge_amount_usd FROM user_wallets WHERE user_id = %s",
+            (user_id,)
+        )
+        row = await run_in_threadpool(cursor.fetchone)
+        if row:
+            return {
+                "credit_balance": float(row[0]),
+                "auto_recharge_enabled": row[1],
+                "recharge_threshold": float(row[2]),
+                "recharge_amount_usd": float(row[3])
+            }
+        return {
+            "credit_balance": 0.0,
+            "auto_recharge_enabled": False,
+            "recharge_threshold": 10.0,
+            "recharge_amount_usd": 20.0
+        }
+
+
+async def deduct_wallet_balance_atomic(user_id: str, amount: float) -> bool:
+    """
+    Deducts the specified amount from the user's wallet atomically.
+    Allows balance to go negative as per requirements.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            UPDATE user_wallets
+            SET credit_balance = credit_balance - %s,
+                updated_at = timezone('utc'::text, now())
+            WHERE user_id = %s;
+            """,
+            (amount, user_id)
+        )
+        return True
+
+
+async def topup_wallet_credits(user_id: str, amount_credits: float) -> bool:
+    """
+    Adds credits to the user's wallet balance.
+    Creates a wallet if one doesn't exist.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO user_wallets (user_id, credit_balance, updated_at)
+            VALUES (%s, %s, timezone('utc'::text, now()))
+            ON CONFLICT (user_id) DO UPDATE
+            SET credit_balance = user_wallets.credit_balance + EXCLUDED.credit_balance,
+                updated_at = timezone('utc'::text, now());
+            """,
+            (user_id, amount_credits)
+        )
+        return True
+
+
+async def update_wallet_recharge_settings(user_id: str, enabled: bool, threshold: float, amount_usd: float) -> bool:
+    """
+    Updates the auto-recharge thresholds and toggles.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            UPDATE user_wallets
+            SET auto_recharge_enabled = %s,
+                recharge_threshold = %s,
+                recharge_amount_usd = %s,
+                updated_at = timezone('utc'::text, now())
+            WHERE user_id = %s;
+            """,
+            (enabled, threshold, amount_usd, user_id)
+        )
+        return True
+
+
+async def create_credit_transaction(
+    user_id: str,
+    agent_id: str,
+    amount_credits: float,
+    transaction_type: str,
+    model_used: str = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0
+) -> bool:
+    """
+    Creates a record of a credit transaction log.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        # Check if agent exists to satisfy foreign key (or set to None if deleted/not found)
+        valid_agent_id = None
+        if agent_id:
+            await run_in_threadpool(
+                cursor.execute,
+                "SELECT 1 FROM agents WHERE id = %s",
+                (agent_id,)
+            )
+            if await run_in_threadpool(cursor.fetchone):
+                valid_agent_id = agent_id
+
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO credit_transactions (user_id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens)
+            VALUES (%s, %s, %s, %s, %s, %s, %s);
+            """,
+            (user_id, valid_agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens)
+        )
+        return True
+
+
+async def get_credit_transactions(user_id: str, limit: int = 50) -> list:
+    """
+    Retrieves the transaction logs list for a specific user.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens, created_at
+            FROM credit_transactions
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s;
+            """,
+            (user_id, limit)
+        )
+        rows = await run_in_threadpool(cursor.fetchall)
+        return [
+            {
+                "id": str(r[0]),
+                "agent_id": str(r[1]) if r[1] else None,
+                "amount_credits": float(r[2]),
+                "transaction_type": r[3],
+                "model_used": r[4],
+                "prompt_tokens": r[5],
+                "completion_tokens": r[6],
+                "created_at": r[7].isoformat() if r[7] else None
+            }
+            for r in rows
+        ]
+
+

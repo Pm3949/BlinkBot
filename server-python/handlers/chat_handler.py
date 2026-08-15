@@ -203,13 +203,13 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
         from database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         
-        # If model is registered as custom_openai, fetch its connection parameters from DB
-        if provider.lower() == "custom_openai" and not base_url:
-            try:
-                async with get_db_cursor_async(commit=False) as cursor:
+        # Fetch connection parameters from user_ai_models if registered by user
+        try:
+            async with get_db_cursor_async(commit=False) as cursor:
+                if user_id:
                     await run_in_threadpool(
                         cursor.execute,
-                        "SELECT base_url, api_key FROM ai_models WHERE model_id = %s AND (user_id IS NULL OR user_id = %s)",
+                        "SELECT base_url, api_key FROM user_ai_models WHERE model_identifier = %s AND user_id = %s AND is_active = TRUE",
                         (model_name, user_id)
                     )
                     row = await run_in_threadpool(cursor.fetchone)
@@ -218,8 +218,8 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
                             base_url = row[0]
                         if row[1] and not api_key:
                             api_key = decrypt_key(row[1])
-            except Exception as dbe:
-                logger.error(f"Error fetching custom model parameters: {dbe}")
+        except Exception as dbe:
+            logger.error(f"Error fetching custom model parameters from user_ai_models: {dbe}")
 
         user_keys = None
         if user_id:
@@ -612,6 +612,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
         }
         current_inputs = inputs
         
+        # Restore token accumulator values if resuming from a tool approval breakpoint
+        prev_session = active_sessions_map.get(client_id, {})
+        turn_prompt_tokens = prev_session.get("turn_prompt_tokens", 0)
+        turn_completion_tokens = prev_session.get("turn_completion_tokens", 0)
+        models_used = prev_session.get("models_used", set())
+        if isinstance(models_used, list):
+            models_used = set(models_used)
+        
         while True:
             tool_calling_runs = set()
             async for event in active_graph.astream_events(current_inputs, config=config, version="v2"):
@@ -660,28 +668,17 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             completion_tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
                             total_tokens = usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
                             if total_tokens > 0:
-                                cost = (prompt_tokens * 0.0000006) + (completion_tokens * 0.0000018)
-                                try:
-                                    async with get_db_cursor_async(commit=True) as cursor:
-                                        await run_in_threadpool(
-                                            cursor.execute,
-                                            "SELECT 1 FROM auth.users WHERE id = %s",
-                                            (user_id,)
-                                        )
-                                        user_exists = await run_in_threadpool(cursor.fetchone)
-                                        if user_exists:
-                                            await run_in_threadpool(
-                                                cursor.execute,
-                                                """
-                                                INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
-                                                VALUES (%s, %s, %s, %s, %s, %s)
-                                                """,
-                                                (user_id, active_agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
-                                            )
-                                        else:
-                                            logger.warning(f"Skipping token log: User {user_id} not found in DB.")
-                                except Exception as db_err:
-                                    logger.error(f"Failed to log token usage: {db_err}")
+                                turn_prompt_tokens += prompt_tokens
+                                turn_completion_tokens += completion_tokens
+                                
+                                # Resolve which model was used in this event step
+                                event_model = event.get("metadata", {}).get("ls_model_name") or event.get("metadata", {}).get("model")
+                                if not event_model:
+                                    event_model = getattr(output, "model_name", None) or (output.get("model_name") if isinstance(output, dict) else None)
+                                if not event_model:
+                                    event_model = model
+                                if event_model:
+                                    models_used.add(str(event_model))
                     
                 elif kind == "on_tool_start":
                     t_name = event["name"]
@@ -777,11 +774,96 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         "tools_factory": active_tools_factory,
                         "session_id": session_id,
                         "tool_name": tool_call["name"],
-                        "registry": registry
+                        "registry": registry,
+                        "turn_prompt_tokens": turn_prompt_tokens,
+                        "turn_completion_tokens": turn_completion_tokens,
+                        "models_used": list(models_used)
                     }
                     return
             break
             
+        # Single atomic deduction & logs update at the end of the stream
+        total_tokens = turn_prompt_tokens + turn_completion_tokens
+        if total_tokens > 0:
+            # 1. Log overall token usage to token_usages
+            cost = (turn_prompt_tokens * 0.0000006) + (turn_completion_tokens * 0.0000018)
+            try:
+                async with get_db_cursor_async(commit=True) as cursor:
+                    await run_in_threadpool(
+                        cursor.execute,
+                        "SELECT 1 FROM auth.users WHERE id = %s",
+                        (user_id,)
+                    )
+                    user_exists = await run_in_threadpool(cursor.fetchone)
+                    if user_exists:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            """
+                            INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """,
+                            (user_id, active_agent_id, turn_prompt_tokens, turn_completion_tokens, total_tokens, cost)
+                        )
+            except Exception as db_err:
+                logger.error(f"Failed to log token usage: {db_err}")
+
+            # 2. Check system models and deduct credits
+            from db import billing_repository
+            credits_to_deduct = 0.0
+            system_models_run = []
+            
+            # Check user subscription for allow_byok flag
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
+                    (user_id,)
+                )
+                sub_row = await run_in_threadpool(cursor.fetchone)
+                allow_byok_tier = sub_row[0] if sub_row else False
+            
+            # Check if it was a BYOK run
+            is_byok_run = False
+            if use_byok and allow_byok_tier:
+                from db import settings_repository
+                user_keys = await settings_repository.get_effective_user_settings(user_id)
+                if user_keys:
+                    provider_index_map = {
+                        "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5, "nvidia": 6
+                    }
+                    idx = provider_index_map.get(provider.lower())
+                    if idx is not None and user_keys[idx]:
+                        is_byok_run = True
+
+            if not is_byok_run:
+                for m_id in models_used:
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT credits_per_1k_tokens FROM system_ai_models WHERE id = %s AND is_active = TRUE",
+                            (m_id,)
+                        )
+                        sys_m_row = await run_in_threadpool(cursor.fetchone)
+                        if sys_m_row:
+                            credits_coeff = float(sys_m_row[0])
+                            share_prompt = turn_prompt_tokens / len(models_used)
+                            share_completion = turn_completion_tokens / len(models_used)
+                            credits_to_deduct += ((share_prompt + share_completion) / 1000.0) * credits_coeff
+                            system_models_run.append(m_id)
+                
+                if credits_to_deduct > 0.0:
+                    logger.info(f"Deducting {credits_to_deduct} credits from user {user_id} wallet...")
+                    await billing_repository.deduct_wallet_balance_atomic(user_id, credits_to_deduct)
+                    await billing_repository.create_credit_transaction(
+                        user_id=user_id,
+                        agent_id=active_agent_id,
+                        amount_credits=-credits_to_deduct,
+                        transaction_type="usage_deduction",
+                        model_used=", ".join(system_models_run),
+                        prompt_tokens=turn_prompt_tokens,
+                        completion_tokens=turn_completion_tokens
+                    )
+
         # Emit formatting step just before stream end
         await agent_connection_manager.send_json(
             {"type": "step", "status": "formatting", "label": "Formatting answer..."}, client_id
@@ -875,6 +957,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         agent_data[14],  # databases
                         agent_data[15],  # native_integrations
                         agent_data[16],  # memory_enabled
+                        agent_data[17],  # use_byok
                     )
 
                     (
@@ -895,6 +978,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         databases_encrypted,
                         native_integrations_encrypted,
                         memory_enabled,
+                        use_byok,
                     ) = agent_data
                     
                     if not is_active:
@@ -1001,6 +1085,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                         databases_encrypted,
                                         native_integrations_encrypted,
                                         memory_enabled,
+                                        use_byok,
                                     ) = sub_info
                                     embed_model = embed_model or "text-embedding-3-small"
                                     custom_api_key = decrypt_key(custom_api_key)
@@ -1032,6 +1117,54 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         )
                         await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
+
+                    # Pre-flight check on pre-paid credit wallet
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT credits_per_1k_tokens FROM system_ai_models WHERE id = %s AND is_active = TRUE",
+                            (model,)
+                        )
+                        sys_model_row = await run_in_threadpool(cursor.fetchone)
+                        
+                    is_system_model = sys_model_row is not None
+                    
+                    # Resolve BYOK status
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
+                            (user_id,)
+                        )
+                        sub_row = await run_in_threadpool(cursor.fetchone)
+                        allow_byok_tier = sub_row[0] if sub_row else False
+                    
+                    is_byok_run = False
+                    if use_byok and allow_byok_tier:
+                        from db import settings_repository
+                        user_keys = await settings_repository.get_effective_user_settings(user_id)
+                        if user_keys:
+                            provider_index_map = {
+                                "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5, "nvidia": 6
+                            }
+                            idx = provider_index_map.get(provider.lower())
+                            if idx is not None and user_keys[idx]:
+                                is_byok_run = True
+
+                    if is_system_model and not is_byok_run:
+                        from db import billing_repository
+                        wallet_bal = await billing_repository.get_wallet_balance(user_id)
+                        if wallet_bal <= 0:
+                            logger.warning(f"Blocking chat request for user {user_id} due to insufficient wallet balance: {wallet_bal}")
+                            await agent_connection_manager.send_json(
+                                {
+                                    "type": "error",
+                                    "content": "insufficient_credits",
+                                },
+                                client_id,
+                            )
+                            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                            continue
 
                     # Preprocess user query using Intent Analyzer & Query Optimizer
                     from utils.intent_analyzer import analyze_and_optimize_query
@@ -1075,6 +1208,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             db_enc,
                             n_int_enc,
                             mem_enabled,
+                            use_byok_agent,
                         ) = agent_info
                         
                         emb_model = emb_model or "text-embedding-3-small"

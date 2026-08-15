@@ -10,7 +10,6 @@ import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from database import get_db_connection
 from core.dependencies import rag_engine
 from utils.logger import get_department_logger
 
@@ -34,6 +33,7 @@ def background_ingestion(
     synchronously in the HTTP request, the frontend would hang and eventually timeout. 
     By running it in the background, we can immediately return a "Processing" status to the user.
     """
+    from database import get_db_connection
     conn = None
     cursor = None
     try:
