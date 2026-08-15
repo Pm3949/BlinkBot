@@ -371,7 +371,11 @@ async def download_invoice(invoice_id: str, current_user: dict = Depends(get_cur
         
     # Enforce authentication ownership check (unless super admin)
     if invoice["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized access to this invoice")
+        try:
+            from handlers.admin_handler import check_super_admin
+            await check_super_admin(user_id)
+        except Exception:
+            raise HTTPException(status_code=403, detail="Unauthorized access to this invoice")
         
     pdf_bytes = generate_invoice_pdf_data(invoice)
     

@@ -253,4 +253,38 @@ async def create_admin_expense(req: CreateExpenseRequest, current_user: dict = D
     return await handle_create_platform_expense(user_id, req.amount_inr, req.description, req.category)
 
 
+@router.post("/admin/invoice/{invoice_id}/send")
+async def send_invoice_email_admin(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Manually sends/emails the invoice receipt PDF to the customer.
+    """
+    from fastapi import HTTPException
+    user_id = current_user["sub"]
+    
+    # 1. Verify super admin permissions
+    await check_super_admin(user_id)
+    
+    # 2. Fetch full invoice details
+    from db import billing_repository
+    invoice = await billing_repository.get_invoice_by_id(invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+        
+    # 3. Generate PDF bytes
+    from api.billing import generate_invoice_pdf_data
+    pdf_bytes = generate_invoice_pdf_data(invoice)
+    
+    # 4. Dispatch Email
+    from utils.email_service import send_invoice_email
+    recipient_email = invoice.get("user_email")
+    if recipient_email and recipient_email != "Unknown User":
+        await send_invoice_email(recipient_email, invoice, pdf_bytes)
+        return {
+            "status": "success",
+            "message": f"Invoice successfully emailed to {recipient_email}."
+        }
+    else:
+        raise HTTPException(status_code=400, detail="User email not linked to this invoice. Cannot send email.")
+
+
 
