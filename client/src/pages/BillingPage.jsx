@@ -5,6 +5,7 @@ import { Switch } from '../components/ui/switch';
 import { useSubscription, useCreateRazorpayOrder, useWallet, useInvoices, useRechargeWallet, useUpdateRechargeSettings } from '../hooks/useBilling';
 import { toast } from 'sonner';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
+import InvoicePreviewModal from '../components/billing/InvoicePreviewModal';
 
 const PricingCard = ({ title, priceInr, priceUsd, description, features, icon: Icon, isPopular, currentPlan, onUpgrade, isUpgrading }) => (
   <div className={`relative flex flex-col p-8 glass-card transition-all duration-300 ${isPopular ? 'border-primary shadow-xl ring-2 ring-primary/30 bg-primary/5' : 'hover:border-border/80'}`}>
@@ -59,7 +60,7 @@ const PricingCard = ({ title, priceInr, priceUsd, description, features, icon: I
 );
 
 export default function BillingPage() {
-  const [activeBillingTab, setActiveBillingTab] = useState("wallet");
+  const [activeBillingTab, setActiveBillingTab] = useState("platform");
   const [annualBilling, setAnnualBilling] = useState(false);
   const { data: subscription, isLoading } = useSubscription();
   const checkoutMutation = useCreateRazorpayOrder();
@@ -73,6 +74,9 @@ export default function BillingPage() {
   const [autoRefill, setAutoRefill] = useState(false);
   const [refillThreshold, setRefillThreshold] = useState(10);
   const [refillAmount, setRefillAmount] = useState(20);
+
+  const [previewInvoice, setPreviewInvoice] = useState(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   React.useEffect(() => {
     if (walletData?.wallet) {
@@ -235,15 +239,6 @@ export default function BillingPage() {
       {/* Tabs Navigation */}
       <div className="flex border-b border-border/60 gap-6">
         <button
-          onClick={() => setActiveBillingTab("wallet")}
-          className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${activeBillingTab === "wallet"
-              ? "text-primary border-b-2 border-primary"
-              : "text-muted-foreground hover:text-foreground"
-            }`}
-        >
-          <Zap size={16} /> Model Wallet
-        </button>
-        <button
           onClick={() => setActiveBillingTab("platform")}
           className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${activeBillingTab === "platform"
               ? "text-primary border-b-2 border-primary"
@@ -251,6 +246,15 @@ export default function BillingPage() {
             }`}
         >
           <CreditCard size={16} /> Platform Subscription
+        </button>
+        <button
+          onClick={() => setActiveBillingTab("wallet")}
+          className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${activeBillingTab === "wallet"
+              ? "text-primary border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+            }`}
+        >
+          <Zap size={16} /> Model Wallet
         </button>
         <button
           onClick={() => setActiveBillingTab("invoices")}
@@ -328,7 +332,7 @@ export default function BillingPage() {
 
       {/* Pre-Paid Credit Wallet Panel */}
       {activeBillingTab === "wallet" && (
-        <div className="glass-card p-8 border border-primary/20 bg-background/50 rounded-2xl grid md:grid-cols-2 gap-8 shadow-lg">
+        <div className="glass-card p-8 border border-primary/20 bg-background/50 rounded-2xl w-full shadow-lg">
           {/* Wallet Balance & Recharge */}
           <div className="space-y-6">
             <div>
@@ -412,7 +416,7 @@ export default function BillingPage() {
                       </div>
                       {discountPct > 0 && (
                         <div className="flex justify-between text-emerald-500 font-medium">
-                          <span>Volume Discount ({discountPct}%):</span>
+                           <span>Volume Discount ({discountPct}%):</span>
                           <span className="font-mono">-₹{discountAmt.toFixed(2)}</span>
                         </div>
                       )}
@@ -441,76 +445,6 @@ export default function BillingPage() {
                   {rechargeMutation.isPending ? "Processing..." : `Recharge Wallet Now`}
                 </Button>
               </div>
-            </div>
-          </div>
-
-          {/* Auto-Refill Rules */}
-          <div className="space-y-6 border-t md:border-t-0 md:border-l border-border/50 pt-6 md:pt-0 md:pl-8">
-            <div>
-              <h4 className="text-sm font-bold text-foreground">Auto-Refill Settings</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Automatically charge your card when your credit balance drops below your chosen threshold.
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground">Enable Auto-Refill</span>
-                <Switch checked={autoRefill} onCheckedChange={setAutoRefill} />
-              </div>
-
-              {autoRefill && (
-                <div className="space-y-4 pt-2 animate-fadeIn">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-                      <span>When balance falls below</span>
-                      <span className="text-foreground">${refillThreshold} Credits</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="5"
-                      max="50"
-                      step="5"
-                      value={refillThreshold}
-                      onChange={(e) => setRefillThreshold(parseInt(e.target.value))}
-                      className="w-full accent-primary h-1.5 cursor-pointer bg-muted rounded-lg"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-                      <span>Recharge amount</span>
-                      <span className="text-foreground">${refillAmount} USD</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="10"
-                      max="100"
-                      step="10"
-                      value={refillAmount}
-                      onChange={(e) => setRefillAmount(parseInt(e.target.value))}
-                      className="w-full accent-primary h-1.5 cursor-pointer bg-muted rounded-lg"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <Button
-                onClick={() => {
-                  settingsMutation.mutate(
-                    { enabled: autoRefill, threshold: refillThreshold, amount_usd: refillAmount },
-                    {
-                      onSuccess: () => toast.success("Refill settings saved successfully!"),
-                      onError: (err) => toast.error(err.message)
-                    }
-                  );
-                }}
-                disabled={settingsMutation.isPending}
-                variant="outline"
-                className="w-full rounded-xl font-semibold border-border/80 text-xs py-2 mt-2"
-              >
-                {settingsMutation.isPending ? "Saving..." : "Save Refill Settings"}
-              </Button>
             </div>
           </div>
         </div>
@@ -937,10 +871,28 @@ export default function BillingPage() {
                           {row.invoiceDbId ? (
                             <button
                               type="button"
-                              onClick={() => handleDownloadInvoice(row.invoiceDbId, row.invoiceNumber || row.invoiceId)}
+                              onClick={async () => {
+                                // Find full invoice details to populate preview
+                                const inv = invoices?.find(i => i.id === row.invoiceDbId);
+                                if (inv) {
+                                  setPreviewInvoice(inv);
+                                } else {
+                                  // Fallback mock structure from list row
+                                  setPreviewInvoice({
+                                    id: row.invoiceDbId,
+                                    invoice_number: row.invoiceNumber || row.invoiceId,
+                                    description: row.description,
+                                    amount_inr: parseFloat(row.amount?.replace('₹', '') || 0),
+                                    status: row.status,
+                                    created_at: row.date,
+                                    invoice_metadata: {}
+                                  });
+                                }
+                                setIsPreviewOpen(true);
+                              }}
                               className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
                             >
-                              <Download size={11} /> Receipt
+                              Receipt
                             </button>
                           ) : (
                             <span className="text-muted-foreground/40">—</span>
@@ -955,6 +907,15 @@ export default function BillingPage() {
           </div>
         );
       })()}
+
+      {/* Branded Stripe-style Receipt Preview Modal */}
+      <InvoicePreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        invoice={previewInvoice}
+        onDownload={handleDownloadInvoice}
+      />
+
     </div>
   )
 }

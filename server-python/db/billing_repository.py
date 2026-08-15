@@ -314,9 +314,9 @@ async def create_invoice(user_id: str, invoice_number: str, amount_inr: float, d
             """
             INSERT INTO invoices (user_id, invoice_number, amount_inr, description, invoice_metadata)
             VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, invoice_number, amount_inr, status, description, invoice_metadata, created_at;
+            RETURNING id, invoice_number, amount_inr, status, description, invoice_metadata, created_at, user_id, (SELECT email FROM users WHERE id = %s) as user_email;
             """,
-            (user_id, invoice_number, amount_inr, description, json.dumps(invoice_metadata))
+            (user_id, invoice_number, amount_inr, description, json.dumps(invoice_metadata), user_id)
         )
         r = await run_in_threadpool(cursor.fetchone)
         if r:
@@ -327,7 +327,9 @@ async def create_invoice(user_id: str, invoice_number: str, amount_inr: float, d
                 "status": r[3],
                 "description": r[4],
                 "invoice_metadata": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
-                "created_at": r[6].isoformat() if r[6] else None
+                "created_at": r[6].isoformat() if r[6] else None,
+                "user_id": str(r[7]),
+                "user_email": r[8] or "Unknown User"
             }
         return None
 
@@ -370,9 +372,10 @@ async def get_invoice_by_id(invoice_id: str) -> dict:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, invoice_number, amount_inr, status, description, invoice_metadata, created_at, user_id
-            FROM invoices
-            WHERE id = %s;
+            SELECT i.id, i.invoice_number, i.amount_inr, i.status, i.description, i.invoice_metadata, i.created_at, i.user_id, u.email
+            FROM invoices i
+            LEFT JOIN users u ON i.user_id = u.id
+            WHERE i.id = %s;
             """,
             (invoice_id,)
         )
@@ -386,7 +389,8 @@ async def get_invoice_by_id(invoice_id: str) -> dict:
                 "description": r[4],
                 "invoice_metadata": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
                 "created_at": r[6].isoformat() if r[6] else None,
-                "user_id": str(r[7])
+                "user_id": str(r[7]),
+                "user_email": r[8] or "Unknown User"
             }
         return None
 

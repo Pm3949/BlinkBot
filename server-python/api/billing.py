@@ -36,7 +36,7 @@ from handlers.billing_handler import (
     handle_verify_wallet_recharge_payment
 )
 
-# Initialize standard module-level logger.
+from utils.logo_resolver import get_logo_path
 logger = get_department_logger("system")
 
 # Initialize router with tags for automated Swagger documentation.
@@ -241,65 +241,78 @@ def generate_invoice_pdf_data(invoice: dict) -> bytes:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)  # A4
 
-    # -- Color palette (matches BlinkBot UI) --------------------------------
-    bg_dark     = (0.051, 0.055, 0.078)   # #0D0E14 page background
-    header_dark = (0.071, 0.063, 0.196)   # #12103200 header block (deep indigo)
-    primary     = (0.506, 0.435, 0.941)   # #815EF0 indigo primary
-    white       = (1.0, 1.0, 1.0)
-    muted       = (0.631, 0.631, 0.651)   # #A1A1A6
-    card_bg     = (0.094, 0.094, 0.110)   # #18181B card
-    border      = (0.153, 0.153, 0.165)   # #27272A border
-    green       = (0.271, 0.761, 0.498)   # #45C27F paid green
+    # -- Color palette (Stripe/Vercel Light Receipt style) --------------------
+    bg_white     = (1.0, 1.0, 1.0)         # #FFFFFF page background
+    brand_blue   = (0.0, 0.2, 0.8)         # #0033CC brand blue (high-contrast blue)
+    brand_orange = (1.0, 0.271, 0.0)      # #FF4500 brand orange
+    dark_text    = (0.094, 0.094, 0.110)   # #18181B dark body text
+    muted        = (0.459, 0.490, 0.569)   # #757D91 muted text
+    light_gray   = (0.972, 0.976, 0.984)   # #F8F9FC metadata background
+    border       = (0.878, 0.890, 0.914)   # #E0E3E9 clean borders
+    green        = (0.082, 0.616, 0.278)   # #159D47 success green
 
-    # -- Full page dark background ------------------------------------------
-    page.draw_rect(fitz.Rect(0, 0, 595, 842), color=bg_dark, fill=bg_dark)
+    # -- Full page white background ------------------------------------------
+    page.draw_rect(fitz.Rect(0, 0, 595, 842), color=bg_white, fill=bg_white)
 
-    # -- Header block (indigo gradient effect via rect) ---------------------
-    page.draw_rect(fitz.Rect(0, 0, 595, 130), color=header_dark, fill=header_dark)
+    # -- Top orange brand line accent --
+    page.draw_line(fitz.Point(0, 0), fitz.Point(595, 0), color=brand_orange, width=4)
 
-    # Brand name
-    page.insert_text(fitz.Point(40, 60), "⚡ BlinkBot", fontsize=26, color=white)
-    page.insert_text(fitz.Point(40, 82), "TAX INVOICE / RECEIPT", fontsize=9, color=primary)
+    # Insert logo icon image
+    logo_path = get_logo_path()
+    if logo_path:
+        page.insert_image(fitz.Rect(34, 40, 74, 80), filename=logo_path)
+    
+    page.insert_text(fitz.Point(86, 60), "BlinkBot", fontsize=26, color=dark_text)
+    page.insert_text(fitz.Point(86, 82), "TAX INVOICE / RECEIPT", fontsize=9, color=brand_orange)
 
-    # Invoice meta (top-right)
-    page.insert_text(fitz.Point(390, 48), f"Invoice #:", fontsize=8, color=muted)
-    page.insert_text(fitz.Point(390, 60), invoice["invoice_number"], fontsize=9, color=white)
+    # Invoice meta (top-right - clean light text styling)
+    page.insert_text(fitz.Point(390, 48), "Invoice #:", fontsize=8, color=muted)
+    page.insert_text(fitz.Point(390, 60), invoice["invoice_number"], fontsize=9, color=dark_text)
     page.insert_text(fitz.Point(390, 78), f"Date: {str(invoice['created_at'])[:10]}", fontsize=9, color=muted)
-    status_color = green if invoice["status"] == "Paid" else (1.0, 0.7, 0.0)
+    status_color = green if invoice["status"] == "Paid" else brand_orange
     page.insert_text(fitz.Point(390, 96), f"Status: {invoice['status'].upper()}", fontsize=9, color=status_color)
 
-    # -- Billed By --------------------------------------------------------
-    page.insert_text(fitz.Point(40, 165), "Billed By", fontsize=9, color=muted)
-    page.insert_text(fitz.Point(40, 183), "BlinkBot Technologies Private Limited", fontsize=11, color=white)
-    page.insert_text(fitz.Point(40, 198), "Bengaluru, Karnataka, India", fontsize=9, color=muted)
-    page.insert_text(fitz.Point(40, 212), "support@blinkbot.in  |  www.blinkbot.in", fontsize=9, color=muted)
+    # -- Metadata Summary Card Block (Light Gray background box) ------------
+    page.draw_rect(fitz.Rect(32, 110, 563, 150), color=border, fill=light_gray, width=0.8)
+    page.insert_text(fitz.Point(44, 126), "DATE ISSUED", fontsize=8, color=muted)
+    page.insert_text(fitz.Point(44, 138), str(invoice['created_at'])[:10], fontsize=9, color=dark_text)
+    page.insert_text(fitz.Point(220, 126), "PAYMENT METHOD", fontsize=8, color=muted)
+    page.insert_text(fitz.Point(220, 138), "Razorpay Payments", fontsize=9, color=dark_text)
+    
+    meta = invoice.get("invoice_metadata", {}) or {}
+    tx_id = meta.get("razorpay_payment_id", "—")
+    page.insert_text(fitz.Point(390, 126), "TRANSACTION ID", fontsize=8, color=muted)
+    page.insert_text(fitz.Point(390, 138), tx_id[:20], fontsize=9, color=dark_text)
 
-    # -- Billed To -------------------------------------------------------
-    page.insert_text(fitz.Point(350, 165), "Billed To", fontsize=9, color=muted)
+    # -- Billed By / Billed To columns -------------------------------------
+    page.insert_text(fitz.Point(40, 185), "Billed By", fontsize=9, color=muted)
+    page.insert_text(fitz.Point(40, 203), "BlinkBot Technologies Private Limited", fontsize=11, color=dark_text)
+    page.insert_text(fitz.Point(40, 218), "Bengaluru, Karnataka, India", fontsize=9, color=muted)
+    page.insert_text(fitz.Point(40, 232), "support@blinkbot.in  |  www.blinkbot.in", fontsize=9, color=brand_blue)
+
+    page.insert_text(fitz.Point(330, 185), "Billed To", fontsize=9, color=muted)
     user_id_str = str(invoice.get("user_id", "—"))
-    # Show only first 36 chars (UUID length) to stay in column
-    page.insert_text(fitz.Point(350, 183), user_id_str[:36], fontsize=8, color=white)
+    user_email_str = str(invoice.get("user_email", "—"))
+    page.insert_text(fitz.Point(330, 203), f"Email: {user_email_str}", fontsize=9, color=dark_text)
+    page.insert_text(fitz.Point(330, 218), f"ID: {user_id_str[:36]}", fontsize=8, color=muted)
 
     # -- Divider line ----------------------------------------------------
-    page.draw_line(fitz.Point(40, 240), fitz.Point(555, 240), color=border, width=0.8)
+    page.draw_line(fitz.Point(40, 255), fitz.Point(555, 255), color=border, width=1.0)
 
-    # -- Line-items card background --------------------------------------
-    page.draw_rect(fitz.Rect(32, 252), color=card_bg, fill=card_bg, radius=8) if False else None
-    # Draw card manually (fitz doesn't support border-radius easily)
-    page.draw_rect(fitz.Rect(32, 252, 563, 450), color=border, fill=card_bg)
+    # -- Line-items table body background ---------------------------------
+    page.draw_rect(fitz.Rect(32, 270, 563, 442), color=border, fill=bg_white, width=0.8)
 
     # Table header
-    page.insert_text(fitz.Point(48, 276), "Description", fontsize=9, color=muted)
-    page.insert_text(fitz.Point(460, 276), "Amount", fontsize=9, color=muted)
-    page.draw_line(fitz.Point(40, 285), fitz.Point(555, 285), color=border, width=0.6)
+    page.draw_rect(fitz.Rect(32, 270, 563, 295), color=border, fill=light_gray, width=0.8)
+    page.insert_text(fitz.Point(48, 287), "Description", fontsize=9, color=muted)
+    page.insert_text(fitz.Point(460, 287), "Amount", fontsize=9, color=muted)
 
     # Main line item
-    page.insert_text(fitz.Point(48, 308), invoice["description"], fontsize=11, color=white)
-    page.insert_text(fitz.Point(448, 308), f"INR {invoice['amount_inr']:.2f}", fontsize=11, color=white)
+    page.insert_text(fitz.Point(48, 320), invoice["description"], fontsize=11, color=dark_text)
+    page.insert_text(fitz.Point(448, 320), f"INR {invoice['amount_inr']:.2f}", fontsize=11, color=dark_text)
 
-    # -- Sub-items breakdown ---------------------------------------------
-    meta = invoice.get("invoice_metadata", {}) or {}
-    y = 332
+    # -- Sub-items breakdown inside card ----------------------------------
+    y = 344
     if meta.get("credits"):
         page.insert_text(fitz.Point(48, y), f"Credits Loaded: +{int(meta['credits']):,}", fontsize=9, color=muted)
         y += 18
@@ -313,25 +326,21 @@ def generate_invoice_pdf_data(invoice: dict) -> bytes:
             fontsize=9, color=green
         )
         y += 18
-    # Razorpay payment ID if present
-    if meta.get("razorpay_payment_id"):
-        page.insert_text(fitz.Point(48, y), f"Transaction Ref: {meta['razorpay_payment_id']}", fontsize=8, color=muted)
-        y += 18
 
     # -- Total section ---------------------------------------------------
-    page.draw_line(fitz.Point(40, 452), fitz.Point(555, 452), color=border, width=0.8)
+    page.draw_line(fitz.Point(40, 452), fitz.Point(555, 452), color=border, width=1.0)
     page.insert_text(fitz.Point(330, 478), "Total Paid:", fontsize=13, color=muted)
-    page.insert_text(fitz.Point(440, 478), f"INR {invoice['amount_inr']:.2f}", fontsize=16, color=primary)
+    page.insert_text(fitz.Point(440, 478), f"INR {invoice['amount_inr']:.2f}", fontsize=16, color=dark_text)
 
-    # -- Status badge area -----------------------------------------------
-    page.draw_rect(fitz.Rect(220, 498, 375, 520), color=(0.082, 0.329, 0.176), fill=(0.082, 0.329, 0.176))
-    page.insert_text(fitz.Point(240, 514), f"✓  PAYMENT {invoice['status'].upper()}", fontsize=9, color=green)
+    # -- Status badge area (Rounded green badge style) -------------------
+    page.draw_rect(fitz.Rect(210, 498, 385, 522), color=green, fill=bg_white, width=1.2)
+    page.insert_text(fitz.Point(235, 514), "PAYMENT PROCESSED SUCCESSFULLY", fontsize=7, color=green)
 
     # -- Footer ----------------------------------------------------------
-    page.draw_line(fitz.Point(40, 780), fitz.Point(555, 780), color=border, width=0.6)
-    page.insert_text(fitz.Point(40, 800), "Thank you for choosing BlinkBot!", fontsize=10, color=muted)
-    page.insert_text(fitz.Point(40, 815), "This is an electronically generated invoice. No signature required.", fontsize=8, color=(0.4, 0.4, 0.4))
-    page.insert_text(fitz.Point(40, 828), "support@blinkbot.in  ·  www.blinkbot.in", fontsize=8, color=(0.4, 0.4, 0.4))
+    page.draw_line(fitz.Point(40, 780), fitz.Point(555, 780), color=border, width=0.8)
+    page.insert_text(fitz.Point(40, 800), "Thank you for choosing BlinkBot!", fontsize=10, color=dark_text)
+    page.insert_text(fitz.Point(40, 815), "This is an electronically generated invoice. No signature required.", fontsize=8, color=(0.5, 0.5, 0.5))
+    page.insert_text(fitz.Point(40, 828), "support@blinkbot.in  ·  www.blinkbot.in", fontsize=8, color=(0.5, 0.5, 0.5))
 
     pdf_bytes = doc.write()
     doc.close()

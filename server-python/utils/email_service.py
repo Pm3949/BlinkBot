@@ -29,6 +29,7 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SENDER_EMAIL  = os.getenv("SENDER_EMAIL", "noreply@blinkbot.in")
 SUPPORT_EMAIL = os.getenv("NOTIFY_EMAIL", "support@blinkbot.in")
 
+from utils.logo_resolver import get_logo_path
 logger = get_department_logger("system")
 
 
@@ -51,83 +52,97 @@ def _build_invoice_email_html(invoice: dict) -> str:
     if credits:
         extras_html += f"""
         <tr>
-          <td style="padding: 10px 0; color: #a1a1aa; font-size: 13px; border-bottom: 1px solid #27272a;">Credits Added</td>
-          <td style="padding: 10px 0; color: #ffffff; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #27272a;">+{credits:,} Credits</td>
+          <td style="padding: 10px 0; color: #757d91; font-size: 13px; border-bottom: 1px solid #e0e3e9;">Credits Added</td>
+          <td style="padding: 10px 0; color: #18181b; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #e0e3e9;">+{credits:,} Credits</td>
         </tr>"""
     if discount and float(discount) > 0:
         extras_html += f"""
         <tr>
-          <td style="padding: 10px 0; color: #a1a1aa; font-size: 13px; border-bottom: 1px solid #27272a;">Discount Applied</td>
-          <td style="padding: 10px 0; color: #22c55e; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #27272a;">{discount}% Off</td>
+          <td style="padding: 10px 0; color: #757d91; font-size: 13px; border-bottom: 1px solid #e0e3e9;">Discount Applied</td>
+          <td style="padding: 10px 0; color: #159d47; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #e0e3e9;">{discount}% Off</td>
         </tr>"""
 
     return f"""
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"></head>
-<body style="margin: 0; padding: 0; background-color: #09090b; font-family: 'Inter', Arial, sans-serif;">
-  <div style="max-width: 560px; margin: 40px auto; background-color: #0d0f14; border-radius: 20px; overflow: hidden; border: 1px solid #27272a;">
+<body style="margin: 0; padding: 0; background-color: #f4f5f8; font-family: 'Inter', Arial, sans-serif;">
+  <div style="max-width: 560px; margin: 40px auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e5e7ec; box-shadow: 0 2px 10px rgba(9, 39, 195, 0.05);">
+
+    <!-- Top accent bar -->
+    <div style="height: 4px; background-color: #0927c3;"></div>
 
     <!-- Header -->
-    <div style="background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 36px 40px; text-align: center;">
-      <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;">
-        ⚡ BlinkBot
-      </h1>
-      <p style="margin: 8px 0 0; color: #c7d2fe; font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">
-        Payment Confirmed
+    <div style="background-color: #ffffff; padding: 32px 40px 24px; text-align: center;">
+      <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 4px;">
+        <img src="cid:logo_image" width="32" height="32" style="vertical-align: middle; border-radius: 6px;" alt="BlinkBot Logo" />
+        <span style="color: #14152b; font-size: 22px; font-weight: 800; letter-spacing: -0.4px; font-family: 'Inter', Arial, sans-serif; vertical-align: middle; line-height: 32px;">BlinkBot</span>
+      </div>
+      <p style="margin: 10px 0 0; color: #757d91; font-size: 13px; font-weight: 500;">
+        Payment receipt for your records
       </p>
     </div>
 
+    <div style="padding: 0 40px;">
+      <hr style="border: none; border-top: 1px solid #eceef2; margin: 8px 0 28px;">
+    </div>
+
     <!-- Body -->
-    <div style="padding: 36px 40px;">
-      <p style="color: #e4e4e7; font-size: 15px; line-height: 1.6; margin: 0 0 28px;">
-        Your payment has been successfully processed. A copy of your invoice is attached to this email as a PDF.
-      </p>
+    <div style="padding: 0 40px 36px;">
+
+      <!-- Status row -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+        <p style="color: #14152b; font-size: 15px; line-height: 1.6; margin: 0; max-width: 340px;">
+          Your payment has been successfully processed. The invoice PDF is attached to this email.
+        </p>
+      </div>
+      <div style="margin-bottom: 24px;">
+        <span style="display: inline-block; background-color: #eef1ff; color: #0927c3; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; padding: 6px 14px; border-radius: 6px; border: 1px solid #d6dcff;">
+          ● {status}
+        </span>
+      </div>
 
       <!-- Invoice Details Card -->
-      <div style="background-color: #18181b; border-radius: 14px; padding: 24px; border: 1px solid #27272a; margin-bottom: 28px;">
+      <div style="background-color: #f8f9fc; border-radius: 12px; padding: 4px 24px; border: 1px solid #e5e7ec; margin-bottom: 28px;">
         <table style="width: 100%; border-collapse: collapse;">
           <tr>
-            <td style="padding: 10px 0; color: #a1a1aa; font-size: 13px; border-bottom: 1px solid #27272a;">Invoice Number</td>
-            <td style="padding: 10px 0; color: #ffffff; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #27272a; font-family: monospace;">{inv_number}</td>
+            <td style="padding: 14px 0; color: #757d91; font-size: 13px; border-bottom: 1px solid #e5e7ec;">Invoice Number</td>
+            <td style="padding: 14px 0; color: #14152b; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #e5e7ec; font-family: 'SFMono-Regular', Menlo, monospace;">{inv_number}</td>
           </tr>
           <tr>
-            <td style="padding: 10px 0; color: #a1a1aa; font-size: 13px; border-bottom: 1px solid #27272a;">Date</td>
-            <td style="padding: 10px 0; color: #ffffff; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #27272a;">{date_str}</td>
+            <td style="padding: 14px 0; color: #757d91; font-size: 13px; border-bottom: 1px solid #e5e7ec;">Date</td>
+            <td style="padding: 14px 0; color: #14152b; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #e5e7ec;">{date_str}</td>
           </tr>
           <tr>
-            <td style="padding: 10px 0; color: #a1a1aa; font-size: 13px; border-bottom: 1px solid #27272a;">Description</td>
-            <td style="padding: 10px 0; color: #ffffff; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #27272a;">{description}</td>
+            <td style="padding: 14px 0; color: #757d91; font-size: 13px; border-bottom: 1px solid #e5e7ec;">Description</td>
+            <td style="padding: 14px 0; color: #14152b; font-size: 13px; font-weight: 600; text-align: right; border-bottom: 1px solid #e5e7ec;">{description}</td>
           </tr>
           {extras_html}
           <tr>
-            <td style="padding: 14px 0 6px; color: #a1a1aa; font-size: 14px; font-weight: 700;">Total Paid</td>
-            <td style="padding: 14px 0 6px; color: #818cf8; font-size: 20px; font-weight: 800; text-align: right;">&#8377;{amount_inr:.2f}</td>
+            <td style="padding: 18px 0 12px; color: #14152b; font-size: 14px; font-weight: 700;">Total Paid</td>
+            <td style="padding: 18px 0 12px; color: #0927c3; font-size: 22px; font-weight: 800; text-align: right;">&#8377;{amount_inr:.2f}</td>
           </tr>
         </table>
-
-        <!-- Status Badge -->
-        <div style="text-align: center; margin-top: 16px;">
-          <span style="display: inline-block; background-color: #14532d; color: #4ade80; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 5px 16px; border-radius: 100px; border: 1px solid #166534;">
-            ✓ {status}
-          </span>
-        </div>
       </div>
 
       <!-- CTA -->
-      <div style="text-align: center; margin-bottom: 28px;">
-        <a href="https://www.blinkbot.in/billing" style="display: inline-block; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 32px; border-radius: 12px; letter-spacing: 0.3px;">
+      <div style="text-align: center; margin-bottom: 4px;">
+        <a href="https://www.blinkbot.in/billing" style="display: inline-block; background-color: #0927c3; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 13px 34px; border-radius: 10px; letter-spacing: 0.2px;">
           View Invoice History →
         </a>
       </div>
+      <p style="text-align: center; margin: 14px 0 0; color: #a3a9b8; font-size: 12px;">
+        Powered by BlinkBot Billing
+      </p>
+    </div>
 
-      <!-- Footer -->
-      <hr style="border: none; border-top: 1px solid #27272a; margin: 0 0 20px;">
-      <p style="color: #71717a; font-size: 12px; text-align: center; margin: 0; line-height: 1.7;">
-        Questions? Contact us at
-        <a href="mailto:{SUPPORT_EMAIL}" style="color: #818cf8; text-decoration: none;">{SUPPORT_EMAIL}</a><br>
+    <!-- Footer -->
+    <div style="background-color: #f8f9fc; border-top: 1px solid #eceef2; padding: 24px 40px;">
+      <p style="color: #757d91; font-size: 12px; text-align: center; margin: 0; line-height: 1.7;">
+        Questions about this invoice? Contact us at
+        <a href="mailto:{SUPPORT_EMAIL}" style="color: #0927c3; text-decoration: none; font-weight: 600;">{SUPPORT_EMAIL}</a><br>
         BlinkBot · Bengaluru, Karnataka, India<br>
-        This is an automatically generated email. Please do not reply to this address.
+        <span style="color: #a3a9b8;">This is an automatically generated email. Please do not reply to this address.</span>
       </p>
     </div>
   </div>
@@ -168,6 +183,21 @@ def _send_invoice_email_sync(to_email: str, invoice: dict, pdf_bytes: bytes) -> 
         f'attachment; filename="{inv_number}.pdf"'
     )
     msg.attach(pdf_part)
+
+    # Inline Logo Image attachment
+    logo_path = get_logo_path()
+    if logo_path and os.path.exists(logo_path):
+        try:
+            with open(logo_path, "rb") as f:
+                img_data = f.read()
+            img_part = MIMEBase("image", "png")
+            img_part.set_payload(img_data)
+            encoders.encode_base64(img_part)
+            img_part.add_header("Content-ID", "<logo_image>")
+            img_part.add_header("Content-Disposition", 'inline; filename="logo.png"')
+            msg.attach(img_part)
+        except Exception as logo_err:
+            logger.warning(f"Failed to attach inline logo to invoice email: {logo_err}")
 
     # -- Dispatch via Brevo SMTP --------------------------------------------
     try:
