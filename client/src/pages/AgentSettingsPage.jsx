@@ -7,7 +7,7 @@ import { UploadCloud, Search, CheckCircle2, AlertCircle, Link2, Eye, FileText, C
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useEffect } from "react";
 import { useWorkspacePermissions, useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
-import { useActiveModels } from "../hooks/useModels";
+import { useActiveModels, useAvailableModels } from "../hooks/useModels";
 import { useAuth } from "../context/AuthContext";
 import { useProjectTools } from "../hooks/useAgents";
 import { useDeleteDocument, useDocuments, useProcessUrl, useUploadDocument, useProcessConnector, useUpdateUrl, useProcessText, useUpdateText, useUpdateFile, useSyncConnector } from "../hooks/useDocuments";
@@ -587,7 +587,7 @@ export default function AgentSettingsPage() {
     memory_enabled: agent?.memory_enabled !== false,
   });
 
-  const { data: activeModelsData } = useActiveModels();
+  const { data: activeModelsData } = useAvailableModels();
   const { data: userSettings } = useUserSettings();
   const updateSettingsMutation = useUpdateUserSettings();
   const [showCustomOverride, setShowCustomOverride] = useState(false);
@@ -607,6 +607,11 @@ export default function AgentSettingsPage() {
           name: m.name,
           requiresKey: m.requires_key,
           description: m.description,
+          credits_per_1k_tokens: m.credits_per_1k_tokens,
+          tier_badge: m.tier_badge,
+          user_id: m.user_id,
+          input_cost_per_1m: m.input_cost_per_1m,
+          output_cost_per_1m: m.output_cost_per_1m,
         }));
       });
       return formatted;
@@ -896,13 +901,34 @@ export default function AgentSettingsPage() {
 
               {activeTab === 'model' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-2xl font-bold flex items-center gap-2">
-                      <Brain className="text-primary" size={24} /> AI Model & Intelligence Engine
-                    </h3>
-                    <p className="text-muted-foreground text-sm mt-1">
-                      Configure the primary LLM engine, embedding model, and inference parameters powering this agent.
-                    </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-2xl font-bold flex items-center gap-2">
+                        <Brain className="text-primary" size={24} /> AI Model & Intelligence Engine
+                      </h3>
+                      <p className="text-muted-foreground text-sm mt-1">
+                        Configure the primary LLM engine, embedding model, and inference parameters powering this agent.
+                      </p>
+                    </div>
+                    {activeModelsData && (
+                      <div className="p-3 px-4 bg-card border border-border flex items-center gap-3 shrink-0 shadow-sm rounded-2xl">
+                        <Zap className="text-primary" size={16} />
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Wallet Balance</div>
+                          <div className="text-sm font-black text-foreground">
+                            ${(activeModelsData.credit_balance || 0).toFixed(2)} Credits
+                          </div>
+                        </div>
+                        {(activeModelsData.credit_balance || 0) <= 0 && (
+                          <button
+                            onClick={() => window.location.href = "/billing"}
+                            className="ml-2 px-2.5 py-1 text-[11px] font-bold text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors"
+                          >
+                            Top Up
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Main Container */}
@@ -947,36 +973,127 @@ export default function AgentSettingsPage() {
                         </span>
                       </div>
 
-                      <Select value={formData.model} onValueChange={(val) => updateField("model", val)}>
-                        <SelectTrigger className="w-full rounded-2xl py-6 px-4 border-input bg-background font-medium">
-                          <SelectValue placeholder="Choose an AI model..." />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-72">
-                          {currentModels.map((m) => {
-                            const isEnabled = !m.requiresKey || isProviderKeyPresent(formData.provider);
-                            return (
-                              <SelectItem key={m.id} value={m.id} disabled={!isEnabled} className="py-2.5">
-                                <div className="flex items-center justify-between gap-4 w-full">
-                                  <span className="font-semibold text-sm">{m.name}</span>
-                                  {!isEnabled ? (
-                                    <span className="text-[11px] text-amber-500 font-medium flex items-center gap-1">
-                                      <Lock size={12} /> Key Required
-                                    </span>
-                                  ) : m.requiresKey ? (
-                                    <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
-                                      <CheckCircle2 size={12} /> Key Ready
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] text-emerald-500 font-medium flex items-center gap-1">
-                                      <Zap size={12} /> Free Included
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {currentModels.map((m) => {
+                          const isSelected = formData.model === m.id;
+                          const isSystem = !m.user_id;
+                          const walletBalance = activeModelsData?.credit_balance || 0;
+                          
+                          const isByokActive = activeModelsData?.allow_byok && activeModelsData?.byok_status?.[formData.provider.toLowerCase()];
+                          
+                          const isLockedByWallet = isSystem && walletBalance <= 0 && !isByokActive;
+                          const isLockedByKey = m.requiresKey && !isProviderKeyPresent(formData.provider);
+                          const isLocked = isLockedByWallet || isLockedByKey;
+
+                          const costFactor = m.credits_per_1k_tokens || 0;
+                          
+                          let runwayText = "";
+                          if (isByokActive) {
+                            runwayText = "⚡ Unlimited (BYOK Active)";
+                          } else if (isSystem) {
+                            if (walletBalance <= 0) {
+                              runwayText = "⚠️ 0 Credits remaining (Top up required)";
+                            } else {
+                              const est = Math.floor(walletBalance / (costFactor * 1.5 || 0.15));
+                              runwayText = `~${est} Messages runway`;
+                            }
+                          } else {
+                            runwayText = "⚡ Custom Endpoints ($0 Platform Cost)";
+                          }
+
+                          // Badging
+                          let badgeStyle = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+                          let badgeText = m.tier_badge || "⚡ Low Burn";
+                          if (costFactor > 0.20 && costFactor <= 1.00) {
+                            badgeStyle = "bg-blue-500/10 text-blue-500 border-blue-500/20";
+                            badgeText = m.tier_badge || "⚖️ Balanced";
+                          } else if (costFactor > 1.00) {
+                            badgeStyle = "bg-purple-500/10 text-purple-500 border-purple-500/20";
+                            badgeText = m.tier_badge || "🔥 High Reasoning";
+                          }
+
+                          return (
+                            <div
+                              key={m.id}
+                              onClick={() => {
+                                if (isLockedByWallet) {
+                                  toast.error("Please top up your wallet on the Billing Page to use this system model.");
+                                  return;
+                                }
+                                if (isLockedByKey) {
+                                  toast.error("Please provide the provider API key below to unlock this model.");
+                                  return;
+                                }
+                                updateField("model", m.id);
+                              }}
+                              className={`p-5 rounded-2xl border transition-all cursor-pointer relative flex flex-col justify-between ${
+                                isSelected
+                                  ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+                                  : isLocked
+                                  ? "border-border/40 bg-muted/20 opacity-60"
+                                  : "border-border hover:border-primary/50 bg-background"
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${badgeStyle}`}>
+                                    {badgeText}
+                                  </span>
+                                  {isLocked && (
+                                    <span className="text-[11px] text-red-500 font-semibold flex items-center gap-1">
+                                      <Lock size={12} /> Locked
                                     </span>
                                   )}
                                 </div>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
+                                <h4 className="font-bold text-sm text-foreground">{m.name}</h4>
+                                <code className="text-[10px] text-muted-foreground font-mono block mt-1">{m.id}</code>
+                                <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
+                                  {m.description || "Versatile intelligence engine optimized for fast completions."}
+                                </p>
+                              </div>
+                              <div className="pt-3 border-t border-border/40 mt-4 flex flex-col gap-2">
+                                <div className="flex items-center justify-between text-[11px] relative group/price">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-muted-foreground font-medium">Burn Rate:</span>
+                                    {(() => {
+                                      const inCost = m.input_cost_per_1m || 0;
+                                      const outCost = m.output_cost_per_1m || 0;
+                                      const costSum = inCost + outCost;
+                                      let inputCoeff = costFactor;
+                                      let outputCoeff = costFactor;
+                                      if (costSum > 0) {
+                                        inputCoeff = (inCost / costSum) * 2.0 * costFactor;
+                                        outputCoeff = (outCost / costSum) * 2.0 * costFactor;
+                                      }
+                                      return (
+                                        <>
+                                          <span className="font-bold text-foreground cursor-help underline decoration-dotted decoration-muted-foreground/50">
+                                            {costFactor.toFixed(2)} cr / 1k tokens
+                                          </span>
+                                          <div className="absolute bottom-full left-0 mb-2 hidden group-hover/price:block w-56 p-3 bg-zinc-950 border border-border/60 text-zinc-100 rounded-xl shadow-2xl z-50 text-[10px] leading-relaxed transition-all">
+                                            <div className="font-bold text-primary mb-1">Pricing Split (per 1k tokens):</div>
+                                            <div className="flex justify-between py-0.5 border-b border-zinc-800">
+                                              <span>Input (Context):</span>
+                                              <span className="font-mono font-bold text-emerald-400">{inputCoeff.toFixed(3)} cr</span>
+                                            </div>
+                                            <div className="flex justify-between py-0.5 mt-0.5">
+                                              <span>Output (Gen):</span>
+                                              <span className="font-mono font-bold text-blue-400">{outputCoeff.toFixed(3)} cr</span>
+                                            </div>
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                                <div className="text-[11px] font-semibold text-primary/90 mt-1">
+                                  {runwayText}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* API Key Status / Custom Key Input */}

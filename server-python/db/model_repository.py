@@ -191,7 +191,8 @@ async def get_active_models(user_id: str = None):
             cursor.execute,
             """
             SELECT id, provider, id as model_id, name, 'System model' as description, FALSE as requires_key, 
-                   '' as base_url, category, created_at, credits_per_1k_tokens, tier_badge
+                   '' as base_url, category, created_at, credits_per_1k_tokens, tier_badge,
+                   input_cost_per_1m, output_cost_per_1m
             FROM system_ai_models
             WHERE is_active = TRUE
             ORDER BY provider ASC, name ASC
@@ -212,7 +213,9 @@ async def get_active_models(user_id: str = None):
                 "user_id": None,
                 "api_key": "",
                 "credits_per_1k_tokens": float(r[9]),
-                "tier_badge": r[10]
+                "tier_badge": r[10],
+                "input_cost_per_1m": float(r[11]) if r[11] is not None else 0.0,
+                "output_cost_per_1m": float(r[12]) if r[12] is not None else 0.0
             })
 
     # 2. Fetch user's custom models

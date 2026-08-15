@@ -91,29 +91,28 @@ async def handle_get_all_models(user_id: str = None):
 async def handle_create_model(payload: dict, user_id: str = None):
     """
     Creates and registers a new model entry in the database.
-
-    Parameters:
-        payload (dict): Payload containing:
-            - 'name' (str): Model label display name.
-            - 'model_id' (str): Provider-specific model ID.
-            - 'provider' (str): Model provider name.
-        user_id (str, optional): Creator's User ID.
-
-    Returns:
-        dict: A status confirmation message and the newly registered model object.
-
-    Exceptions Raised:
-        HTTPException(400): Raised if required fields ('name', 'model_id', 'provider') are missing.
-        HTTPException(500): Raised if SQL database insert crashes.
+    Only super admins can create system models (where user_id will be set to None).
     """
     try:
         # Check required fields
         if not payload.get("name") or not payload.get("model_id") or not payload.get("provider"):
             raise HTTPException(status_code=400, detail="name, model_id, and provider are required")
         
+        # Check if requesting user is a super admin
+        from db import admin_repository
+        is_admin = False
+        if user_id:
+            admin_status = await admin_repository.get_user_super_admin_status(user_id)
+            is_admin = bool(admin_status and admin_status[0])
+
+        # If user is a super admin, clear user_id to insert as system model
+        effective_user_id = None if is_admin else user_id
+
         # Write record to the DB
-        model = await model_repository.create_model(payload, user_id=user_id)
+        model = await model_repository.create_model(payload, user_id=effective_user_id)
         return {"status": "success", "model": model}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -122,22 +121,27 @@ async def handle_create_model(payload: dict, user_id: str = None):
 async def handle_update_model(model_id: str, payload: dict, user_id: str = None):
     """
     Updates the parameters of an existing model configuration.
-
-    Parameters:
-        model_id (str): The unique database UUID identifying the model.
-        payload (dict): Update parameter dictionary.
-        user_id (str, optional): The requesting user's UUID.
-
-    Returns:
-        dict: A success message and the updated model details.
-
-    Exceptions Raised:
-        HTTPException(404): Raised if the target model ID is not found.
-        HTTPException(500): Raised if database updates fail.
+    Only super admins can modify system models.
     """
     try:
+        is_user_model = False
+        try:
+            import uuid
+            uuid.UUID(str(model_id))
+            is_user_model = True
+        except ValueError:
+            is_user_model = False
+
+        effective_user_id = user_id
+        if not is_user_model:
+            from db import admin_repository
+            admin_status = await admin_repository.get_user_super_admin_status(user_id)
+            if not admin_status or not admin_status[0]:
+                raise HTTPException(status_code=403, detail="Only super admins can modify system models")
+            effective_user_id = None
+
         # Call update query in database repository
-        updated = await model_repository.update_model(model_id, payload, user_id=user_id)
+        updated = await model_repository.update_model(model_id, payload, user_id=effective_user_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Model not found")
         return {"status": "success", "model": updated}
@@ -151,21 +155,27 @@ async def handle_update_model(model_id: str, payload: dict, user_id: str = None)
 async def handle_delete_model(model_id: str, user_id: str = None):
     """
     Removes a model configuration from the database.
-
-    Parameters:
-        model_id (str): The unique database UUID of the target model.
-        user_id (str, optional): User ID requesting deletion.
-
-    Returns:
-        dict: Deletion status confirmation message.
-
-    Exceptions Raised:
-        HTTPException(404): Raised if the model ID is not found.
-        HTTPException(500): Raised if database deletions fail.
+    Only super admins can delete system models.
     """
     try:
+        is_user_model = False
+        try:
+            import uuid
+            uuid.UUID(str(model_id))
+            is_user_model = True
+        except ValueError:
+            is_user_model = False
+
+        effective_user_id = user_id
+        if not is_user_model:
+            from db import admin_repository
+            admin_status = await admin_repository.get_user_super_admin_status(user_id)
+            if not admin_status or not admin_status[0]:
+                raise HTTPException(status_code=403, detail="Only super admins can delete system models")
+            effective_user_id = None
+
         # Call deletion scripts in database repository
-        count = await model_repository.delete_model(model_id, user_id=user_id)
+        count = await model_repository.delete_model(model_id, user_id=effective_user_id)
         if count == 0:
             raise HTTPException(status_code=404, detail="Model not found")
         return {"status": "success", "message": "Model deleted"}

@@ -33,7 +33,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Create User Custom Models Table
 CREATE TABLE IF NOT EXISTS user_ai_models (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
   provider VARCHAR(50) NOT NULL,
   model_identifier VARCHAR(100) NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS user_ai_models (
 
 -- Create User Wallets Table
 CREATE TABLE IF NOT EXISTS user_wallets (
-  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   credit_balance NUMERIC(12, 4) DEFAULT 0.0000,
   auto_recharge_enabled BOOLEAN DEFAULT FALSE,
   recharge_threshold NUMERIC(12, 4) DEFAULT 10.0000,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS user_wallets (
 -- Create Credit Transactions Table
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
   amount_credits NUMERIC(12, 4) NOT NULL,
   transaction_type VARCHAR(50) NOT NULL, -- 'topup', 'usage_deduction', 'refund'

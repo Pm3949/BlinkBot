@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { CreditCard, Check, Zap, Cpu, Database, MessageSquare, Globe, ArrowRight, Sparkles, Building2, Sliders, ShieldCheck, Download, FileText, Calendar } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
-import { useSubscription, useCreateRazorpayOrder } from '../hooks/useBilling';
+import { useSubscription, useCreateRazorpayOrder, useWallet, useInvoices, useRechargeWallet, useUpdateRechargeSettings } from '../hooks/useBilling';
 import { toast } from 'sonner';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
 
@@ -60,9 +60,28 @@ const PricingCard = ({ title, priceInr, priceUsd, description, features, icon: I
 );
 
 export default function BillingPage() {
+  const [activeBillingTab, setActiveBillingTab] = useState("wallet");
   const [annualBilling, setAnnualBilling] = useState(false);
   const { data: subscription, isLoading } = useSubscription();
   const checkoutMutation = useCreateRazorpayOrder();
+
+  const { data: walletData, isLoading: walletLoading } = useWallet();
+  const { data: invoices, isLoading: invoicesLoading } = useInvoices();
+  const rechargeMutation = useRechargeWallet();
+  const settingsMutation = useUpdateRechargeSettings();
+
+  const [rechargeCredits, setRechargeCredits] = useState(5000);
+  const [autoRefill, setAutoRefill] = useState(false);
+  const [refillThreshold, setRefillThreshold] = useState(10);
+  const [refillAmount, setRefillAmount] = useState(20);
+
+  React.useEffect(() => {
+    if (walletData?.wallet) {
+      setAutoRefill(walletData.wallet.auto_recharge_enabled);
+      setRefillThreshold(walletData.wallet.recharge_threshold);
+      setRefillAmount(walletData.wallet.recharge_amount_usd);
+    }
+  }, [walletData]);
 
   // Custom Plan Slider States
   const [customWorkspaces, setCustomWorkspaces] = useState(1);
@@ -105,6 +124,36 @@ export default function BillingPage() {
       toast.success("Payment successful! Subscription updated.");
     } catch (error) {
       toast.error('Checkout failed: ' + (error.message || "Payment cancelled"));
+    }
+  };
+
+  const handleDownloadInvoice = async (invoiceId, invoiceNumber) => {
+    try {
+      toast.info("Downloading Invoice PDF...");
+      const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+      
+      const response = await fetch(`${API_URL}/api/billing/invoice/${invoiceId}/download`, {
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("access_token")}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to download invoice");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success("Invoice downloaded successfully!");
+    } catch (err) {
+      toast.error(err.message || "Failed to download invoice");
     }
   };
 
@@ -177,8 +226,43 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-border/60 gap-6">
+        <button
+          onClick={() => setActiveBillingTab("wallet")}
+          className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${
+            activeBillingTab === "wallet"
+              ? "text-primary border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Zap size={16} /> Model Wallet
+        </button>
+        <button
+          onClick={() => setActiveBillingTab("platform")}
+          className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${
+            activeBillingTab === "platform"
+              ? "text-primary border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <CreditCard size={16} /> Platform Subscription
+        </button>
+        <button
+          onClick={() => setActiveBillingTab("invoices")}
+          className={`pb-4 text-sm font-bold transition-all relative flex items-center gap-2 ${
+            activeBillingTab === "invoices"
+              ? "text-primary border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <FileText size={16} /> Invoice History
+        </button>
+      </div>
+
       {/* Current Active Plan Overview */}
-      <div className="glass-card p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-primary/30 bg-primary/5">
+      {activeBillingTab === "platform" && (
+        <div className="glass-card p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-primary/30 bg-primary/5">
         <div className="flex items-center gap-4">
           <div className="bg-primary/20 text-primary p-3.5 rounded-2xl shrink-0">
             <CreditCard className="w-8 h-8" />
@@ -237,9 +321,204 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+    )}
+
+      {/* Pre-Paid Credit Wallet Panel */}
+      {activeBillingTab === "wallet" && (
+        <div className="glass-card p-8 border border-primary/20 bg-background/50 rounded-2xl grid md:grid-cols-2 gap-8 shadow-lg">
+        {/* Wallet Balance & Recharge */}
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
+              <Zap className="text-primary fill-primary" size={20} /> Pre-Paid Credit Wallet
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Platform system models deduct credits dynamically based on input and output token consumption.
+            </p>
+          </div>
+
+          <div className="bg-muted/40 border border-border/50 rounded-3xl p-6 flex flex-col justify-between gap-6 min-h-[300px] shadow-sm">
+            <div>
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Current Balance</span>
+              {walletLoading ? (
+                <div className="h-10 w-24 bg-muted rounded-md animate-pulse mt-2" />
+              ) : (
+                <div className="text-4xl font-extrabold text-foreground mt-1 flex items-baseline gap-1">
+                  <span>{walletData?.wallet?.credit_balance?.toFixed(2) || "0.00"}</span>
+                  <span className="text-sm font-semibold text-muted-foreground">Credits</span>
+                </div>
+              )}
+            </div>
+
+            {/* Calculator UI */}
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block mb-1">
+                  Top Up Credits
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="1000"
+                    step="500"
+                    value={rechargeCredits}
+                    onChange={(e) => setRechargeCredits(Math.max(1000, parseInt(e.target.value) || 1000))}
+                    className="bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-bold w-full focus:outline-none focus:ring-2 focus:ring-primary/50 text-left"
+                  />
+                </div>
+              </div>
+
+              {/* Presets */}
+              <div className="grid grid-cols-3 gap-2">
+                {[1000, 5000, 10000].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setRechargeCredits(val)}
+                    className={`py-1.5 px-3 rounded-lg text-xs font-bold border transition-colors ${
+                      rechargeCredits === val
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border/60 hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {val.toLocaleString()} Cr
+                  </button>
+                ))}
+              </div>
+
+              {/* Dynamic Calculations */}
+              {(() => {
+                const baseInr = rechargeCredits / 10.0;
+                let discountPct = 0;
+                if (baseInr >= 500 && baseInr < 1000) {
+                  discountPct = 5;
+                } else if (baseInr >= 1000) {
+                  discountPct = 10;
+                }
+                const discountAmt = baseInr * (discountPct / 100.0);
+                const finalPayable = baseInr - discountAmt;
+
+                return (
+                  <div className="bg-background/60 border border-border/40 rounded-xl p-4 space-y-2 text-xs">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Rate:</span>
+                      <span className="font-semibold">10 Credits = ₹1 INR</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Base Amount:</span>
+                      <span className="font-mono">₹{baseInr.toFixed(2)}</span>
+                    </div>
+                    {discountPct > 0 && (
+                      <div className="flex justify-between text-emerald-500 font-medium">
+                        <span>Volume Discount ({discountPct}%):</span>
+                        <span className="font-mono">-₹{discountAmt.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-border/40 pt-2 text-foreground font-bold">
+                      <span>Total Payable (INR):</span>
+                      <span className="font-mono text-sm text-primary">₹{finalPayable.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <Button
+                onClick={() => {
+                  rechargeMutation.mutate(rechargeCredits, {
+                    onSuccess: (data) => {
+                      toast.success(
+                        data.message || `Successfully added ${rechargeCredits} credits!`
+                      );
+                    },
+                    onError: (err) => toast.error(err.message)
+                  });
+                }}
+                disabled={rechargeMutation.isPending || rechargeCredits < 1000}
+                className="btn-primary rounded-xl font-semibold w-full py-2.5 shadow-md shadow-primary/20"
+              >
+                {rechargeMutation.isPending ? "Processing..." : `Recharge Wallet Now`}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Auto-Refill Rules */}
+        <div className="space-y-6 border-t md:border-t-0 md:border-l border-border/50 pt-6 md:pt-0 md:pl-8">
+          <div>
+            <h4 className="text-sm font-bold text-foreground">Auto-Refill Settings</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Automatically charge your card when your credit balance drops below your chosen threshold.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">Enable Auto-Refill</span>
+              <Switch checked={autoRefill} onCheckedChange={setAutoRefill} />
+            </div>
+
+            {autoRefill && (
+              <div className="space-y-4 pt-2 animate-fadeIn">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+                    <span>When balance falls below</span>
+                    <span className="text-foreground">${refillThreshold} Credits</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    step="5"
+                    value={refillThreshold}
+                    onChange={(e) => setRefillThreshold(parseInt(e.target.value))}
+                    className="w-full accent-primary h-1.5 cursor-pointer bg-muted rounded-lg"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+                    <span>Recharge amount</span>
+                    <span className="text-foreground">${refillAmount} USD</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="10"
+                    value={refillAmount}
+                    onChange={(e) => setRefillAmount(parseInt(e.target.value))}
+                    className="w-full accent-primary h-1.5 cursor-pointer bg-muted rounded-lg"
+                  />
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={() => {
+                settingsMutation.mutate(
+                  { enabled: autoRefill, threshold: refillThreshold, amount_usd: refillAmount },
+                  {
+                    onSuccess: () => toast.success("Refill settings saved successfully!"),
+                    onError: (err) => toast.error(err.message)
+                  }
+                );
+              }}
+              disabled={settingsMutation.isPending}
+              variant="outline"
+              className="w-full rounded-xl font-semibold border-border/80 text-xs py-2 mt-2"
+            >
+              {settingsMutation.isPending ? "Saving..." : "Save Refill Settings"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+
 
       {/* Monthly / Annual Toggle */}
-      <div className="flex justify-center items-center gap-4 py-2">
+      {activeBillingTab === "platform" && (
+        <div className="space-y-8">
+          <div className="flex justify-center items-center gap-4 py-2">
         <span className={`text-sm font-semibold ${!annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly Billing</span>
         <Switch checked={annualBilling} onCheckedChange={setAnnualBilling} />
         <span className={`text-sm font-semibold flex items-center gap-2 ${annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>
@@ -474,9 +753,12 @@ export default function BillingPage() {
           </div>
         </div>
       </div>
+    </div>
+  )}
 
       {/* Payment & Invoice History */}
-      <div className="glass-card p-8 space-y-6">
+      {activeBillingTab === "invoices" && (
+        <div className="glass-card p-8 space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
@@ -501,44 +783,144 @@ export default function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              <tr className="hover:bg-muted/20">
-                <td className="py-3.5 px-4 font-mono font-medium">INV-2026-001</td>
-                <td className="py-3.5 px-4 text-muted-foreground">Jul 23, 2026</td>
-                <td className="py-3.5 px-4 font-semibold text-foreground">{currentPlanTier} Plan Subscription</td>
-                <td className="py-3.5 px-4 font-bold text-foreground">{currentPlanTier === "Pro" ? "₹999" : currentPlanTier === "Business" ? "₹3,999" : "₹0"}</td>
-                <td className="py-3.5 px-4">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                    Paid
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => toast.info("Downloading Invoice PDF...")}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-                  >
-                    <Download size={12} /> Receipt
-                  </button>
-                </td>
-              </tr>
-              <tr className="hover:bg-muted/20">
-                <td className="py-3.5 px-4 font-mono font-medium">INV-2026-000</td>
-                <td className="py-3.5 px-4 text-muted-foreground">Jun 23, 2026</td>
-                <td className="py-3.5 px-4 font-semibold text-foreground">Starter Free Plan</td>
-                <td className="py-3.5 px-4 font-bold text-foreground">₹0</td>
-                <td className="py-3.5 px-4">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
-                    Included
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 text-right">
-                  <span className="text-muted-foreground/50 text-[11px]">—</span>
-                </td>
-              </tr>
+              {invoicesLoading ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    Loading invoices history...
+                  </td>
+                </tr>
+              ) : !invoices || invoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    No transactions found. Completed payments will appear here.
+                  </td>
+                </tr>
+              ) : (
+                invoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-muted/20">
+                    <td className="py-3.5 px-4 font-mono font-medium">{inv.invoice_number}</td>
+                    <td className="py-3.5 px-4 text-muted-foreground">
+                      {new Date(inv.created_at).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-foreground">{inv.description}</td>
+                    <td className="py-3.5 px-4 font-bold text-foreground">₹{inv.amount_inr}</td>
+                    <td className="py-3.5 px-4">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        inv.status === 'Paid'
+                          ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                          : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                      }`}>
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadInvoice(inv.id, inv.invoice_number)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline text-right"
+                      >
+                        <Download size={12} /> Receipt
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
+    )}
+
+      {/* Wallet Transaction History */}
+      {activeBillingTab === "invoices" && (
+        <div className="glass-card p-8 space-y-6 mt-8">
+        <div>
+          <h3 className="text-xl font-bold flex items-center gap-2 text-foreground">
+            <FileText className="text-primary" size={20} /> Wallet Transaction History
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Detailed log of top-ups and dynamic compute consumption.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-border/50 text-muted-foreground uppercase text-[10px] tracking-wider font-semibold">
+                <th className="py-3 px-4">Transaction ID</th>
+                <th className="py-3 px-4">Date</th>
+                <th className="py-3 px-4">Type</th>
+                <th className="py-3 px-4">Model Used</th>
+                <th className="py-3 px-4">Tokens (Input / Output)</th>
+                <th className="py-3 px-4">Credits</th>
+                <th className="py-3 px-4 text-right">Receipt</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              {walletData?.history?.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                    No wallet transactions found.
+                  </td>
+                </tr>
+              ) : (
+                walletData?.history?.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-muted/20">
+                    <td className="py-3.5 px-4 font-mono font-medium truncate max-w-[120px]" title={tx.id}>
+                      {tx.id}
+                    </td>
+                    <td className="py-3.5 px-4 text-muted-foreground">
+                      {new Date(tx.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold capitalize">
+                      {tx.transaction_type === 'topup' ? (
+                        <span className="text-emerald-500">Top Up</span>
+                      ) : (
+                        <span className="text-amber-500">Usage Deduction</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-muted-foreground">
+                      {tx.model_used || "—"}
+                    </td>
+                    <td className="py-3.5 px-4 text-muted-foreground">
+                      {tx.prompt_tokens !== null && tx.completion_tokens !== null ? (
+                        <span>{tx.prompt_tokens} / {tx.completion_tokens}</span>
+                      ) : (
+                        <span>—</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold">
+                      {tx.amount_credits > 0 ? (
+                        <span className="text-emerald-500">+{tx.amount_credits.toFixed(2)}</span>
+                      ) : (
+                        <span className="text-red-500">{tx.amount_credits.toFixed(4)}</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                       {tx.invoice_id ? (
+                         <button
+                           type="button"
+                           onClick={() => handleDownloadInvoice(tx.invoice_id, `WL-${tx.id.slice(0, 8)}`)}
+                           className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                         >
+                           <Download size={10} /> Receipt
+                         </button>
+                       ) : (
+                         <span className="text-muted-foreground/40 text-[11px]">—</span>
+                       )}
+                     </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
     </div>
   );
 }

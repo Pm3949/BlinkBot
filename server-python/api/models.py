@@ -44,6 +44,10 @@ class ModelCreate(BaseModel):
     base_url: Optional[str] = "" # Base URL path for custom OpenAI-compatible hosts
     category: Optional[str] = "General" # Category (e.g. 'General', 'Embedding')
     api_key: Optional[str] = "" # Optional API key for custom servers
+    input_cost_per_1m: Optional[float] = 0.0
+    output_cost_per_1m: Optional[float] = 0.0
+    credits_per_1k_tokens: Optional[float] = 0.0
+    badge: Optional[str] = ""
 
 
 class ModelUpdate(BaseModel):
@@ -59,6 +63,10 @@ class ModelUpdate(BaseModel):
     provider: Optional[str] = None
     model_id: Optional[str] = None
     api_key: Optional[str] = None
+    input_cost_per_1m: Optional[float] = None
+    output_cost_per_1m: Optional[float] = None
+    credits_per_1k_tokens: Optional[float] = None
+    badge: Optional[str] = None
 
 
 class KeyTestRequest(BaseModel):
@@ -258,7 +266,7 @@ async def test_single_model(payload: SingleModelTestRequest, current_user: dict 
 @router.get("/api/models/available")
 async def get_available_models(current_user: dict = Depends(get_current_user)):
     """
-    Retrieves available system and user custom models, along with BYOK authorization status.
+    Retrieves available system and user custom models, along with BYOK authorization status, wallet balance, and credentials state.
     """
     user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
     
@@ -274,11 +282,30 @@ async def get_available_models(current_user: dict = Depends(get_current_user)):
         row = await run_in_threadpool(cursor.fetchone)
         allow_byok = row[0] if row else False
 
+    from db import billing_repository, settings_repository
+    # Retrieve wallet balance
+    credit_balance = await billing_repository.get_wallet_balance(user_id)
+
+    # Retrieve BYOK keys status
+    user_keys = await settings_repository.get_effective_user_settings(user_id)
+    byok_status = {
+        "openai": bool(user_keys[0]) if user_keys else False,
+        "groq": bool(user_keys[1]) if user_keys else False,
+        "gemini": bool(user_keys[2]) if user_keys else False,
+        "openrouter": bool(user_keys[3]) if user_keys else False,
+        "anthropic": bool(user_keys[4]) if user_keys else False,
+        "huggingface": bool(user_keys[5]) if user_keys else False,
+        "nvidia": bool(user_keys[6]) if user_keys else False,
+    }
+
     active_models = await model_handler.handle_get_active_models(user_id=user_id)
     return {
         "allow_byok": allow_byok,
+        "credit_balance": credit_balance,
+        "byok_status": byok_status,
         "providers": active_models.get("providers", {}),
         "models": active_models.get("models", [])
     }
+
 
 

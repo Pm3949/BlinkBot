@@ -17,9 +17,9 @@ async def test_wallet_and_billing_operations():
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(cursor.execute, "DELETE FROM credit_transactions WHERE user_id = %s", (test_user_id,))
         await run_in_threadpool(cursor.execute, "DELETE FROM user_wallets WHERE user_id = %s", (test_user_id,))
-        await run_in_threadpool(cursor.execute, "DELETE FROM auth.users WHERE id = %s", (test_user_id,))
-        # Insert a dummy user in auth.users to satisfy foreign keys
-        await run_in_threadpool(cursor.execute, "INSERT INTO auth.users (id, email) VALUES (%s, 'test_billing@blinkbot.in') ON CONFLICT DO NOTHING", (test_user_id,))
+        await run_in_threadpool(cursor.execute, "DELETE FROM public.users WHERE id = %s", (test_user_id,))
+        # Insert a dummy user in public.users to satisfy foreign keys
+        await run_in_threadpool(cursor.execute, "INSERT INTO public.users (id, email, password_hash) VALUES (%s, 'test_billing@blinkbot.in', 'dummy_hash') ON CONFLICT DO NOTHING", (test_user_id,))
 
     # 2. Get wallet details (should create/initialize the wallet with 0.0 balance)
     wallet = await billing_repository.get_wallet_details(test_user_id)
@@ -58,7 +58,7 @@ async def test_wallet_and_billing_operations():
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(cursor.execute, "DELETE FROM credit_transactions WHERE user_id = %s", (test_user_id,))
         await run_in_threadpool(cursor.execute, "DELETE FROM user_wallets WHERE user_id = %s", (test_user_id,))
-        await run_in_threadpool(cursor.execute, "DELETE FROM auth.users WHERE id = %s", (test_user_id,))
+        await run_in_threadpool(cursor.execute, "DELETE FROM public.users WHERE id = %s", (test_user_id,))
 
 if __name__ == "__main__":
     print("Running decoupled billing test suite...")

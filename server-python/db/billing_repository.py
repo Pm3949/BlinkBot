@@ -240,7 +240,8 @@ async def create_credit_transaction(
     transaction_type: str,
     model_used: str = None,
     prompt_tokens: int = 0,
-    completion_tokens: int = 0
+    completion_tokens: int = 0,
+    invoice_id: str = None
 ) -> bool:
     """
     Creates a record of a credit transaction log.
@@ -260,10 +261,10 @@ async def create_credit_transaction(
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO credit_transactions (user_id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens)
-            VALUES (%s, %s, %s, %s, %s, %s, %s);
+            INSERT INTO credit_transactions (user_id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens, invoice_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
             """,
-            (user_id, valid_agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens)
+            (user_id, valid_agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens, invoice_id)
         )
         return True
 
@@ -276,7 +277,7 @@ async def get_credit_transactions(user_id: str, limit: int = 50) -> list:
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens, created_at
+            SELECT id, agent_id, amount_credits, transaction_type, model_used, prompt_tokens, completion_tokens, created_at, invoice_id
             FROM credit_transactions
             WHERE user_id = %s
             ORDER BY created_at DESC
@@ -294,9 +295,100 @@ async def get_credit_transactions(user_id: str, limit: int = 50) -> list:
                 "model_used": r[4],
                 "prompt_tokens": r[5],
                 "completion_tokens": r[6],
-                "created_at": r[7].isoformat() if r[7] else None
+                "created_at": r[7].isoformat() if r[7] else None,
+                "invoice_id": str(r[8]) if r[8] else None
             }
             for r in rows
         ]
+
+
+import json
+
+async def create_invoice(user_id: str, invoice_number: str, amount_inr: float, description: str, invoice_metadata: dict) -> dict:
+    """
+    Creates and records a new invoice in the DB.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO invoices (user_id, invoice_number, amount_inr, description, invoice_metadata)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, invoice_number, amount_inr, status, description, invoice_metadata, created_at;
+            """,
+            (user_id, invoice_number, amount_inr, description, json.dumps(invoice_metadata))
+        )
+        r = await run_in_threadpool(cursor.fetchone)
+        if r:
+            return {
+                "id": str(r[0]),
+                "invoice_number": r[1],
+                "amount_inr": float(r[2]),
+                "status": r[3],
+                "description": r[4],
+                "invoice_metadata": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
+                "created_at": r[6].isoformat() if r[6] else None
+            }
+        return None
+
+
+async def get_user_invoices(user_id: str) -> list:
+    """
+    Fetches all billing invoices for a specific user ID.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT id, invoice_number, amount_inr, status, description, invoice_metadata, created_at
+            FROM invoices
+            WHERE user_id = %s
+            ORDER BY created_at DESC;
+            """,
+            (user_id,)
+        )
+        rows = await run_in_threadpool(cursor.fetchall)
+        return [
+            {
+                "id": str(r[0]),
+                "invoice_number": r[1],
+                "amount_inr": float(r[2]),
+                "status": r[3],
+                "description": r[4],
+                "invoice_metadata": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
+                "created_at": r[6].isoformat() if r[6] else None
+            }
+            for r in rows
+        ]
+
+
+async def get_invoice_by_id(invoice_id: str) -> dict:
+    """
+    Retrieves a single invoice entry metadata details matching database ID.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT id, invoice_number, amount_inr, status, description, invoice_metadata, created_at, user_id
+            FROM invoices
+            WHERE id = %s;
+            """,
+            (invoice_id,)
+        )
+        r = await run_in_threadpool(cursor.fetchone)
+        if r:
+            return {
+                "id": str(r[0]),
+                "invoice_number": r[1],
+                "amount_inr": float(r[2]),
+                "status": r[3],
+                "description": r[4],
+                "invoice_metadata": r[5] if isinstance(r[5], dict) else json.loads(r[5] or "{}"),
+                "created_at": r[6].isoformat() if r[6] else None,
+                "user_id": str(r[7])
+            }
+        return None
+
 
 

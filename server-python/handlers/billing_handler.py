@@ -81,6 +81,60 @@ async def handle_get_subscription(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to fetch subscription")
 
 
+def calculate_subscription_price(
+    plan_tier: str,
+    billing_cycle: str,
+    workspaces_limit: int,
+    agents_limit: int,
+    agent_messages_limit: int,
+    storage_mb_limit: int,
+    chatbots_limit: int,
+    chatbot_messages_limit: int
+) -> float:
+    """
+    Computes subscription prices based on tier and active resource quotas.
+    """
+    if plan_tier == "Pro":
+        monthly_total = 1900
+        final_amount = (
+            (monthly_total * 12) * 0.8
+            if billing_cycle == "annually"
+            else monthly_total
+        )
+    elif plan_tier == "Enterprise":
+        monthly_total = 9900
+        final_amount = (
+            (monthly_total * 12) * 0.8
+            if billing_cycle == "annually"
+            else monthly_total
+        )
+    else:
+        # Custom plan configuration
+        base_price = 800
+        workspaces_price = workspaces_limit * 500
+        agents_price = agents_limit * 400
+        agent_msg_price = (agent_messages_limit / 1000.0) * 160
+        storage_price = (storage_mb_limit / 100.0) * 50
+        chatbots_price = chatbots_limit * 800
+        chatbot_msg_price = (chatbot_messages_limit / 1000.0) * 200
+
+        monthly_total = (
+            base_price
+            + workspaces_price
+            + agents_price
+            + agent_msg_price
+            + storage_price
+            + chatbots_price
+            + chatbot_msg_price
+        )
+        final_amount = (
+            (monthly_total * 12) * 0.8
+            if billing_cycle == "annually"
+            else monthly_total
+        )
+    return float(final_amount)
+
+
 async def handle_create_razorpay_order(
     user_id: str,
     plan_tier: str,
@@ -94,23 +148,6 @@ async def handle_create_razorpay_order(
 ):
     """
     Computes the price based on subscription selections and generates a Razorpay Order.
-
-    Parameters:
-        user_id (str): The unique database UUID of the user.
-        plan_tier (str): Target subscription tier ('Pro', 'Enterprise', or 'Custom').
-        billing_cycle (str): Plan frequency ('monthly' or 'annually').
-        workspaces_limit (int): Allowed workspaces (for Custom plan).
-        agents_limit (int): Allowed agents (for Custom plan).
-        agent_messages_limit (int): Message quota count (for Custom plan).
-        storage_mb_limit (int): Vector database storage size in Megabytes (for Custom plan).
-        chatbots_limit (int): Allowed widget chatbots (for Custom plan).
-        chatbot_messages_limit (int): Widget message quota (for Custom plan).
-
-    Returns:
-        dict: A dictionary containing the newly registered Razorpay order ID and payment credentials.
-
-    Exceptions Raised:
-        HTTPException(500): Raised if Razorpay SDK keys are missing or order creation fails.
     """
     # Log order parameters
     logger.info(f"Initiating Razorpay payment order for user ID: {user_id} (Plan: {plan_tier}, Cycle: {billing_cycle})")
@@ -122,53 +159,13 @@ async def handle_create_razorpay_order(
 
     logger.debug(f"Calculating final price details. workspaces_limit={workspaces_limit}, agents_limit={agents_limit}, storage={storage_mb_limit}MB")
     
-    # 1. Price calculation logic
-    if plan_tier == "Pro":
-        # Flat rate of 1900 INR/month
-        monthly_total = 1900
-        # Apply 20% discount (0.8 multiplier) for annual billing cycles
-        final_amount = (
-            (monthly_total * 12) * 0.8
-            if billing_cycle == "annually"
-            else monthly_total
-        )
-    elif plan_tier == "Enterprise":
-        # Flat rate of 9900 INR/month
-        monthly_total = 9900
-        # Apply 20% discount for annual billing cycles
-        final_amount = (
-            (monthly_total * 12) * 0.8
-            if billing_cycle == "annually"
-            else monthly_total
-        )
-    else:
-        # Custom plan configuration: calculate price based on user-selected metric sliders
-        base_price = 800                                            # Base platform entry price
-        workspaces_price = workspaces_limit * 500                   # 500 INR per workspace
-        agents_price = agents_limit * 400                           # 400 INR per agent
-        agent_msg_price = (agent_messages_limit / 1000.0) * 160     # 160 INR per 1000 messages
-        storage_price = (storage_mb_limit / 100.0) * 50             # 50 INR per 100 MB vectors
-        chatbots_price = chatbots_limit * 800                       # 800 INR per widget chatbot
-        chatbot_msg_price = (chatbot_messages_limit / 1000.0) * 200 # 200 INR per 1000 widget messages
+    # Calculate price using utility
+    final_amount = calculate_subscription_price(
+        plan_tier, billing_cycle, workspaces_limit, agents_limit,
+        agent_messages_limit, storage_mb_limit, chatbots_limit, chatbot_messages_limit
+    )
 
-        # Add up prices
-        monthly_total = (
-            base_price
-            + workspaces_price
-            + agents_price
-            + agent_msg_price
-            + storage_price
-            + chatbots_price
-            + chatbot_msg_price
-        )
-        # Apply 20% discount for annual billing cycles
-        final_amount = (
-            (monthly_total * 12) * 0.8
-            if billing_cycle == "annually"
-            else monthly_total
-        )
-
-    # Convert Rupee float amount into Integer Paisa value (Razorpay requirement: e.g. 100 paisa = 1 INR)
+    # Convert Rupee float amount into Integer Paisa value
     amount = int(final_amount * 100) 
     logger.debug(f"Calculated billing amount: INR {final_amount} (Amount in paise: {amount})")
 
@@ -275,6 +272,33 @@ async def handle_verify_razorpay_payment(
             logger.debug(f"Saving updated user subscription plan parameters to database for user {user_id}...")
             await billing_repository.upsert_user_subscription(user_id, plan_tier, billing_cycle, limits_json)
             logger.info(f"Subscription plan updated successfully in database for user ID: {user_id}")
+
+            # Generate invoice records in database
+            final_amount = calculate_subscription_price(
+                plan_tier, billing_cycle, workspaces_limit, agents_limit,
+                agent_messages_limit, storage_mb_limit, chatbots_limit, chatbot_messages_limit
+            )
+            import time
+            import random
+            inv_num = f"INV-SUB-{int(time.time())}-{random.randint(100, 999)}"
+            await billing_repository.create_invoice(
+                user_id=user_id,
+                invoice_number=inv_num,
+                amount_inr=final_amount,
+                description=f"{plan_tier} Plan Subscription ({billing_cycle.capitalize()})",
+                invoice_metadata={
+                    "item": f"{plan_tier} Plan Subscription",
+                    "billing_cycle": billing_cycle,
+                    "limits": {
+                        "workspaces": workspaces_limit,
+                        "agents": agents_limit,
+                        "agent_messages": agent_messages_limit,
+                        "storage_mb": storage_mb_limit,
+                        "chatbots": chatbots_limit,
+                        "chatbot_messages": chatbot_messages_limit
+                    }
+                }
+            )
         except Exception as e:
             logger.error(f"Failed to update user subscription status in DB: {str(e)}", exc_info=True)
             raise HTTPException(
@@ -290,4 +314,128 @@ async def handle_verify_razorpay_payment(
         raise
     except Exception as e:
         logger.error(f"Razorpay payment verification failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def handle_create_wallet_recharge_order(user_id: str, credits: int):
+    """
+    Creates a Razorpay order for wallet credits topup.
+    """
+    logger.info(f"Initiating Razorpay recharge order for user ID: {user_id} (Credits: {credits})")
+    
+    if not razorpay_client:
+        logger.error("Razorpay integration error: Razorpay client keys not configured in server env.")
+        raise HTTPException(status_code=500, detail="Razorpay keys not configured")
+
+    if credits < 1000:
+        raise HTTPException(status_code=400, detail="Minimum top-up is 1,000 credits")
+
+    # Secure server-side calculation
+    base_inr = credits / 10.0
+    discount_pct = 0.0
+    if 500.0 <= base_inr < 1000.0:
+        discount_pct = 5.0
+    elif base_inr >= 1000.0:
+        discount_pct = 10.0
+        
+    final_payable_inr = base_inr * (1.0 - (discount_pct / 100.0))
+    amount_paise = int(final_payable_inr * 100)
+
+    try:
+        order = razorpay_client.order.create(
+            {
+                "amount": amount_paise,
+                "currency": "INR",
+                "payment_capture": "1"
+            }
+        )
+        return {
+            "id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "key": RAZORPAY_KEY_ID,
+            "credits": credits,
+            "base_inr": base_inr,
+            "discount_percent": discount_pct,
+            "final_payable_inr": final_payable_inr
+        }
+    except Exception as e:
+        logger.error(f"Razorpay wallet recharge order creation failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Razorpay order creation failed")
+
+
+async def handle_verify_wallet_recharge_payment(
+    razorpay_order_id: str,
+    razorpay_payment_id: str,
+    razorpay_signature: str,
+    user_id: str,
+    credits: int
+):
+    """
+    Verifies Razorpay wallet recharge signature and updates DB.
+    """
+    logger.info(f"Verifying Razorpay wallet payment signature for Order ID: {razorpay_order_id} (User ID: {user_id})")
+    
+    if not razorpay_client:
+        logger.error("Razorpay client is not initialized.")
+        raise HTTPException(status_code=500, detail="Razorpay integration disabled")
+
+    try:
+        # Cryptographic check
+        razorpay_client.utility.verify_payment_signature(
+            {
+                "razorpay_order_id": razorpay_order_id,
+                "razorpay_payment_id": razorpay_payment_id,
+                "razorpay_signature": razorpay_signature,
+            }
+        )
+        
+        # Credit the prepaid wallet in the database
+        await billing_repository.topup_wallet_credits(user_id, credits)
+
+        # Calculate pricing securely and save to invoices table
+        base_inr = credits / 10.0
+        discount_pct = 0.0
+        if 500.0 <= base_inr < 1000.0:
+            discount_pct = 5.0
+        elif base_inr >= 1000.0:
+            discount_pct = 10.0
+        final_payable_inr = base_inr * (1.0 - (discount_pct / 100.0))
+
+        import time
+        import random
+        inv_num = f"INV-WL-{int(time.time())}-{random.randint(100, 999)}"
+        invoice = await billing_repository.create_invoice(
+            user_id=user_id,
+            invoice_number=inv_num,
+            amount_inr=final_payable_inr,
+            description=f"Wallet top-up (+{credits:,} Credits)",
+            invoice_metadata={
+                "item": "Prepaid AI Model Credits",
+                "credits": credits,
+                "base_inr": base_inr,
+                "discount_percent": discount_pct,
+                "discount_amount": base_inr * (discount_pct / 100.0)
+            }
+        )
+        
+        # Create credit transaction log linked to the invoice
+        invoice_id = invoice["id"] if invoice else None
+        await billing_repository.create_credit_transaction(
+            user_id=user_id,
+            agent_id=None,
+            amount_credits=credits,
+            transaction_type="topup",
+            model_used=None,
+            invoice_id=invoice_id
+        )
+        
+        return {"status": "success", "message": f"Successfully recharged wallet with {credits} credits."}
+    except razorpay.errors.SignatureVerificationError:
+        logger.warning(f"Razorpay wallet verification rejected: Invalid signature for Order ID {razorpay_order_id}")
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Razorpay wallet verification failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

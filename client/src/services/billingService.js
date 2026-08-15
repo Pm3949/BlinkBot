@@ -110,3 +110,112 @@ export async function createRazorpayOrder(planTier, billingCycle, limits = {}) {
     rzp1.open();
   });
 }
+
+
+export async function getWallet() {
+  const response = await fetch(`${API_URL}/api/billing/wallet`, {
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch wallet info");
+  }
+
+  return response.json();
+}
+
+
+export async function getInvoices() {
+  const response = await fetch(`${API_URL}/api/billing/invoices`, {
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch invoices");
+  }
+
+  return response.json();
+}
+
+
+export async function rechargeWallet(credits) {
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  
+  const res = await loadRazorpayScript();
+  if (!res) {
+    throw new Error("Razorpay SDK failed to load");
+  }
+  
+  // 1. Create order on the backend
+  const response = await fetch(`${API_URL}/api/billing/wallet/recharge/order`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ credits })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || "Recharge order creation failed");
+  }
+
+  const orderData = await response.json();
+
+  // 2. Open Razorpay checkout modal
+  return new Promise((resolve, reject) => {
+    const options = {
+      key: orderData.key,
+      amount: orderData.amount,
+      currency: orderData.currency,
+      name: "BlinkBot Prepaid Credits",
+      description: `Recharge wallet with ${credits.toLocaleString()} credits`,
+      order_id: orderData.id,
+      handler: async function (response) {
+        try {
+          // 3. Verify payment signature on backend
+          const verifyRes = await fetch(`${API_URL}/api/billing/wallet/recharge/verify`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              credits: credits
+            }),
+          });
+          if (!verifyRes.ok) throw new Error("Payment verification failed");
+          resolve(await verifyRes.json());
+        } catch (e) {
+          reject(e);
+        }
+      },
+      prefill: {
+        email: user.email || ""
+      },
+      theme: {
+        color: "#4f46e5"
+      }
+    };
+    const rzp1 = new window.Razorpay(options);
+    rzp1.on('payment.failed', function (response) {
+      reject(new Error(response.error.description || "Payment Failed"));
+    });
+    rzp1.open();
+  });
+}
+
+
+export async function updateRechargeSettings(enabled, threshold, amount_usd) {
+  const response = await fetch(`${API_URL}/api/billing/wallet/settings`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ enabled, threshold, amount_usd })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || "Failed to update recharge settings");
+  }
+
+  return response.json();
+}
+

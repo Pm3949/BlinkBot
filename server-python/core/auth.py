@@ -345,35 +345,26 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # to manually check the token and customize authentication exception payloads.
 security = HTTPBearer(auto_error=False)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+def get_current_user(
+    token: str = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
     """
     FastAPI dependency middleware that extracts and validates incoming JWT Bearer tokens.
-
-    Purpose:
-        Protects API routes. Inspects authorization headers, validates token signatures against
-        the JWT secret, checks expiration timestamps, and configures the thread context
-        logger variable for tracking user actions.
-
-    Parameters:
-        credentials (HTTPAuthorizationCredentials): Automatically parsed Authorization header.
-
-    Returns:
-        dict: The decoded JWT claim payload containing `sub`, `email`, and `role`.
-
-    Side Effects / State Changes:
-        - Sets the context-local `user_id_var` to trace actions of the authenticated user in log outputs.
-
-    Errors / Exceptions:
-        - Raises `HTTPException` with status code 401 if credentials are missing, expired, or invalid.
+    Supports header Bearer token and query parameter fallback.
     """
-    # If no token is provided in the headers, raise a 401 error.
-    if not credentials:
+    auth_token = None
+    if credentials:
+        auth_token = credentials.credentials
+    elif token:
+        auth_token = token
+
+    if not auth_token:
         raise HTTPException(status_code=401, detail="Missing authorization credentials")
     
-    token = credentials.credentials
     try:
         # Decode the token, verifying the signature and checking the audience claim.
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
+        payload = jwt.decode(auth_token, JWT_SECRET, algorithms=[ALGORITHM], audience="authenticated")
         
         # Set user tracking variable in the thread context log context.
         from utils.logger import user_id_var

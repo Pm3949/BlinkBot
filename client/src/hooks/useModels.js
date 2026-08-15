@@ -123,3 +123,19 @@ export function useTestSingleModel() {
     },
   });
 }
+
+// Fetch available models with billing and byok info
+export function useAvailableModels() {
+  return useQuery({
+    queryKey: ["available-models"],
+    queryFn: async () => {
+      const response = await fetch(`${API_URL}/api/models/available`, {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Failed to fetch available models");
+      return response.json();
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
+}
+

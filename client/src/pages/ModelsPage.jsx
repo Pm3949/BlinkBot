@@ -39,6 +39,7 @@ import {
   useTestSingleModel
 } from "../hooks/useModels";
 import { useUserSettings, useUpdateUserSettings } from "../hooks/useSettings";
+import { useWallet, useSubscription } from "../hooks/useBilling";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import {
   Dialog,
@@ -49,7 +50,7 @@ import {
 } from "../components/ui/dialog";
 
 export default function ModelsPage() {
-  const [activeTab, setActiveTab] = useState("catalog"); // "catalog" | "keys"
+  const [activeTab, setActiveTab] = useState("system"); // "system" | "custom" | "keys"
   const [selectedProvider, setSelectedProvider] = useState("all");
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
   const [searchQuery, setSearchQuery] = useState("");
@@ -59,6 +60,8 @@ export default function ModelsPage() {
   // Data queries
   const { data: modelsData, isLoading: isLoadingModels, refetch: refetchModels, isRefetching: isRefetchingModels } = useAllModels();
   const { data: userSettings } = useUserSettings();
+  const { data: walletData } = useWallet();
+  const { data: subscription } = useSubscription();
   const updateSettingsMutation = useUpdateUserSettings();
 
   const createModelMutation = useCreateModel();
@@ -125,8 +128,15 @@ export default function ModelsPage() {
   }, [userSettings]);
 
   const modelsList = modelsData?.models || [];
+  const walletBalance = walletData?.wallet?.credit_balance || 0;
 
-  const filteredModels = modelsList.filter((m) => {
+  // Split into System vs Custom Models
+  const systemModels = modelsList.filter(m => !m.user_id);
+  const customModels = modelsList.filter(m => m.user_id);
+
+  const activeModelsList = (activeTab === "system") ? systemModels : customModels;
+
+  const filteredModels = activeModelsList.filter((m) => {
     const matchesProvider = selectedProvider === "all" || m.provider.toLowerCase() === selectedProvider.toLowerCase();
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch = !query || 
@@ -141,6 +151,11 @@ export default function ModelsPage() {
   const handleToggleActive = async (modelItem) => {
     const { id: dbId, model_id, provider, base_url, is_active } = modelItem;
     const nextStatus = !is_active;
+
+    if (!modelItem.user_id && walletBalance <= 0) {
+      toast.error("To unlock system models, please top up your credit wallet on the Billing Page.");
+      return;
+    }
 
     if (nextStatus) {
       // Activating model -> run live test async
@@ -336,12 +351,20 @@ export default function ModelsPage() {
             <RotateCw size={15} className={isRefetchingModels ? "animate-spin text-primary" : ""} />
             <span>Refresh</span>
           </Button>
-          {activeTab === "catalog" && (
+          {activeTab === "custom" && (
             <Button
               onClick={() => setIsAddModalOpen(true)}
               className="rounded-xl shadow-md gap-2"
             >
               <Plus size={16} /> Add Custom Model
+            </Button>
+          )}
+          {activeTab === "system" && walletBalance <= 0 && (
+            <Button
+              onClick={() => window.location.href = "/billing"}
+              className="rounded-xl shadow-md gap-2 btn-primary bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Zap size={16} /> Recharge Wallet
             </Button>
           )}
           {activeTab === "keys" && (
@@ -360,14 +383,24 @@ export default function ModelsPage() {
       {/* Tabs Navigation */}
       <div className="flex border-b border-border/60">
         <button
-          onClick={() => setActiveTab("catalog")}
+          onClick={() => setActiveTab("system")}
           className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "catalog"
+            activeTab === "system"
               ? "border-primary text-primary font-semibold"
               : "border-transparent text-muted-foreground hover:text-foreground"
           }`}
         >
-          <Layers size={18} /> Model Catalog ({modelsList.length})
+          <Layers size={18} /> System Models ({systemModels.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("custom")}
+          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "custom"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Cpu size={18} /> Custom & BYOK Models ({customModels.length})
         </button>
         <button
           onClick={() => setActiveTab("keys")}
@@ -382,8 +415,28 @@ export default function ModelsPage() {
       </div>
 
       {/* ──────────────── TAB 1: MODEL CATALOG ──────────────── */}
-      {activeTab === "catalog" && (
+      {(activeTab === "system" || activeTab === "custom") && (
         <div className="space-y-6">
+          {activeTab === "system" && walletBalance <= 0 && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <Lock className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                <div>
+                  <h4 className="font-semibold text-sm text-amber-500">System Models Locked</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Your prepaid wallet balance is $0.00. To run system-provided AI models in your agents, please top up your credit wallet.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => window.location.href = "/billing"}
+                className="bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shrink-0"
+              >
+                Top Up Now
+              </Button>
+            </div>
+          )}
           {/* Controls Bar: Provider Filters, Search, and View Toggle */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             {/* Provider Filter Badges */}
@@ -458,7 +511,8 @@ export default function ModelsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredModels.map((m) => {
                 const keyConfigured = hasKeyForProvider(m.provider);
-                const isLocked = m.requires_key && !keyConfigured;
+                const isSystemModel = !m.user_id;
+                const isLocked = (m.requires_key && !keyConfigured) || (isSystemModel && walletBalance <= 0);
                 const activeState = isLocked ? false : m.is_active;
 
                 return (
@@ -504,12 +558,21 @@ export default function ModelsPage() {
                     {/* Footer Row */}
                     <div className="pt-3 border-t border-border/40 flex items-center justify-between mt-2">
                       {isLocked ? (
-                        <button
-                          onClick={() => setActiveTab("keys")}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
-                        >
-                          <Lock size={12} /> Add Key to Unlock
-                        </button>
+                        isSystemModel && walletBalance <= 0 ? (
+                          <button
+                            onClick={() => window.location.href = "/billing"}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500 bg-red-500/10 px-2.5 py-1 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition-colors"
+                          >
+                            <Lock size={12} /> Top Up Wallet to Unlock
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setActiveTab("keys")}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
+                          >
+                            <Lock size={12} /> Add Key to Unlock
+                          </button>
+                        )
                       ) : modelTestState[m.model_id]?.status === "testing" ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
                           <Loader2 size={12} className="animate-spin" /> Testing...
@@ -540,22 +603,24 @@ export default function ModelsPage() {
                         </span>
                       )}
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenEditModal(m)}
-                          className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-muted"
-                          title="Edit model configuration"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteModel(m.id, m.name)}
-                          className="text-muted-foreground hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-muted"
-                          title="Delete model"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      {m.user_id && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleOpenEditModal(m)}
+                            className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-muted"
+                            title="Edit model configuration"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteModel(m.id, m.name)}
+                            className="text-muted-foreground hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-muted"
+                            title="Delete model"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -579,7 +644,8 @@ export default function ModelsPage() {
                   <tbody className="divide-y divide-border/40">
                     {filteredModels.map((m) => {
                       const keyConfigured = hasKeyForProvider(m.provider);
-                      const isLocked = m.requires_key && !keyConfigured;
+                      const isSystemModel = !m.user_id;
+                      const isLocked = (m.requires_key && !keyConfigured) || (isSystemModel && walletBalance <= 0);
                       const activeState = isLocked ? false : m.is_active;
 
                       return (
@@ -600,12 +666,21 @@ export default function ModelsPage() {
                           </td>
                           <td className="py-3 px-4">
                             {isLocked ? (
-                              <button
-                                onClick={() => setActiveTab("keys")}
-                                className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 hover:underline"
-                              >
-                                <Lock size={12} /> Key Required
-                              </button>
+                              isSystemModel && walletBalance <= 0 ? (
+                                <button
+                                  onClick={() => window.location.href = "/billing"}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-red-500 hover:underline"
+                                >
+                                  <Lock size={12} /> Top Up Required
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setActiveTab("keys")}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-500 hover:underline"
+                                >
+                                  <Lock size={12} /> Key Required
+                                </button>
+                              )
                             ) : modelTestState[m.model_id]?.status === "testing" ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-500">
                                 <Loader2 size={12} className="animate-spin" /> Testing...
@@ -646,22 +721,26 @@ export default function ModelsPage() {
                             </div>
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => handleOpenEditModal(m)}
-                                className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-muted"
-                                title="Edit model configuration"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteModel(m.id, m.name)}
-                                className="text-muted-foreground hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-muted"
-                                title="Delete model"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
+                            {m.user_id ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handleOpenEditModal(m)}
+                                  className="text-muted-foreground hover:text-primary transition-colors p-1.5 rounded-lg hover:bg-muted"
+                                  title="Edit model configuration"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteModel(m.id, m.name)}
+                                  className="text-muted-foreground hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-muted"
+                                  title="Delete model"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground italic px-2">System Locked</span>
+                            )}
                           </td>
                         </tr>
                       );

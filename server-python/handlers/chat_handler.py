@@ -619,6 +619,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
         models_used = prev_session.get("models_used", set())
         if isinstance(models_used, list):
             models_used = set(models_used)
+            
+        from collections import defaultdict
+        model_token_tracker = defaultdict(lambda: {"prompt": 0, "completion": 0})
+        prev_tracker = prev_session.get("model_token_tracker", {})
+        for m_id, counts in prev_tracker.items():
+            model_token_tracker[m_id]["prompt"] = counts.get("prompt", 0)
+            model_token_tracker[m_id]["completion"] = counts.get("completion", 0)
         
         while True:
             tool_calling_runs = set()
@@ -679,6 +686,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     event_model = model
                                 if event_model:
                                     models_used.add(str(event_model))
+                                    model_token_tracker[str(event_model)]["prompt"] += prompt_tokens
+                                    model_token_tracker[str(event_model)]["completion"] += completion_tokens
                     
                 elif kind == "on_tool_start":
                     t_name = event["name"]
@@ -777,7 +786,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         "registry": registry,
                         "turn_prompt_tokens": turn_prompt_tokens,
                         "turn_completion_tokens": turn_completion_tokens,
-                        "models_used": list(models_used)
+                        "models_used": list(models_used),
+                        "model_token_tracker": {m_id: dict(counts) for m_id, counts in model_token_tracker.items()}
                     }
                     return
             break
@@ -836,19 +846,44 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         is_byok_run = True
 
             if not is_byok_run:
-                for m_id in models_used:
+                # 1. Fetch costs for ALL used models in one query
+                models_used_list = list(model_token_tracker.keys())
+                if models_used_list:
                     async with get_db_cursor_async(commit=False) as cursor:
                         await run_in_threadpool(
                             cursor.execute,
-                            "SELECT credits_per_1k_tokens FROM system_ai_models WHERE id = %s AND is_active = TRUE",
-                            (m_id,)
+                            "SELECT id, input_cost_per_1m, output_cost_per_1m, credits_per_1k_tokens FROM system_ai_models WHERE id = ANY(%s) AND is_active = TRUE",
+                            (models_used_list,)
                         )
-                        sys_m_row = await run_in_threadpool(cursor.fetchone)
-                        if sys_m_row:
-                            credits_coeff = float(sys_m_row[0])
-                            share_prompt = turn_prompt_tokens / len(models_used)
-                            share_completion = turn_completion_tokens / len(models_used)
-                            credits_to_deduct += ((share_prompt + share_completion) / 1000.0) * credits_coeff
+                        rows = await run_in_threadpool(cursor.fetchall)
+                        
+                    cost_map = {}
+                    for r in rows:
+                        cost_map[r[0]] = {
+                            "input_cost_per_1m": float(r[1]),
+                            "output_cost_per_1m": float(r[2]),
+                            "credits_per_1k_tokens": float(r[3])
+                        }
+                        
+                    # 2. Calculate exact cost per model with Input vs Output split ratio pricing
+                    for m_id, usage in model_token_tracker.items():
+                        pricing = cost_map.get(m_id)
+                        if pricing:
+                            in_cost = pricing["input_cost_per_1m"]
+                            out_cost = pricing["output_cost_per_1m"]
+                            base_credits = pricing["credits_per_1k_tokens"]
+                            
+                            cost_sum = in_cost + out_cost
+                            if cost_sum > 0.0:
+                                input_coeff = (in_cost / cost_sum) * 2.0 * base_credits
+                                output_coeff = (out_cost / cost_sum) * 2.0 * base_credits
+                            else:
+                                input_coeff = base_credits
+                                output_coeff = base_credits
+                                
+                            m_prompt = usage["prompt"]
+                            m_completion = usage["completion"]
+                            credits_to_deduct += ((m_prompt / 1000.0) * input_coeff) + ((m_completion / 1000.0) * output_coeff)
                             system_models_run.append(m_id)
                 
                 if credits_to_deduct > 0.0:

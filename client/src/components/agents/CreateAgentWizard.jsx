@@ -23,7 +23,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useCreateAgent } from "../../hooks/useAgents";
 import { useUIStore } from "../../store/useUIStore";
 import { useWorkspacePermissions, useUserSettings } from "../../hooks/useSettings";
-import { useActiveModels } from "../../hooks/useModels";
+import { useActiveModels, useAvailableModels } from "../../hooks/useModels";
 import { getAuthHeaders } from "../../lib/api";
 import {
   Select,
@@ -167,7 +167,7 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     code_interpreter_enabled: false,
   });
 
-  const { data: activeModelsData } = useActiveModels();
+  const { data: activeModelsData } = useAvailableModels();
   const { data: userSettings } = useUserSettings();
 
   const isProviderKeyPresent = (provider) => {
@@ -185,6 +185,11 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
           name: m.name,
           requiresKey: m.requires_key,
           description: m.description,
+          credits_per_1k_tokens: m.credits_per_1k_tokens,
+          tier_badge: m.tier_badge,
+          user_id: m.user_id,
+          input_cost_per_1m: m.input_cost_per_1m,
+          output_cost_per_1m: m.output_cost_per_1m,
         }));
       });
       return formatted;
@@ -679,46 +684,129 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
 
                 <div className="space-y-6">
                   <div>
-                    <label className="font-medium block mb-2">Model</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="font-medium block">Model Selection</label>
+                      {activeModelsData && (
+                        <div className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                          Wallet Balance: ${(activeModelsData.credit_balance || 0).toFixed(2)} Credits
+                        </div>
+                      )}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {currentModels.map((m) => {
-                        const isEnabled = !m.requiresKey || isProviderKeyPresent(formData.provider);
+                        const isSelected = formData.model === m.id;
+                        const isSystem = !m.user_id;
+                        const walletBalance = activeModelsData?.credit_balance || 0;
+                        
+                        const isByokActive = activeModelsData?.allow_byok && activeModelsData?.byok_status?.[formData.provider.toLowerCase()];
+                        
+                        const isLockedByWallet = isSystem && walletBalance <= 0 && !isByokActive;
+                        const isLockedByKey = m.requiresKey && !isProviderKeyPresent(formData.provider);
+                        const isLocked = isLockedByWallet || isLockedByKey;
+
+                        const costFactor = m.credits_per_1k_tokens || 0;
+                        
+                        let runwayText = "";
+                        if (isByokActive) {
+                          runwayText = "⚡ Unlimited (BYOK Active)";
+                        } else if (isSystem) {
+                          if (walletBalance <= 0) {
+                            runwayText = "⚠️ 0 Credits remaining (Top up required)";
+                          } else {
+                            const est = Math.floor(walletBalance / (costFactor * 1.5 || 0.15));
+                            runwayText = `~${est} Messages runway`;
+                          }
+                        } else {
+                          runwayText = "⚡ Custom Endpoints ($0 Platform Cost)";
+                        }
+
+                        // Badging
+                        let badgeStyle = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+                        let badgeText = m.tier_badge || "⚡ Low Burn";
+                        if (costFactor > 0.20 && costFactor <= 1.00) {
+                          badgeStyle = "bg-blue-500/10 text-blue-500 border-blue-500/20";
+                          badgeText = m.tier_badge || "⚖️ Balanced";
+                        } else if (costFactor > 1.00) {
+                          badgeStyle = "bg-purple-500/10 text-purple-500 border-purple-500/20";
+                          badgeText = m.tier_badge || "🔥 High Reasoning";
+                        }
+
                         return (
-                          <button
+                          <div
                             key={m.id}
-                            disabled={!isEnabled}
-                            onClick={() => isEnabled && updateField("model", m.id)}
-                            className={`
-                            px-4 py-4 rounded-2xl border text-left transition-all
-                            ${
-                              formData.model === m.id
-                                ? "border-primary bg-primary/5 ring-1 ring-primary"
-                                : isEnabled
-                                ? "border-border bg-background hover:bg-muted"
-                                : "border-border/40 bg-muted/20 opacity-50 cursor-not-allowed"
-                            }
-                          `}
+                            onClick={() => {
+                              if (isLockedByWallet) {
+                                toast.error("Please top up your wallet on the Billing Page to use this system model.");
+                                return;
+                              }
+                              if (isLockedByKey) {
+                                toast.error("Please provide the provider API key below to unlock this model.");
+                                return;
+                              }
+                              updateField("model", m.id);
+                            }}
+                            className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                              isSelected
+                                ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+                                : isLocked
+                                ? "border-border/40 bg-muted/20 opacity-60"
+                                : "border-border hover:border-primary/50 bg-background"
+                            }`}
                           >
-                            <div className="font-medium flex items-center justify-between">
-                              <span>{m.name}</span>
-                              {!isEnabled && <Lock size={14} className="text-amber-500" />}
-                            </div>
-                            {m.requiresKey ? (
-                              isEnabled ? (
-                                <div className="text-xs text-emerald-500 font-medium mt-1 flex items-center gap-1">
-                                  <CheckCircle2 size={12} /> Unlocked & Ready
-                                </div>
-                              ) : (
-                                <div className="text-xs text-amber-500 font-medium mt-1 flex items-center gap-1">
-                                  <Lock size={12} /> Requires API Key (Enter below)
-                                </div>
-                              )
-                            ) : (
-                              <div className="text-xs text-emerald-500 font-medium mt-1 flex items-center gap-1">
-                                <Zap size={12} /> Included in Plan (No Key Needed)
+                            <div>
+                              <div className="flex items-center justify-between gap-2 mb-2">
+                                <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border ${badgeStyle}`}>
+                                  {badgeText}
+                                </span>
+                                {isLocked && (
+                                  <span className="text-[10px] text-red-500 font-semibold flex items-center gap-1">
+                                    <Lock size={10} /> Locked
+                                  </span>
+                                )}
                               </div>
-                            )}
-                          </button>
+                              <div className="font-semibold text-sm text-foreground">{m.name}</div>
+                              <code className="text-[9px] text-muted-foreground font-mono block mt-0.5">{m.id}</code>
+                            </div>
+                            <div className="pt-2.5 border-t border-border/40 mt-3 flex flex-col gap-1 text-[10px]">
+                              <div className="flex items-center justify-between relative group/price">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-muted-foreground">Burn Rate:</span>
+                                  {(() => {
+                                    const inCost = m.input_cost_per_1m || 0;
+                                    const outCost = m.output_cost_per_1m || 0;
+                                    const costSum = inCost + outCost;
+                                    let inputCoeff = costFactor;
+                                    let outputCoeff = costFactor;
+                                    if (costSum > 0) {
+                                      inputCoeff = (inCost / costSum) * 2.0 * costFactor;
+                                      outputCoeff = (outCost / costSum) * 2.0 * costFactor;
+                                    }
+                                    return (
+                                      <>
+                                        <span className="font-bold text-foreground cursor-help underline decoration-dotted decoration-muted-foreground/50">
+                                          {costFactor.toFixed(2)} cr / 1k
+                                        </span>
+                                        <div className="absolute bottom-full left-0 mb-2 hidden group-hover/price:block w-52 p-3 bg-zinc-950 border border-border/60 text-zinc-100 rounded-xl shadow-2xl z-50 text-[9px] leading-relaxed transition-all">
+                                          <div className="font-bold text-primary mb-1">Pricing Split (per 1k tokens):</div>
+                                          <div className="flex justify-between py-0.5 border-b border-zinc-800">
+                                            <span>Input (Context):</span>
+                                            <span className="font-mono font-bold text-emerald-400">{inputCoeff.toFixed(3)} cr</span>
+                                          </div>
+                                          <div className="flex justify-between py-0.5 mt-0.5">
+                                            <span>Output (Gen):</span>
+                                            <span className="font-mono font-bold text-blue-400">{outputCoeff.toFixed(3)} cr</span>
+                                          </div>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                              <div className="font-semibold text-primary/95 mt-0.5">
+                                {runwayText}
+                              </div>
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
