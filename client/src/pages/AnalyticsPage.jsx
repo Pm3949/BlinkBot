@@ -25,7 +25,7 @@ async function fetchAnalytics() {
   return response.json();
 }
 
-const MetricCard = ({ title, value, icon: Icon, colorClass }) => (
+const MetricCard = ({ title, value, subtitle, icon: Icon, colorClass }) => (
   <div className="glass-card p-6 flex items-center gap-4 border border-border/50">
     <div className={`p-4 rounded-xl ${colorClass}`}>
       <Icon className="w-8 h-8" />
@@ -33,6 +33,7 @@ const MetricCard = ({ title, value, icon: Icon, colorClass }) => (
     <div>
       <p className="text-sm font-medium text-muted-foreground">{title}</p>
       <h3 className="text-3xl font-extrabold text-foreground mt-1">{value}</h3>
+      {subtitle && <p className="text-[11px] text-muted-foreground/80 mt-1 font-semibold">{subtitle}</p>}
     </div>
   </div>
 );
@@ -65,12 +66,18 @@ export default function AnalyticsPage() {
     );
   }
 
-  const { metrics, internalSeries, widgetSeries, topChatbots, feedbackStats } = data;
+  const { metrics, internalSeries, widgetSeries, topChatbots, feedbackStats, creditStats } = data;
   
   const totalVotes = (feedbackStats?.upVotes || 0) + (feedbackStats?.downVotes || 0);
   const positiveRatio = totalVotes > 0 
     ? Math.round((feedbackStats.upVotes / totalVotes) * 100)
     : 0;
+
+  const bal = creditStats?.balance || 0;
+  const estTokens = bal * 10000;
+  const estTokensFormatted = estTokens >= 1000000 
+    ? `~${(estTokens / 1000000).toFixed(1)}M avg. tokens`
+    : `~${Math.round(estTokens / 1000).toLocaleString()}k avg. tokens`;
   
   const PIE_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6'];
 
@@ -109,6 +116,18 @@ export default function AnalyticsPage() {
         >
           <Inbox size={18} />
           User Feedback & Knowledge Gaps
+        </button>
+
+        <button
+          onClick={() => setActiveTab('credits')}
+          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-sm transition-colors border-b-2 ${
+            activeTab === 'credits'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Bot size={18} className="text-amber-500 fill-amber-500/20" />
+          Model Wallet & Credits
         </button>
       </div>
 
@@ -337,6 +356,112 @@ export default function AnalyticsPage() {
         </div>
       )}
 
+      {/* TAB 3: MODEL WALLET & CREDITS */}
+      {activeTab === 'credits' && (
+        <div className="space-y-8 animate-fadeIn">
+          {/* Top Level Metric Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <MetricCard
+              title="Wallet Credit Balance"
+              value={`${bal.toFixed(2)}`}
+              subtitle={estTokensFormatted}
+              icon={Bot}
+              colorClass="bg-amber-500/10 text-amber-500"
+            />
+            <MetricCard
+              title="30-Day Total Consumption"
+              value={`${(creditStats?.series || []).reduce((acc, curr) => acc + curr.credits, 0).toFixed(2)}`}
+              icon={Activity}
+              colorClass="bg-red-500/10 text-red-500"
+            />
+            <MetricCard
+              title="Avg. Daily Credit Burn"
+              value={`${((creditStats?.series || []).reduce((acc, curr) => acc + curr.credits, 0) / Math.max(1, (creditStats?.series || []).length)).toFixed(2)}`}
+              icon={BarChart2}
+              colorClass="bg-blue-500/10 text-blue-500"
+            />
+            <MetricCard
+              title="Primary Model Used"
+              value={creditStats?.byModel?.[0]?.name || "None"}
+              icon={Cpu}
+              colorClass="bg-purple-500/10 text-purple-500"
+            />
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Credit usage history chart */}
+            <div className="lg:col-span-2 space-y-8">
+              <div className="glass-card p-6 border border-border/50">
+                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-amber-500" /> Daily Credit Consumption (30 Days)
+                </h3>
+                {creditStats?.series?.length > 0 ? (
+                  <div className="h-80 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={creditStats.series} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
+                          itemStyle={{ color: 'hsl(var(--foreground))' }}
+                        />
+                        <Line type="monotone" dataKey="credits" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 8 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                    No credit consumption logs available for the last 30 days.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Credit usage share pie chart */}
+            <div className="lg:col-span-1">
+              <div className="glass-card p-6 border border-border/50 h-full flex flex-col justify-between">
+                <div>
+                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+                    <Cpu className="text-purple-500 w-5 h-5" /> Credits Share by Model
+                  </h3>
+                  
+                  {creditStats?.byModel?.length > 0 ? (
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={creditStats.byModel}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={75}
+                            paddingAngle={4}
+                            dataKey="value"
+                          >
+                            {creditStats.byModel.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
+                            itemStyle={{ color: 'hsl(var(--foreground))' }}
+                          />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-12">
+                      No model wallet deductions logged.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

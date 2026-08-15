@@ -328,3 +328,61 @@ async def handle_get_admin_workspaces(user_id: str):
     except Exception as e:
         logger.error(f"Failed to fetch admin workspaces: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def handle_get_admin_transactions(user_id: str):
+    """
+    Verifies user is super admin and retrieves all platform invoice transactions.
+    """
+    logger.info(f"Admin request: Fetching transactions registry by user ID: {user_id}")
+    try:
+        # 1. Verify administrative access
+        await check_super_admin(user_id)
+
+        # 2. Fetch invoices list from database
+        transactions = await admin_repository.get_admin_transactions()
+        logger.info(f"Successfully processed {len(transactions)} transaction entries.")
+        return {"transactions": transactions}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch admin transactions: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def handle_get_financial_report(user_id: str, interval: str = "monthly"):
+    """
+    Verifies user is super admin and aggregates platform finances.
+    """
+    try:
+        await check_super_admin(user_id)
+        report = await admin_repository.get_financial_report(interval)
+        expenses = await admin_repository.get_platform_expenses()
+        return {
+            "report": report,
+            "expenses": expenses
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch financial report: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def handle_create_platform_expense(user_id: str, amount_inr: float, description: str, category: str):
+    """
+    Verifies user is super admin and creates a manual expense transaction.
+    """
+    try:
+        await check_super_admin(user_id)
+        if amount_inr <= 0.0 or not description or not category:
+            raise HTTPException(status_code=400, detail="amount_inr, description, and category are required")
+        expense = await admin_repository.create_platform_expense(amount_inr, description, category)
+        return {"status": "success", "expense": expense}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to record platform expense: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+

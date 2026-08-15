@@ -40,7 +40,7 @@ class ModelCreate(BaseModel):
     model_id: str # Technical model identifier (e.g. 'gpt-4o', 'llama3-70b')
     name: str # Display name
     description: Optional[str] = "" # Optional details of the model
-    requires_key: Optional[bool] = False # Toggles if the model requires a custom key
+    requires_key: Optional[bool] = False # Ignored for system models (always False)
     base_url: Optional[str] = "" # Base URL path for custom OpenAI-compatible hosts
     category: Optional[str] = "General" # Category (e.g. 'General', 'Embedding')
     api_key: Optional[str] = "" # Optional API key for custom servers

@@ -353,10 +353,53 @@ async def get_feedback_stats(user_id: str):
         )
         # Fetch all matching categories and counts.
         category_rows = await run_in_threadpool(cursor.fetchall)
-        # Convert database tuple list rows `[(category, count)]` to a serializable list of dicts.
-        # Format required: [{"name": category_name, "value": feedback_count}]
         category_distribution = [{"name": r[0], "value": r[1]} for r in category_rows]
-
         # Return upvotes, downvotes, and the categories list.
         return up_votes, down_votes, category_distribution
 
+
+async def get_credit_analytics(user_id: str):
+    """
+    Retrieves credit telemetry data including wallet balance, usage per model, and 30-day trends.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        # 1. Fetch current credit balance
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT COALESCE(credit_balance, 0.0) FROM user_wallets WHERE user_id = %s",
+            (user_id,)
+        )
+        r_bal = await run_in_threadpool(cursor.fetchone)
+        credit_balance = float(r_bal[0]) if r_bal else 0.0
+
+        # 2. Fetch usage breakdown by model (negative credits represent consumption deduction)
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT COALESCE(model_used, 'System Overhead/Base'), ABS(SUM(amount_credits))
+            FROM credit_transactions
+            WHERE user_id = %s AND amount_credits < 0
+            GROUP BY model_used
+            ORDER BY ABS(SUM(amount_credits)) DESC
+            """,
+            (user_id,)
+        )
+        model_rows = await run_in_threadpool(cursor.fetchall)
+        credit_by_model = [{"name": r[0], "value": float(r[1])} for r in model_rows]
+
+        # 3. Fetch 30-day daily historical credit usage trends
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT date_trunc('day', created_at)::date AS day, ABS(SUM(amount_credits))
+            FROM credit_transactions
+            WHERE user_id = %s AND amount_credits < 0 AND created_at >= current_date - interval '30 days'
+            GROUP BY day
+            ORDER BY day ASC
+            """,
+            (user_id,)
+        )
+        series_rows = await run_in_threadpool(cursor.fetchall)
+        credit_series = [{"date": str(r[0]), "credits": float(r[1])} for r in series_rows]
+
+        return credit_balance, credit_by_model, credit_series

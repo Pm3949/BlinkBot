@@ -36,7 +36,10 @@ from handlers.admin_handler import (
     handle_get_admin_users,
     handle_update_user_subscription,
     handle_update_user_super_admin,
-    handle_get_admin_workspaces
+    handle_get_admin_workspaces,
+    handle_get_admin_transactions,
+    handle_get_financial_report,
+    handle_create_platform_expense
 )
 
 # Set standard module-level logger.
@@ -64,6 +67,16 @@ class UpdateSuperAdminRequest(BaseModel):
     """
     is_super_admin: bool # Target administrative flag
     admin_action_password: str # Verification password to confirm admin identity
+
+
+class CreateExpenseRequest(BaseModel):
+    """
+    Validation schema for creating a manual platform expense.
+    """
+    amount_inr: float
+    description: str
+    category: str
+
 
 
 # ==========================================
@@ -211,4 +224,33 @@ async def get_admin_workspaces(current_user: dict = Depends(get_current_user)):
     user_id = current_user["sub"]
     # Query workspaces data using the handler.
     return await handle_get_admin_workspaces(user_id)
+
+
+@router.get("/admin/transactions")
+async def get_admin_transactions(current_user: dict = Depends(get_current_user)):
+    """
+    Retrieves all invoices / payments across all users.
+    """
+    user_id = current_user["sub"]
+    return await handle_get_admin_transactions(user_id)
+
+
+@router.get("/admin/finances")
+async def get_admin_finances(interval: str = "monthly", current_user: dict = Depends(get_current_user)):
+    """
+    Retrieves a platform financial summary (revenue vs expenses).
+    """
+    user_id = current_user["sub"]
+    return await handle_get_financial_report(user_id, interval)
+
+
+@router.post("/admin/expenses")
+async def create_admin_expense(req: CreateExpenseRequest, current_user: dict = Depends(get_current_user)):
+    """
+    Records a manual platform spend/cost transaction.
+    """
+    user_id = current_user["sub"]
+    return await handle_create_platform_expense(user_id, req.amount_inr, req.description, req.category)
+
+
 

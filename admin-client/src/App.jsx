@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X, Calendar as CalendarIcon, LogOut, Plus, Trash2, Edit } from 'lucide-react';
+import { ShieldAlert, Users, Database, Globe, Bot, ShieldCheck, Activity, Briefcase, Lock, X, Calendar as CalendarIcon, LogOut, Plus, Trash2, Edit, CreditCard } from 'lucide-react';
 import AdminCalendar from './components/AdminCalendar';
 import { toast } from 'sonner';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -90,6 +91,62 @@ export default function App() {
     queryKey: ['adminDemoRequests'],
     queryFn: () => fetchAdminDemoRequests(currentUser),
     enabled: !!currentUser,
+  });
+
+  const { data: transactionsData, isLoading: transactionsLoading } = useQuery({
+    queryKey: ['adminTransactions'],
+    queryFn: async () => {
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_URL}/admin/transactions`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to load admin transactions");
+      return res.json();
+    },
+    enabled: !!currentUser,
+  });
+
+  const [financeInterval, setFinanceInterval] = useState('monthly');
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDesc, setExpenseDesc] = useState('');
+  const [expenseCategory, setExpenseCategory] = useState('Hosting');
+
+  const { data: financesData, isLoading: financesLoading, refetch: refetchFinances } = useQuery({
+    queryKey: ['adminFinances', financeInterval],
+    queryFn: async () => {
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_URL}/admin/finances?interval=${financeInterval}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to load admin finances");
+      return res.json();
+    },
+    enabled: !!currentUser,
+  });
+
+  const createExpenseMutation = useMutation({
+    mutationFn: async (payload) => {
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_URL}/admin/expenses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Failed to record expense");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("Platform expense recorded successfully!");
+      setExpenseModalOpen(false);
+      setExpenseAmount('');
+      setExpenseDesc('');
+      refetchFinances();
+    },
+    onError: (err) => toast.error(err.message)
   });
 
   const [activeTab, setActiveTab] = useState('users');
@@ -289,6 +346,12 @@ export default function App() {
     );
   }
 
+  const [expandedTransactions, setExpandedTransactions] = useState({});
+
+  const toggleExpand = (id) => {
+    setExpandedTransactions(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground p-8">
       <div className="max-w-7xl mx-auto space-y-8 pb-10">
@@ -348,6 +411,24 @@ export default function App() {
             onClick={() => setActiveTab('models')}
           >
             <Bot size={16} /> System Models
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm flex items-center gap-1 ${activeTab === 'analytics' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('analytics')}
+          >
+            <Activity size={16} className="text-amber-500" /> Usage Analytics
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm flex items-center gap-1 ${activeTab === 'transactions' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('transactions')}
+          >
+            <CreditCard size={16} /> Transactions
+          </button>
+          <button 
+            className={`px-4 py-2 font-semibold text-sm flex items-center gap-1 ${activeTab === 'finance' ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('finance')}
+          >
+            <Briefcase size={16} className="text-emerald-500" /> Finance Dashboard
           </button>
         </div>
 
@@ -558,6 +639,415 @@ export default function App() {
             currentUser={currentUser}
             requirePassword={requirePassword}
           />
+        )}
+
+        {activeTab === 'analytics' && (
+          <div className="space-y-8 animate-fadeIn">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Global Platform Usage</h2>
+                <p className="text-sm text-muted-foreground mt-1">Telemetry analytics across all wallets, tokens, models, and providers.</p>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Global Model Usage (Bar Chart) */}
+              <div className="border border-border/50 bg-card rounded-xl p-6 shadow-sm">
+                <h3 className="text-base font-bold mb-6 flex items-center gap-2">
+                  <Bot size={16} className="text-primary" /> Wallet Credit Burn by Model ID (All-Time)
+                </h3>
+                {stats?.globalModelUsage?.length > 0 ? (
+                  <div className="h-80 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={stats.globalModelUsage}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }} />
+                        <Bar dataKey="credits" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                    No system model usage telemetry recorded.
+                  </div>
+                )}
+              </div>
+
+              {/* Global API Provider Usage (Pie Chart) */}
+              <div className="border border-border/50 bg-card rounded-xl p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-base font-bold mb-6 flex items-center gap-2">
+                    <Globe size={16} className="text-emerald-500" /> Share of Credit Usage by Provider
+                  </h3>
+                  {stats?.globalProviderUsage?.length > 0 ? (
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={stats.globalProviderUsage}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="credits"
+                          >
+                            {stats.globalProviderUsage.map((entry, index) => {
+                              const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#3b82f6'];
+                              return <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />;
+                            })}
+                          </Pie>
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }} />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                      No provider credit usage statistics available.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'transactions' && (
+          <div className="border border-border/50 rounded-xl overflow-hidden bg-card">
+            <div className="p-6 border-b border-border/50 flex items-center justify-between bg-muted/10">
+              <div>
+                <h2 className="text-xl font-bold">Platform Transactions</h2>
+                <p className="text-sm text-muted-foreground mt-1">Audit log of all payments, subscription checkouts, and wallet recharges across the platform.</p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="border-b border-border/50 text-muted-foreground uppercase text-[10px] tracking-wider font-bold bg-muted/5">
+                    <th className="px-6 py-4">Invoice Number</th>
+                    <th className="px-6 py-4">User</th>
+                    <th className="px-6 py-4">Description</th>
+                    <th className="px-6 py-4">Amount</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Date</th>
+                    <th className="px-6 py-4 text-right">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {transactionsLoading ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-muted-foreground font-semibold">Loading transactions...</td>
+                    </tr>
+                  ) : !transactionsData?.transactions || transactionsData.transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-muted-foreground font-semibold">No platform transactions found.</td>
+                    </tr>
+                  ) : (
+                    transactionsData.transactions.map((tx) => (
+                      <React.Fragment key={tx.id}>
+                        <tr 
+                          onClick={() => toggleExpand(tx.id)}
+                          className="hover:bg-muted/10 transition-colors cursor-pointer"
+                        >
+                          <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                            <div className="font-mono text-xs font-semibold">{tx.invoice_number}</div>
+                            {tx.metadata?.razorpay_payment_id && (
+                              <div className="font-mono text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                                <span>TxID: {tx.metadata.razorpay_payment_id}</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(tx.metadata.razorpay_payment_id);
+                                    toast.success("Transaction ID copied!");
+                                  }}
+                                  className="text-muted-foreground hover:text-primary transition"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium text-xs truncate max-w-[150px]" title={tx.user_email}>{tx.user_email}</span>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(tx.user_email);
+                                  toast.success("Email copied!");
+                                }}
+                                className="text-muted-foreground hover:text-primary transition shrink-0"
+                                title="Copy Email"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-xs font-semibold">{tx.description}</td>
+                          <td className="px-6 py-4 font-bold text-xs">₹{tx.amount_inr.toFixed(2)}</td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              tx.status === 'Paid'
+                                ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                            }`}>
+                              {tx.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(tx.created_at).toLocaleDateString(undefined, {
+                              year: 'numeric', month: 'short', day: 'numeric',
+                              hour: '2-digit', minute: '2-digit'
+                            })}
+                          </td>
+                          <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  toast.info("Downloading PDF receipt...");
+                                  const token = localStorage.getItem('adminToken');
+                                  const response = await fetch(`${API_URL}/api/billing/invoice/${tx.id}/download`, {
+                                    headers: { "Authorization": `Bearer ${token}` }
+                                  });
+                                  if (!response.ok) throw new Error("Receipt download failed");
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `invoice-${tx.invoice_number}.pdf`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  toast.success("Receipt downloaded successfully!");
+                                } catch (err) {
+                                  toast.error(err.message || "Failed to download receipt");
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-lg transition"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                              Receipt
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedTransactions[tx.id] && (
+                          <tr className="bg-muted/10">
+                            <td colSpan={7} className="px-8 py-4 border-t border-b border-border/40">
+                              <div className="space-y-2">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                  <span>Razorpay API Metadata Payload</span>
+                                </div>
+                                <pre className="text-[10px] bg-muted/20 border border-border/40 p-4 rounded-xl font-mono overflow-x-auto text-muted-foreground whitespace-pre-wrap max-w-full">
+                                  {JSON.stringify(tx.metadata, null, 2)}
+                                </pre>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'finance' && (
+          <div className="space-y-8 animate-fadeIn">
+            {/* Financial Overview stats */}
+            <div className="flex justify-between items-center bg-card border border-border/50 p-6 rounded-xl shadow-sm">
+              <div>
+                <h2 className="text-xl font-bold">Platform Finances</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Aggregate breakdown of organic checkout sales vs manual platform expenses.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <select
+                  value={financeInterval}
+                  onChange={(e) => setFinanceInterval(e.target.value)}
+                  className="bg-muted border border-border rounded-lg text-xs font-bold px-3 py-2"
+                >
+                  <option value="monthly">Monthly Intervals</option>
+                  <option value="yearly">Yearly Intervals</option>
+                </select>
+                <button
+                  onClick={() => setExpenseModalOpen(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md shadow-emerald-500/10"
+                >
+                  <Plus size={14} /> Record Expense
+                </button>
+              </div>
+            </div>
+
+            {financesLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[1, 2, 3].map(i => <LoadingSkeleton key={i} className="h-32" />)}
+              </div>
+            ) : (
+              <>
+                {/* Financial KPI stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="glass-card p-6 border border-border/50 flex items-center gap-4">
+                    <div className="p-4 rounded-xl bg-indigo-500/10 text-indigo-500">
+                      <CreditCard className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Revenue (Organic Invoices)</p>
+                      <h3 className="text-3xl font-extrabold text-foreground mt-1">₹{(financesData?.report?.totalRevenue || 0).toLocaleString()}</h3>
+                    </div>
+                  </div>
+                  <div className="glass-card p-6 border border-border/50 flex items-center gap-4">
+                    <div className="p-4 rounded-xl bg-red-500/10 text-red-500">
+                      <Briefcase className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Platform Expenses (Manual)</p>
+                      <h3 className="text-3xl font-extrabold text-foreground mt-1">₹{(financesData?.report?.totalExpenses || 0).toLocaleString()}</h3>
+                    </div>
+                  </div>
+                  <div className="glass-card p-6 border border-border/50 flex items-center gap-4">
+                    <div className="p-4 rounded-xl bg-emerald-500/10 text-emerald-500">
+                      <Activity className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Net Profit / Margin</p>
+                      <h3 className="text-3xl font-extrabold text-foreground mt-1 flex items-baseline gap-2">
+                        <span>₹{(financesData?.report?.netProfit || 0).toLocaleString()}</span>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          ({financesData?.report?.totalRevenue > 0 ? ((financesData.report.netProfit / financesData.report.totalRevenue) * 100).toFixed(0) : 0}%)
+                        </span>
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid lg:grid-cols-3 gap-8">
+                  {/* Revenue vs Expenses Line/Bar Chart */}
+                  <div className="lg:col-span-2 border border-border/50 bg-card rounded-xl p-6 shadow-sm">
+                    <h3 className="text-base font-bold mb-6 flex items-center gap-2">
+                      <Activity size={16} className="text-primary" /> Revenue vs Spends Trend
+                    </h3>
+                    {financesData?.report?.series?.length > 0 ? (
+                      <div className="h-80 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={financesData.report.series}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                            <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                            <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }} />
+                            <Legend />
+                            <Bar dataKey="revenue" name="Revenue (₹)" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="expenses" name="Expenses (₹)" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="h-80 flex items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                        No financial transactions recorded for this range.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual expenses summary */}
+                  <div className="lg:col-span-1 border border-border/50 bg-card rounded-xl p-6 shadow-sm flex flex-col justify-between h-full">
+                    <div>
+                      <h3 className="text-base font-bold mb-4">Manual Spends Log</h3>
+                      <div className="divide-y divide-border/50 max-h-80 overflow-y-auto pr-1">
+                        {!financesData?.expenses || financesData.expenses.length === 0 ? (
+                          <div className="text-center py-12 text-muted-foreground text-xs">No manual platform spends recorded.</div>
+                        ) : (
+                          financesData.expenses.map((exp) => (
+                            <div key={exp.id} className="py-3 flex justify-between items-start text-xs">
+                              <div>
+                                <div className="font-semibold text-foreground">{exp.description}</div>
+                                <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                                  <span className="bg-muted px-1.5 py-0.5 rounded text-foreground font-bold">{exp.category}</span>
+                                  <span>{new Date(exp.created_at).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                              <div className="font-bold text-red-400">-₹{exp.amount_inr.toFixed(0)}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Expense record modal */}
+            {expenseModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <div className="bg-card border border-border/50 p-6 rounded-xl w-full max-w-sm shadow-2xl relative">
+                  <button
+                    onClick={() => setExpenseModalOpen(false)}
+                    className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+                  >
+                    <X size={20} />
+                  </button>
+                  <h3 className="text-lg font-bold mb-4">Record Platform Expense</h3>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      createExpenseMutation.mutate({
+                        amount_inr: parseFloat(expenseAmount),
+                        description: expenseDesc,
+                        category: expenseCategory
+                      });
+                    }}
+                    className="space-y-4 text-xs font-medium"
+                  >
+                    <div>
+                      <label className="block mb-1 text-muted-foreground">Amount (INR)</label>
+                      <input
+                        type="number" required min="1" placeholder="5000"
+                        value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-1 text-muted-foreground">Description</label>
+                      <input
+                        type="text" required placeholder="AWS EC2 hosting invoice"
+                        value={expenseDesc} onChange={e => setExpenseDesc(e.target.value)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-1 text-muted-foreground">Category</label>
+                      <select
+                        value={expenseCategory} onChange={e => setExpenseCategory(e.target.value)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-bold"
+                      >
+                        <option value="Hosting">Hosting / Servers</option>
+                        <option value="API Cost">LLM API Invoices</option>
+                        <option value="Marketing">Marketing / ADS</option>
+                        <option value="Salary">Developer Salaries</option>
+                        <option value="Other">Other Expenses</option>
+                      </select>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button" onClick={() => setExpenseModalOpen(false)}
+                        className="px-4 py-2 rounded-lg bg-muted hover:bg-muted/80 text-sm font-bold transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit" disabled={createExpenseMutation.isPending}
+                        className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50"
+                      >
+                        {createExpenseMutation.isPending ? "Recording..." : "Record Expense"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
       </div>
@@ -857,7 +1347,7 @@ function SystemModels({ currentUser, requirePassword }) {
       input_cost_per_1m: parseFloat(inputCost),
       output_cost_per_1m: parseFloat(outputCost),
       credits_per_1k_tokens: parseFloat(creditsPer1k),
-      requires_key: requiresKey,
+      requires_key: false,
       base_url: baseUrl,
       is_active: isActive,
       is_system: true
@@ -1029,7 +1519,7 @@ function SystemModels({ currentUser, requirePassword }) {
                 <div>
                   <label className="block text-xs font-medium mb-1">Input Cost ($ / 1M tokens)</label>
                   <input
-                    type="number" step="0.01" placeholder="2.50"
+                    type="number" step="0.0001" placeholder="2.50"
                     value={inputCost} onChange={e => setInputCost(e.target.value)}
                     className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-mono"
                   />
@@ -1037,12 +1527,59 @@ function SystemModels({ currentUser, requirePassword }) {
                 <div>
                   <label className="block text-xs font-medium mb-1">Output Cost ($ / 1M tokens)</label>
                   <input
-                    type="number" step="0.01" placeholder="10.00"
+                    type="number" step="0.0001" placeholder="10.00"
                     value={outputCost} onChange={e => setOutputCost(e.target.value)}
                     className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-mono"
                   />
                 </div>
               </div>
+
+              {/* Live Margin & Profit Estimator */}
+              {(() => {
+                const creds = parseFloat(creditsPer1k) || 0;
+                const inCostUsd = parseFloat(inputCost) || 0;
+                const outCostUsd = parseFloat(outputCost) || 0;
+                
+                // Conversions
+                const USD_TO_INR = 84; 
+                
+                // Sale price: 10 Credits = 1 INR. 1k tokens to 1M tokens = 1000x multiplier.
+                // Sale price per 1M tokens = (credits_per_1k * 1000) / 10 = credits_per_1k * 100
+                const salePriceInrPer1M = creds * 100;
+                
+                // Average cost per 1M tokens in USD
+                const avgCostUsdPer1M = (inCostUsd + outCostUsd) / 2;
+                const avgCostInrPer1M = avgCostUsdPer1M * USD_TO_INR;
+                
+                // Margin details
+                const profitInr = salePriceInrPer1M - avgCostInrPer1M;
+                const marginPct = avgCostInrPer1M > 0 ? (profitInr / avgCostInrPer1M) * 100 : 0;
+                
+                return (
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-3.5 space-y-2 text-xs">
+                    <div className="font-semibold text-primary uppercase tracking-wider text-[10px]">
+                      📊 Live Profit Estimator
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                      <div>User Price (Sale):</div>
+                      <div className="text-right font-semibold text-foreground">
+                        ₹{salePriceInrPer1M.toFixed(2)} INR / 1M tokens
+                      </div>
+                      <div>Your Cost (Breakeven):</div>
+                      <div className="text-right font-semibold text-foreground">
+                        ₹{avgCostInrPer1M.toFixed(2)} INR / 1M tokens (~${avgCostUsdPer1M.toFixed(2)})
+                      </div>
+                      <div className="border-t border-border mt-1 pt-1 font-bold text-foreground">
+                        Estimated Markup:
+                      </div>
+                      <div className={`border-t border-border mt-1 pt-1 text-right font-extrabold ${profitInr >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                        {profitInr >= 0 ? "+" : ""}₹{profitInr.toFixed(2)} INR ({marginPct.toFixed(0)}% markup)
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
 
               {provider === "custom_openai" && (
                 <div>
@@ -1063,14 +1600,6 @@ function SystemModels({ currentUser, requirePassword }) {
                     className="rounded border-border text-primary focus:ring-primary/50"
                   />
                   Active in Selection
-                </label>
-                <label className="flex items-center gap-2 text-xs font-medium">
-                  <input
-                    type="checkbox"
-                    checked={requiresKey} onChange={e => setRequiresKey(e.target.checked)}
-                    className="rounded border-border text-primary focus:ring-primary/50"
-                  />
-                  Requires Custom API Key
                 </label>
               </div>
 

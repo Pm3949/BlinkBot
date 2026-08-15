@@ -160,6 +160,37 @@ async def get_admin_stats():
         # 1 KB = 1024 Bytes, 1 MB = 1024 KB. Thus, divide by (1024 * 1024).
         total_storage_mb = total_storage / (1024 * 1024)
 
+        # --- Global Model Usage breakdown ---
+        # Sums all credits consumed grouped by model identifier
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT COALESCE(model_used, 'System Overhead/Base'), ABS(SUM(amount_credits))
+            FROM credit_transactions
+            WHERE amount_credits < 0
+            GROUP BY model_used
+            ORDER BY ABS(SUM(amount_credits)) DESC
+            """
+        )
+        model_rows = await run_in_threadpool(cursor.fetchall)
+        global_model_usage = [{"name": r[0], "credits": float(r[1])} for r in model_rows]
+
+        # --- Global Provider Usage breakdown ---
+        # Since model_used maps to system_ai_models.id, we JOIN system_ai_models to get the provider
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT COALESCE(m.provider, 'system'), ABS(SUM(t.amount_credits))
+            FROM credit_transactions t
+            LEFT JOIN system_ai_models m ON t.model_used = m.id
+            WHERE t.amount_credits < 0
+            GROUP BY m.provider
+            ORDER BY ABS(SUM(t.amount_credits)) DESC
+            """
+        )
+        provider_rows = await run_in_threadpool(cursor.fetchall)
+        global_provider_usage = [{"name": r[0], "credits": float(r[1])} for r in provider_rows]
+
         # Construct and return the statistics payload with the storage rounded to 2 decimal places.
         return {
             "totalUsers": total_users,
@@ -167,6 +198,8 @@ async def get_admin_stats():
             "totalAgents": total_agents,
             "totalChatbots": total_chatbots,
             "totalStorageMB": round(total_storage_mb, 2),
+            "globalModelUsage": global_model_usage,
+            "globalProviderUsage": global_provider_usage,
         }
 
 
@@ -357,4 +390,149 @@ async def get_admin_workspaces():
         )
         # Fetch all matching workspaces synchronously inside the thread pool and return them.
         return await run_in_threadpool(cursor.fetchall)
+
+
+async def get_admin_transactions():
+    """
+    Retrieves all tax invoices / payment transactions across all users.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            SELECT 
+                i.id, i.invoice_number, i.amount_inr, i.description, 
+                i.status, i.created_at, i.user_id, u.email as user_email,
+                i.invoice_metadata
+            FROM invoices i
+            LEFT JOIN users u ON i.user_id = u.id
+            ORDER BY i.created_at DESC
+            """
+        )
+        rows = await run_in_threadpool(cursor.fetchall)
+        transactions = []
+        for r in rows:
+            transactions.append({
+                "id": r[0],
+                "invoice_number": r[1],
+                "amount_inr": float(r[2]),
+                "description": r[3],
+                "status": r[4],
+                "created_at": r[5].isoformat() if r[5] else None,
+                "user_id": str(r[6]),
+                "user_email": r[7] or "Unknown User",
+                "metadata": r[8] or {}
+            })
+        return transactions
+
+
+async def create_platform_expense(amount_inr: float, description: str, category: str):
+    """
+    Inserts a manual platform expense record.
+    """
+    async with get_db_cursor_async(commit=True) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            """
+            INSERT INTO platform_expenses (amount_inr, description, category)
+            VALUES (%s, %s, %s)
+            RETURNING id, amount_inr, description, category, created_at
+            """,
+            (amount_inr, description, category)
+        )
+        r = await run_in_threadpool(cursor.fetchone)
+        if r:
+            return {
+                "id": str(r[0]),
+                "amount_inr": float(r[1]),
+                "description": r[2],
+                "category": r[3],
+                "created_at": r[4].isoformat() if r[4] else None
+            }
+        return None
+
+
+async def get_platform_expenses():
+    """
+    Retrieves all manual expenses logged.
+    """
+    async with get_db_cursor_async(commit=False) as cursor:
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT id, amount_inr, description, category, created_at FROM platform_expenses ORDER BY created_at DESC"
+        )
+        rows = await run_in_threadpool(cursor.fetchall)
+        return [
+            {
+                "id": str(r[0]),
+                "amount_inr": float(r[1]),
+                "description": r[2],
+                "category": r[3],
+                "created_at": r[4].isoformat() if r[4] else None
+            }
+            for r in rows
+        ]
+
+
+async def get_financial_report(interval: str = "monthly"):
+    """
+    Generates a financial summary of revenue vs expenses aggregated by interval.
+    Interval can be "monthly" or "yearly".
+    """
+    trunc_unit = "month" if interval == "monthly" else "year"
+    async with get_db_cursor_async(commit=False) as cursor:
+        # 1. Query revenue by interval
+        await run_in_threadpool(
+            cursor.execute,
+            f"""
+            SELECT date_trunc('{trunc_unit}', created_at)::date as period, COALESCE(SUM(amount_inr), 0.0)
+            FROM invoices
+            WHERE status = 'Paid'
+            GROUP BY period
+            ORDER BY period ASC
+            """
+        )
+        rev_rows = await run_in_threadpool(cursor.fetchall)
+        revenue_map = {str(r[0])[:7] if interval == "monthly" else str(r[0])[:4]: float(r[1]) for r in rev_rows}
+
+        # 2. Query expenses by interval
+        await run_in_threadpool(
+            cursor.execute,
+            f"""
+            SELECT date_trunc('{trunc_unit}', created_at)::date as period, COALESCE(SUM(amount_inr), 0.0)
+            FROM platform_expenses
+            GROUP BY period
+            ORDER BY period ASC
+            """
+        )
+        exp_rows = await run_in_threadpool(cursor.fetchall)
+        expense_map = {str(r[0])[:7] if interval == "monthly" else str(r[0])[:4]: float(r[1]) for r in exp_rows}
+
+        # 3. Merge periods
+        all_periods = sorted(list(set(list(revenue_map.keys()) + list(expense_map.keys()))))
+        series = []
+        total_revenue = 0.0
+        total_expenses = 0.0
+
+        for period in all_periods:
+            rev = revenue_map.get(period, 0.0)
+            exp = expense_map.get(period, 0.0)
+            net = rev - exp
+            total_revenue += rev
+            total_expenses += exp
+            series.append({
+                "period": period,
+                "revenue": rev,
+                "expenses": exp,
+                "netProfit": net
+            })
+
+        return {
+            "totalRevenue": total_revenue,
+            "totalExpenses": total_expenses,
+            "netProfit": total_revenue - total_expenses,
+            "series": series
+        }
+
+
 

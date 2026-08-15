@@ -207,6 +207,7 @@ async def handle_verify_razorpay_payment(
     razorpay_payment_id: str,
     razorpay_signature: str,
     user_id: str,
+    user_email: str,
     plan_tier: str,
     billing_cycle: str,
     workspaces_limit: int,
@@ -286,7 +287,7 @@ async def handle_verify_razorpay_payment(
             import time
             import random
             inv_num = f"INV-SUB-{int(time.time())}-{random.randint(100, 999)}"
-            await billing_repository.create_invoice(
+            invoice = await billing_repository.create_invoice(
                 user_id=user_id,
                 invoice_number=inv_num,
                 amount_inr=final_amount,
@@ -294,6 +295,9 @@ async def handle_verify_razorpay_payment(
                 invoice_metadata={
                     "item": f"{plan_tier} Plan Subscription",
                     "billing_cycle": billing_cycle,
+                    "razorpay_order_id": razorpay_order_id,
+                    "razorpay_payment_id": razorpay_payment_id,
+                    "razorpay_signature": razorpay_signature,
                     "limits": {
                         "workspaces": workspaces_limit,
                         "agents": agents_limit,
@@ -309,6 +313,18 @@ async def handle_verify_razorpay_payment(
             raise HTTPException(
                 status_code=500, detail="Database error during subscription update"
             )
+
+        # Fire invoice email asynchronously (non-blocking — does not delay response)
+        if user_email and invoice:
+            try:
+                import asyncio
+                from api.billing import generate_invoice_pdf_data
+                from utils.email_service import send_invoice_email
+                pdf_bytes = generate_invoice_pdf_data(invoice)
+                asyncio.create_task(send_invoice_email(user_email, invoice, pdf_bytes))
+                logger.info(f"Invoice email task queued for {user_email} [{inv_num}]")
+            except Exception as email_err:
+                logger.warning(f"Invoice email task failed to queue: {email_err}")
 
         return {"status": "success"}
     except razorpay.errors.SignatureVerificationError:
@@ -374,6 +390,7 @@ async def handle_verify_wallet_recharge_payment(
     razorpay_payment_id: str,
     razorpay_signature: str,
     user_id: str,
+    user_email: str,
     credits: int
 ):
     """
@@ -420,7 +437,10 @@ async def handle_verify_wallet_recharge_payment(
                 "credits": credits,
                 "base_inr": base_inr,
                 "discount_percent": discount_pct,
-                "discount_amount": base_inr * (discount_pct / 100.0)
+                "discount_amount": base_inr * (discount_pct / 100.0),
+                "razorpay_order_id": razorpay_order_id,
+                "razorpay_payment_id": razorpay_payment_id,
+                "razorpay_signature": razorpay_signature,
             }
         )
         
@@ -434,7 +454,19 @@ async def handle_verify_wallet_recharge_payment(
             model_used=None,
             invoice_id=invoice_id
         )
-        
+
+        # Fire invoice email asynchronously (non-blocking)
+        if user_email and invoice:
+            try:
+                import asyncio
+                from api.billing import generate_invoice_pdf_data
+                from utils.email_service import send_invoice_email
+                pdf_bytes = generate_invoice_pdf_data(invoice)
+                asyncio.create_task(send_invoice_email(user_email, invoice, pdf_bytes))
+                logger.info(f"Wallet invoice email task queued for {user_email} [{inv_num}]")
+            except Exception as email_err:
+                logger.warning(f"Wallet invoice email task failed to queue: {email_err}")
+
         return {"status": "success", "message": f"Successfully recharged wallet with {credits} credits."}
     except razorpay.errors.SignatureVerificationError:
         logger.warning(f"Razorpay wallet verification rejected: Invalid signature for Order ID {razorpay_order_id}")

@@ -85,6 +85,10 @@ async def handle_get_analytics(user_id: str):
         logger.debug("Retrieving customer feedback satisfaction metrics...")
         up_votes, down_votes, category_distribution = await analytics_repository.get_feedback_stats(user_id)
 
+        # 6. Fetch Model Credit Usage metrics
+        logger.debug("Retrieving wallet credit analytics...")
+        credit_balance, credit_by_model, credit_series = await analytics_repository.get_credit_analytics(user_id)
+
         # Log dashboard collection success
         logger.info(f"Successfully processed analytics dashboard compilation for user {user_id}")
         
@@ -95,6 +99,7 @@ async def handle_get_analytics(user_id: str):
                 "totalDocuments": total_docs,
                 "storageUsedMB": round(total_storage_mb, 2), # Round decimal points to 2 digits
                 "totalWidgetMessages": total_widget_msgs,
+                "creditBalance": credit_balance,
             },
             "internalSeries": internal_series,
             "widgetSeries": widget_series,
@@ -104,6 +109,11 @@ async def handle_get_analytics(user_id: str):
                 "upVotes": up_votes,
                 "downVotes": down_votes,
                 "categoryDistribution": category_distribution,
+            },
+            "creditStats": {
+                "balance": credit_balance,
+                "byModel": credit_by_model,
+                "series": credit_series
             }
         }
     except Exception as e:
