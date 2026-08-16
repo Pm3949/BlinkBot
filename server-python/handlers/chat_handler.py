@@ -28,6 +28,7 @@ import os  # Read system environment settings
 import uuid  # Generate unique tracking session IDs
 from typing import Optional, List, Dict  # Strict Python type annotations
 import asyncio  # Asynchronous thread execution controls
+from contextvars import ContextVar  # Track client context across async loops
 from fastapi import WebSocket, HTTPException, WebSocketDisconnect  # WebSocket protocols
 from fastapi.responses import StreamingResponse  # Server-Sent Events (SSE) streaming API
 from fastapi.concurrency import run_in_threadpool
@@ -54,6 +55,8 @@ from db.workspace_tools_repository import get_agent_attached_tools, get_agents_a
 
 # Scoped department logger for chat execution tracking
 logger = get_department_logger("agent")
+
+current_client_id_var: ContextVar[str] = ContextVar("current_client_id", default="")
 
 _circuit_breakers = {}
 active_sessions_map = {}
@@ -440,21 +443,161 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
             if "payload" in payload_dict and len(payload_dict) == 1:
                 payload_dict = payload_dict["payload"]
                 
-            logger.info(f"🔨 WORKSPACE TOOL TRIGGERED: Executing webhook '{clean_name}' to {full_url}")
+            dynamic_path = path
+            import re
+            path_vars = re.findall(r'\{([^}]+)\}', dynamic_path)
+            
+            for var in path_vars:
+                val = None
+                if var in payload_dict:
+                    val = payload_dict.pop(var)
+                elif f"{{{var}}}" in payload_dict:
+                    val = payload_dict.pop(f"{{{var}}}")
+                    
+                if val is not None:
+                    dynamic_path = dynamic_path.replace(f"{{{var}}}", str(val))
+                else:
+                    dynamic_path = dynamic_path.replace(f"{{{var}}}", "")
+                    
+            # 2. Check for parameter keys representing dynamic path segments (e.g. "{id}", "slug/{slug}")
+            appended_segments = []
+            keys_to_remove = []
+            
+            # Clean quotes from payload_dict keys to prevent LLM formatting issues
+            clean_payload_dict = {}
+            if isinstance(payload_dict, dict):
+                for k, v in payload_dict.items():
+                    clean_payload_dict[k.strip('"\'')] = v
+                payload_dict = clean_payload_dict
+                
+            configured_keys = []
+            if payload_format:
+                try:
+                    configured_keys = [k.strip('"\'') for k in json_lib.loads(payload_format).keys()]
+                except Exception:
+                    pass
+                    
+            if isinstance(payload_dict, dict):
+                for config_key in configured_keys:
+                    if "{" in config_key and "}" in config_key:
+                        key_vars = re.findall(r'\{([^}]+)\}', config_key)
+                        val = None
+                        matched_key = None
+                        
+                        # Clean config_key for lookup
+                        lookup_key = config_key.strip('"\'')
+                        if lookup_key in payload_dict:
+                            val = payload_dict[lookup_key]
+                            matched_key = lookup_key
+                        else:
+                            for kv in key_vars:
+                                clean_kv = kv.strip('"\'')
+                                if clean_kv in payload_dict:
+                                    val = payload_dict[clean_kv]
+                                    matched_key = clean_kv
+                        # 3. Regex match for pre-substituted keys (e.g. LLM sent {"1/related": 1})
+                        if val is None:
+                            pattern = re.escape(config_key)
+                            for kv in key_vars:
+                                pattern = pattern.replace(rf"\\{{{kv}\\}}", r"([^/]+)")
+                            for k, v in payload_dict.items():
+                                if re.match(f"^{pattern}$", k):
+                                    val = v
+                                    matched_key = k
+                                    break
+                                    
+                        if val is not None:
+                            # Cast floats representing whole numbers to integers (e.g. 15.0 -> 15)
+                            if isinstance(val, float) and val.is_integer():
+                                val = int(val)
+                                
+                            if matched_key and matched_key != config_key and "{" not in matched_key:
+                                # Use pre-substituted key directly (e.g. "1/related")
+                                resolved_segment = matched_key
+                            else:
+                                resolved_segment = config_key
+                                for kv in key_vars:
+                                    resolved_segment = resolved_segment.replace(f"{{{kv}}}", str(val))
+                                    
+                            appended_segments.append(resolved_segment)
+                            if matched_key:
+                                keys_to_remove.append(matched_key)
+                            keys_to_remove.append(config_key)
+                            
+                for k in keys_to_remove:
+                    payload_dict.pop(k, None)
+                    
+            # 3. Only append the single most specific path segment (longest resolved segment)
+            if appended_segments:
+                appended_segments.sort(key=len, reverse=True)
+                dynamic_path = dynamic_path.rstrip("/") + "/" + appended_segments[0].lstrip("/")
+                    
+            # Clean up multiple slashes (e.g. if an empty placeholder leaves // )
+            dynamic_path = re.sub(r'/+', '/', dynamic_path)
+                
+            full_url_resolved = base_url.rstrip("/") + "/" + dynamic_path.lstrip("/")
+                
+            logger.info(f"🔨 WORKSPACE TOOL TRIGGERED: Executing webhook '{clean_name}' to {full_url_resolved}")
             sanitized_headers = headers.copy()
             if "Authorization" in sanitized_headers:
                 sanitized_headers["Authorization"] = "[MASKED]"
                 
+            kwargs_request = {"headers": headers, "timeout": aiohttp.ClientTimeout(total=15)}
+            if method.upper() in ["POST", "PUT", "PATCH"]:
+                kwargs_request["json"] = payload_dict
+            elif method.upper() in ["GET", "DELETE"]:
+                params = {}
+                if isinstance(payload_dict, dict):
+                    for k, v in payload_dict.items():
+                        if isinstance(v, (dict, list)):
+                            params[k] = json_lib.dumps(v)
+                        else:
+                            params[k] = str(v)
+                kwargs_request["params"] = params
+                
+            display_url = full_url_resolved
+            if method.upper() in ["GET", "DELETE"] and kwargs_request.get("params"):
+                from urllib.parse import urlencode
+                display_url += "?" + urlencode(kwargs_request["params"])
+                
+            client_id = current_client_id_var.get()
+            if client_id:
+                try:
+                    asyncio.create_task(
+                        agent_connection_manager.send_json(
+                            {
+                                "type": "step",
+                                "status": f"tool_call_{clean_name}",
+                                "label": f"[{method.upper()}] {display_url}"
+                            },
+                            client_id
+                        )
+                    )
+                except Exception:
+                    pass
+                
             async with aiohttp.ClientSession() as session:
-                kwargs_request = {"headers": headers, "timeout": aiohttp.ClientTimeout(total=15)}
-                if method.upper() in ["POST", "PUT", "PATCH"]:
-                    kwargs_request["json"] = payload_dict
-                async with session.request(method, full_url, **kwargs_request) as response:
+                async with session.request(method, full_url_resolved, **kwargs_request) as response:
                     if 200 <= response.status < 300:
                         cb["failures"] = 0
                     else:
                         cb["failures"] += 1
                         cb["last_failure"] = time.time()
+                        
+                    if client_id:
+                        try:
+                            asyncio.create_task(
+                                agent_connection_manager.send_json(
+                                    {
+                                        "type": "step",
+                                        "status": f"tool_done_{clean_name}",
+                                        "label": f"[{method.upper()}] {display_url} ({response.status})"
+                                    },
+                                    client_id
+                                )
+                            )
+                        except Exception:
+                            pass
                         
                     try:
                         resp = await response.json()
@@ -602,6 +745,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     user_id_var.set(user_id)
 
     logger.info(f"WebSocket client connected to agent chat. Client ID: {client_id}")
+    current_client_id_var.set(client_id)
     await agent_connection_manager.connect(websocket, client_id)
 
 
@@ -691,6 +835,17 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                 elif kind == "on_tool_start":
                     t_name = event["name"]
+                    is_webhook_tool = False
+                    for aid_key, tools_list in registry.tools.items():
+                        for tool_obj in tools_list:
+                            if tool_obj.get("tool_type") == "api_webhook" and tool_obj.get("name").replace(" ", "_").replace("-", "_") == t_name:
+                                is_webhook_tool = True
+                                break
+                    if is_webhook_tool:
+                        status_msg = f"Executing custom API tool {t_name}..."
+                        await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
+                        continue
+                        
                     if t_name == "search_knowledge_base":
                         status_msg = "Searching Knowledge Base..."
                         tool_label = "Searching Knowledge Base"
@@ -708,6 +863,16 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                 elif kind == "on_tool_end":
                     t_name = event["name"]
+                    is_webhook_tool = False
+                    for aid_key, tools_list in registry.tools.items():
+                        for tool_obj in tools_list:
+                            if tool_obj.get("tool_type") == "api_webhook" and tool_obj.get("name").replace(" ", "_").replace("-", "_") == t_name:
+                                is_webhook_tool = True
+                                break
+                    if is_webhook_tool:
+                        await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                        continue
+                        
                     tool_label = t_name.replace("_", " ").title()
                     await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
                     await agent_connection_manager.send_json(
@@ -1278,7 +1443,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             f"\n\nCRITICAL OPERATIONAL RULES:\n"
                             f"1. DATA FRESHNESS: Never rely on previous chat history for dynamic data, external database records, or API responses. If a user asks a new query, changes their search filters, or requests a different quantity of items, you MUST execute the appropriate tool again to fetch fresh results. Do not hallucinate or guess data based on previous conversation turns.\n"
                             f"2. STREAMING & FORMATTING: NEVER generate or output raw JSON, internal database headers (e.g., 'CatalogSKU', 'Index'), or fake data blocks in your final response. Do NOT 'think out loud' or announce your internal search process before using a tool.\n"
-                            f"3. Only output the final, conversational, user-facing text and the cleanly formatted data."
+                            f"3. Only output the final, conversational, user-facing text and the cleanly formatted data.\n"
+                            f"4. TOOL INVOCATION KEYS: When invoking custom API webhook tools, you MUST pass parameter keys exactly as defined in the tool's schema. Do NOT wrap keys in extra quotes, double quotes, or curly braces. Ensure keys are clean, plain strings matching the schema keys exactly."
                         )
 
                         lang_map = {
@@ -1553,6 +1719,7 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
     user_id_var.set(user_id)
 
     logger.info(f"Widget WebSocket connection initialized for client: {client_id}")
+    current_client_id_var.set(client_id)
     await agent_connection_manager.connect(websocket, client_id)
     try:
         while True:

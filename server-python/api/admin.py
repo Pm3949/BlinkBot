@@ -53,12 +53,15 @@ router = APIRouter(tags=["admin"])
 # PYDANTIC INPUT SCHEMAS
 # ==========================================
 
+from typing import Optional
+
 class UpdateSubscriptionRequest(BaseModel):
     """
     Validation schema for manual user subscription overrides.
     """
     plan_tier: str # Target billing tier (e.g. 'Pro', 'Enterprise')
     admin_action_password: str # Verification password to confirm admin identity
+    limits: Optional[dict] = None # Optional custom limits
 
 
 class UpdateSuperAdminRequest(BaseModel):

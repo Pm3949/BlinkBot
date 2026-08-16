@@ -24,6 +24,102 @@ def my_custom_tool(query: str) -> str:
     # Write your custom logic here
     return "Result"`;
 
+const parseCurlCommand = (curlString) => {
+  if (!curlString || typeof curlString !== 'string') return null;
+  const str = curlString.trim();
+  if (!str.toLowerCase().startsWith('curl ')) return null;
+
+  let method = 'GET';
+  let url = '';
+  let headers = {};
+  let body = '';
+  let auth = '';
+
+  const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
+  const tokens = [];
+  let match;
+  while ((match = regex.exec(str)) !== null) {
+    tokens.push(match[1] || match[2] || match[0]);
+  }
+
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i];
+    
+    if (token === '-X' || token === '--request') {
+      method = tokens[++i]?.toUpperCase() || 'GET';
+    } else if (token === '-H' || token === '--header') {
+      const headerStr = tokens[++i];
+      if (headerStr) {
+        const colonIdx = headerStr.indexOf(':');
+        if (colonIdx > 0) {
+          const key = headerStr.substring(0, colonIdx).trim();
+          const val = headerStr.substring(colonIdx + 1).trim();
+          headers[key] = val;
+        }
+      }
+    } else if (token === '-d' || token === '--data' || token === '--data-raw' || token === '--data-binary') {
+      body = tokens[++i] || '';
+      if (method === 'GET') method = 'POST';
+    } else if (token === '-u' || token === '--user') {
+      auth = tokens[++i] || '';
+    } else if (token.startsWith('http://') || token.startsWith('https://')) {
+      url = token;
+    } else if (tokens[i - 1] === '--url') {
+      url = token;
+    }
+  }
+
+  let baseUrl = '';
+  let path = '';
+  if (url) {
+    try {
+      const parsedUrl = new URL(url);
+      baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+      path = parsedUrl.pathname + parsedUrl.search;
+    } catch (e) {
+      baseUrl = url;
+    }
+  }
+
+  return { method, baseUrl, path, headers, body, auth };
+};
+
+const parseConnectionString = (uri) => {
+  if (!uri || !uri.startsWith("postgresql://")) {
+    return { host: "", port: "5432", database: "", user: "", password: "" };
+  }
+  try {
+    const cleanUri = uri.replace("postgresql://", "");
+    const atIdx = cleanUri.indexOf("@");
+    if (atIdx === -1) return { host: "", port: "5432", database: "", user: "", password: "" };
+    
+    const credentials = cleanUri.substring(0, atIdx);
+    const hostDb = cleanUri.substring(atIdx + 1);
+    
+    const [user, password] = credentials.split(":");
+    
+    const slashIdx = hostDb.indexOf("/");
+    let hostPort = hostDb;
+    let database = "";
+    if (slashIdx !== -1) {
+      hostPort = hostDb.substring(0, slashIdx);
+      database = hostDb.substring(slashIdx + 1);
+    }
+    
+    const colonIdx = hostPort.indexOf(":");
+    let host = hostPort;
+    let port = "5432";
+    if (colonIdx !== -1) {
+      host = hostPort.substring(0, colonIdx);
+      port = hostPort.substring(colonIdx + 1);
+    }
+    
+    return { host, port, database, user, password };
+  } catch (e) {
+    return { host: "", port: "5432", database: "", user: "", password: "" };
+  }
+};
+
 export default function CreateToolPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -44,10 +140,20 @@ export default function CreateToolPage() {
   const [apiKey, setApiKey] = useState("");
   const [headers, setHeaders] = useState("{}");
   const [payloadFormat, setPayloadFormat] = useState("");
+  const [pathVars, setPathVars] = useState([]);
+  const [queryParams, setQueryParams] = useState([]);
   const [expectedOutput, setExpectedOutput] = useState("");
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
 
   // Database Config
   const [connectionString, setConnectionString] = useState("");
+  const [dbType, setDbType] = useState("postgresql");
+  const [dbHost, setDbHost] = useState("");
+  const [dbPort, setDbPort] = useState("5432");
+  const [dbName, setDbName] = useState("");
+  const [dbUser, setDbUser] = useState("");
+  const [dbPassword, setDbPassword] = useState("");
+  const [dbMode, setDbMode] = useState("form"); // "form" or "uri"
 
   // OAuth Config
   const [oauthProvider, setOauthProvider] = useState("github");
@@ -77,10 +183,56 @@ export default function CreateToolPage() {
             setMethod(targetTool.configuration?.method || "GET");
             setApiKey(targetTool.configuration?.api_key || "");
             setHeaders(JSON.stringify(targetTool.configuration?.headers || {}, null, 2));
-            setPayloadFormat(targetTool.configuration?.payload_format || "");
+            const pf = targetTool.configuration?.payload_format || "";
+            setPayloadFormat(pf);
+            try {
+              if (pf && pf.trim().startsWith("{")) {
+                const parsed = JSON.parse(pf);
+                const pVars = [];
+                const qParams = [];
+                const currentPath = targetTool.configuration?.path || "";
+                Object.entries(parsed).forEach(([key, val]) => {
+                  let required = true;
+                  let type = "string";
+                  let desc = val;
+                  if (typeof val === "string") {
+                    if (val.includes("(optional)")) {
+                      required = false;
+                      desc = desc.replace("(optional)", "").trim();
+                    }
+                    const firstWord = desc.split(" ")[0].toLowerCase();
+                    if (["string", "integer", "number", "boolean", "object", "array"].includes(firstWord)) {
+                      type = firstWord;
+                      desc = desc.substring(firstWord.length).replace(/^-/, "").trim();
+                    }
+                  }
+                  const obj = { name: key, type, required, description: desc };
+                  const isPathVar = currentPath.includes(`{${key}}`) || key.includes("{") || key.includes("}");
+                  if (isPathVar) {
+                    pVars.push(obj);
+                  } else {
+                    qParams.push(obj);
+                  }
+                });
+                setPathVars(pVars);
+                setQueryParams(qParams);
+              }
+            } catch (e) {}
             setExpectedOutput(targetTool.configuration?.expected_output || "");
           } else if (targetTool.tool_type === "database") {
-            setConnectionString(targetTool.configuration?.connection_string || "");
+            const connStr = targetTool.configuration?.connection_string || "";
+            setConnectionString(connStr);
+            const parsedConn = parseConnectionString(connStr);
+            setDbHost(parsedConn.host);
+            setDbPort(parsedConn.port);
+            setDbName(parsedConn.database);
+            setDbUser(parsedConn.user);
+            setDbPassword(parsedConn.password);
+            if (connStr && !parsedConn.host) {
+              setDbMode("uri");
+            } else {
+              setDbMode("form");
+            }
           } else if (targetTool.tool_type === "oauth") {
             setOauthProvider(targetTool.configuration?.provider || "github");
           } else if (targetTool.tool_type === "python_code") {
@@ -112,6 +264,21 @@ export default function CreateToolPage() {
     // Format configuration
     let configuration = {};
     if (toolType === "api_webhook") {
+      let finalPayloadFormat = payloadFormat;
+      const combined = [...pathVars, ...queryParams];
+      if (combined.length > 0) {
+        const payloadObj = {};
+        combined.forEach(p => {
+          if (!p.name.trim()) return;
+          let desc = p.type;
+          if (!p.required) desc += " (optional)";
+          if (p.description) desc += ` - ${p.description}`;
+          payloadObj[p.name.trim()] = desc;
+        });
+        finalPayloadFormat = JSON.stringify(payloadObj, null, 2);
+      } else {
+        finalPayloadFormat = "";
+      }
       let parsedHeaders = {};
       try {
         parsedHeaders = JSON.parse(headers);
@@ -127,17 +294,21 @@ export default function CreateToolPage() {
         api_key: apiKey,
         headers: parsedHeaders,
         description: description,
-        payload_format: payloadFormat,
+        payload_format: finalPayloadFormat,
         expected_output: expectedOutput,
         requires_approval: requiresApproval
       };
     } else if (toolType === "database") {
-      if (!connectionString.trim()) {
-        toast.error("Database connection URI is required");
+      let finalConnStr = connectionString;
+      if (dbHost.trim() && dbName.trim() && dbUser.trim() && dbPassword.trim()) {
+        finalConnStr = `postgresql://${dbUser.trim()}:${dbPassword.trim()}@${dbHost.trim()}:${dbPort.trim()}/${dbName.trim()}`;
+      }
+      if (!finalConnStr.trim()) {
+        toast.error("Database connection details are required");
         setSaving(false);
         return;
       }
-      configuration = { connection_string: connectionString };
+      configuration = { connection_string: finalConnStr };
     } else if (toolType === "oauth") {
       configuration = { provider: oauthProvider };
     } else if (toolType === "python_code") {
@@ -157,15 +328,145 @@ export default function CreateToolPage() {
         await updateWorkspaceTool(activeWorkspaceId, editId, payload);
         toast.success("Tool updated successfully");
       } else {
-        await createWorkspaceTool(activeWorkspaceId, payload);
+        const newTool = await createWorkspaceTool(activeWorkspaceId, payload);
         toast.success("Tool created and deployed successfully");
+        if (newTool && newTool.id) {
+          navigate(`${window.location.pathname}?edit=${newTool.id}`, { replace: true });
+        }
       }
-      navigate("/tools");
     } catch (err) {
       setErrorBanner(err.message || "Failed to save tool");
       toast.error("Tool deployment failed. See error details.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUrlPaste = (e) => {
+    const pastedText = e.clipboardData.getData('text');
+    if (!pastedText.trim().toLowerCase().startsWith('curl ')) return;
+    
+    const parsed = parseCurlCommand(pastedText);
+    if (parsed) {
+      e.preventDefault();
+      
+      toast.success("cURL command parsed successfully!");
+      if (parsed.method) setMethod(parsed.method);
+      if (parsed.baseUrl) setBaseUrl(parsed.baseUrl);
+      
+      let cleanPath = parsed.path || "";
+      const qParams = [];
+      const pVars = [];
+      
+      // 1. Parse query string parameters from URL
+      if (parsed.path && parsed.path.includes("?")) {
+        const queryStart = parsed.path.indexOf("?");
+        cleanPath = parsed.path.substring(0, queryStart);
+        const searchStr = parsed.path.substring(queryStart);
+        const urlParams = new URLSearchParams(searchStr);
+        for (const [key, val] of urlParams.entries()) {
+          let type = "string";
+          if (!isNaN(val) && val.trim() !== "") {
+            type = Number.isInteger(parseFloat(val)) ? "integer" : "number";
+          } else if (val.toLowerCase() === "true" || val.toLowerCase() === "false") {
+            type = "boolean";
+          }
+          qParams.push({ name: key, type, required: false, description: `Pasted query value: ${val}` });
+        }
+      }
+      if (cleanPath) setPath(cleanPath);
+      
+      // 2. Detect dynamic path variables in Endpoint Path (e.g. {id} or {endpoint_suffix})
+      const pathVarsMatched = cleanPath.match(/\{([^}]+)\}/g);
+      if (pathVarsMatched) {
+        pathVarsMatched.forEach(match => {
+          const name = match.replace(/[{}]/g, "");
+          pVars.push({ name, type: "string", required: true, description: `Dynamic endpoint path variable` });
+        });
+      }
+      
+      // 3. Parse request body if it's a JSON payload
+      if (parsed.body) {
+        try {
+          const parsedBody = JSON.parse(parsed.body);
+          if (parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody)) {
+            Object.entries(parsedBody).forEach(([key, val]) => {
+              let type = typeof val;
+              if (type === "number") {
+                type = Number.isInteger(val) ? "integer" : "number";
+              }
+              if (type !== "string" && type !== "integer" && type !== "boolean" && type !== "object" && type !== "array") {
+                type = "string";
+              }
+              if (!qParams.some(p => p.name === key)) {
+                qParams.push({ name: key, type, required: true, description: `Request body parameter` });
+              }
+            });
+          }
+        } catch (e) {
+          // fallback payload string
+          setPayloadFormat(parsed.body);
+        }
+      }
+      
+      setPathVars(pVars);
+      setQueryParams(qParams);
+      
+      if (Object.keys(parsed.headers).length > 0) {
+        setHeaders(JSON.stringify(parsed.headers, null, 2));
+      }
+    }
+  };
+
+  const handleTestWebhook = async () => {
+    if (!baseUrl) {
+      toast.error("Base URL is required to test.");
+      return;
+    }
+    
+    setIsTestingWebhook(true);
+    let parsedHeaders = {};
+    try {
+      if (headers && headers.trim() !== "") {
+        parsedHeaders = JSON.parse(headers);
+      }
+    } catch (e) {
+      toast.error("Headers must be valid JSON");
+      setIsTestingWebhook(false);
+      return;
+    }
+    
+    if (apiKey) {
+      parsedHeaders["Authorization"] = apiKey;
+    }
+
+    const fullUrl = `${baseUrl}${path && !path.startsWith('/') ? '/' + path : path || ''}`;
+    
+    try {
+      const options = {
+        method: method,
+        headers: parsedHeaders,
+      };
+      
+      if (method !== "GET" && method !== "HEAD" && payloadFormat) {
+        options.body = payloadFormat;
+      }
+      
+      const res = await fetch(fullUrl, options);
+      const data = await res.json().catch(() => null);
+      
+      if (data) {
+        setExpectedOutput(JSON.stringify(data, null, 2));
+        toast.success(`Tested successfully! Responded with status ${res.status}`);
+      } else {
+        setExpectedOutput(`{"status": ${res.status}}`);
+        toast.success(`Tested successfully! (No JSON returned)`);
+      }
+    } catch (err) {
+      console.error("Test Webhook Error:", err);
+      toast.error("Test failed. Check console for CORS or network errors.");
+    } finally {
+      setIsTestingWebhook(false);
     }
   };
 
@@ -410,6 +711,14 @@ export default function CreateToolPage() {
               </div>
             ) : toolType === "api_webhook" ? (
               <div className="space-y-5 bg-card/20 border border-border p-6 rounded-2xl">
+                <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl flex items-start gap-3 animate-in fade-in zoom-in-95 duration-200">
+                  <Terminal size={18} className="text-primary mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="text-sm font-bold text-primary mb-1">Magic cURL Import</h4>
+                    <p className="text-xs text-foreground/80 leading-relaxed">Paste a <span className="font-mono text-primary bg-primary/10 px-1 rounded">cURL</span> command directly into the <strong>Base URL</strong> field to automatically extract and populate all fields below.</p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-1">
                     <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">HTTP Method</label>
@@ -468,6 +777,7 @@ export default function CreateToolPage() {
                       required
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
+                      onPaste={handleUrlPaste}
                       className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                       placeholder="https://api.stripe.com"
                     />
@@ -508,42 +818,354 @@ export default function CreateToolPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Payload JSON Format</label>
-                    <input
-                      value={payloadFormat}
-                      onChange={(e) => setPayloadFormat(e.target.value)}
-                      className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
-                      placeholder='{"limit": 10}'
-                    />
+                  <div className="col-span-full space-y-6">
+                    {/* PATH VARIABLES SECTION */}
+                    <div className="bg-primary/5 border border-primary/20 p-6 rounded-2xl">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <label className="block text-sm font-bold text-primary uppercase">Path Variables</label>
+                          <p className="text-xs text-primary/85 mt-1">Parameters that dynamically replace {`{}`} in your Endpoint Path.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPathVars([...pathVars, { name: "", type: "string", required: true, description: "" }])}
+                          className="text-xs font-bold text-primary hover:text-primary/95 flex items-center gap-1.5 bg-primary/10 border border-primary/20 px-3.5 py-2 rounded-xl transition"
+                        >
+                          <Plus size={14} /> Add Path Var
+                        </button>
+                      </div>
+                      
+                      {pathVars.length === 0 ? (
+                        <div className="text-center p-6 border border-dashed border-primary/30 rounded-xl bg-primary/5 text-primary/80 text-sm">
+                          No path variables defined. Add one if your URL path contains dynamic variables.<br/>
+                          <span className="text-xs text-primary/65 font-mono mt-1.5 block">Example: If path is "/api/v1/products/{`{id}`}", add a variable named "id".</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {pathVars.map((param, index) => (
+                            <div key={`path-${index}`} className="flex items-start gap-3 p-4 border border-primary/30 bg-background rounded-xl">
+                              <div className="flex-1 grid grid-cols-12 gap-3">
+                                <div className="col-span-4">
+                                  <input
+                                    placeholder="Name (e.g. endpoint_suffix)"
+                                    value={param.name}
+                                    onChange={e => {
+                                      const newParams = [...pathVars];
+                                      newParams[index].name = e.target.value;
+                                      setPathVars(newParams);
+                                    }}
+                                    className="w-full border border-border rounded-lg p-2.5 bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                                  />
+                                </div>
+                                <div className="col-span-8">
+                                  <input
+                                    placeholder="Description (What does this do?)"
+                                    value={param.description}
+                                    onChange={e => {
+                                      const newParams = [...pathVars];
+                                      newParams[index].description = e.target.value;
+                                      setPathVars(newParams);
+                                    }}
+                                    className="w-full border border-border rounded-lg p-2.5 bg-background text-foreground text-sm focus:outline-none"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newParams = [...pathVars];
+                                  newParams.splice(index, 1);
+                                  setPathVars(newParams);
+                                }}
+                                className="p-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 shrink-0"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* API PARAMETERS SECTION */}
+                    <div className="border border-border p-6 rounded-2xl bg-card/10">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <label className="block text-sm font-bold text-muted-foreground uppercase">Query & Body Parameters</label>
+                          <p className="text-xs text-muted-foreground mt-1">Parameters sent in the URL query string or request body.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setQueryParams([...queryParams, { name: "", type: "string", required: true, description: "" }])}
+                          className="text-xs font-bold text-foreground hover:bg-muted flex items-center gap-1.5 bg-background border border-border px-3.5 py-2 rounded-xl transition"
+                        >
+                          <Plus size={14} /> Add Parameter
+                        </button>
+                      </div>
+                      
+                      {queryParams.length === 0 ? (
+                        <div className="text-center p-6 border border-dashed border-border rounded-xl bg-card/30 text-muted-foreground text-sm animate-in fade-in duration-200">
+                          No query or body parameters defined.<br/>
+                          <span className="text-xs text-muted-foreground/75 font-mono mt-1.5 block">Example: Add "limit" (Integer) or "min_range" (Integer) to let the AI filter results dynamically.</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {queryParams.map((param, index) => (
+                            <div key={`query-${index}`} className="flex items-start gap-3 p-4 border border-border bg-card/30 rounded-xl">
+                              <div className="flex-1 grid grid-cols-12 gap-3">
+                                <div className="col-span-3">
+                                  <input
+                                    placeholder="Name (e.g. limit)"
+                                    value={param.name}
+                                    onChange={e => {
+                                      const newParams = [...queryParams];
+                                      newParams[index].name = e.target.value;
+                                      setQueryParams(newParams);
+                                    }}
+                                    className="w-full border border-border rounded-lg p-2.5 bg-background text-foreground text-sm focus:outline-none"
+                                  />
+                                </div>
+                                <div className="col-span-3">
+                                  <select
+                                    value={param.type}
+                                    onChange={e => {
+                                      const newParams = [...queryParams];
+                                      newParams[index].type = e.target.value;
+                                      setQueryParams(newParams);
+                                    }}
+                                    className="w-full border border-border rounded-lg p-2.5 bg-background text-foreground text-sm focus:outline-none"
+                                  >
+                                    <option value="string">String</option>
+                                    <option value="integer">Integer</option>
+                                    <option value="boolean">Boolean</option>
+                                    <option value="object">Object</option>
+                                    <option value="array">Array</option>
+                                  </select>
+                                </div>
+                                <div className="col-span-5">
+                                  <input
+                                    placeholder="Description"
+                                    value={param.description}
+                                    onChange={e => {
+                                      const newParams = [...queryParams];
+                                      newParams[index].description = e.target.value;
+                                      setQueryParams(newParams);
+                                    }}
+                                    className="w-full border border-border rounded-lg p-2.5 bg-background text-foreground text-sm focus:outline-none"
+                                  />
+                                </div>
+                                <div className="col-span-1 flex items-center justify-center pt-2">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={param.required}
+                                      onChange={e => {
+                                        const newParams = [...queryParams];
+                                        newParams[index].required = e.target.checked;
+                                        setQueryParams(newParams);
+                                      }}
+                                      className="rounded border-border text-foreground focus:ring-primary h-4 w-4"
+                                    />
+                                    <span className="text-xs font-bold text-muted-foreground uppercase">Req</span>
+                                  </label>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newParams = [...queryParams];
+                                  newParams.splice(index, 1);
+                                  setQueryParams(newParams);
+                                }}
+                                className="p-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 shrink-0"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Expected JSON Response</label>
-                    <input
+                    <textarea
                       value={expectedOutput}
                       onChange={(e) => setExpectedOutput(e.target.value)}
-                      className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                      rows={4}
+                      className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm font-mono focus:outline-none resize-y"
                       placeholder='{"data": []}'
                     />
                   </div>
                 </div>
+                
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleTestWebhook}
+                    disabled={isTestingWebhook || !baseUrl}
+                    className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-sm transition rounded-xl flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isTestingWebhook ? "Testing..." : "Test Request & Auto-fill Output"}
+                  </button>
+                </div>
               </div>
             ) : toolType === "database" ? (
-              <div className="bg-card/20 border border-border p-6 rounded-2xl space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">PostgreSQL Database Connection URI</label>
-                  <input
-                    required
-                    type="password"
-                    value={connectionString}
-                    onChange={(e) => setConnectionString(e.target.value)}
-                    className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
-                    placeholder="postgresql://user:password@localhost:5432/db_name"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    Credentials are stored securely. Agents will have read-only SQL queries access to tables.
-                  </p>
+              <div className="bg-card/20 border border-border p-6 rounded-2xl space-y-5 animate-in fade-in duration-200">
+                {/* Tabs to toggle mode */}
+                <div className="flex border-b border-border mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setDbMode("form")}
+                    className={`pb-2.5 px-4 font-bold text-xs uppercase tracking-wider transition-all duration-200 border-b-2 ${
+                      dbMode === "form"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Structured Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDbMode("uri")}
+                    className={`pb-2.5 px-4 font-bold text-xs uppercase tracking-wider transition-all duration-200 border-b-2 ${
+                      dbMode === "uri"
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Connection URI String
+                  </button>
                 </div>
+
+                {dbMode === "uri" ? (
+                  <div className="space-y-4 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">PostgreSQL Database Connection URI</label>
+                      <input
+                        required={dbMode === "uri"}
+                        type="password"
+                        value={connectionString}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setConnectionString(val);
+                          const parsed = parseConnectionString(val);
+                          setDbHost(parsed.host);
+                          setDbPort(parsed.port);
+                          setDbName(parsed.database);
+                          setDbUser(parsed.user);
+                          setDbPassword(parsed.password);
+                        }}
+                        className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="postgresql://user:password@localhost:5432/db_name"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-5 animate-in fade-in duration-150">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Database Type</label>
+                        <select
+                          value={dbType}
+                          onChange={(e) => setDbType(e.target.value)}
+                          className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                        >
+                          <option value="postgresql">PostgreSQL</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Host / Server Address</label>
+                        <input
+                          required={dbMode === "form"}
+                          value={dbHost}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDbHost(val);
+                            if (val && dbName && dbUser && dbPassword) {
+                              setConnectionString(`postgresql://${dbUser.trim()}:${dbPassword.trim()}@${val.trim()}:${dbPort.trim()}/${dbName.trim()}`);
+                            }
+                          }}
+                          className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                          placeholder="e.g. ec2-18-233-32-61.compute-1.amazonaws.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Port</label>
+                        <input
+                          required={dbMode === "form"}
+                          value={dbPort}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDbPort(val);
+                            if (dbHost && dbName && dbUser && dbPassword) {
+                              setConnectionString(`postgresql://${dbUser.trim()}:${dbPassword.trim()}@${dbHost.trim()}:${val.trim()}/${dbName.trim()}`);
+                            }
+                          }}
+                          className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                          placeholder="5432"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Database Name</label>
+                        <input
+                          required={dbMode === "form"}
+                          value={dbName}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDbName(val);
+                            if (dbHost && val && dbUser && dbPassword) {
+                              setConnectionString(`postgresql://${dbUser.trim()}:${dbPassword.trim()}@${dbHost.trim()}:${dbPort.trim()}/${val.trim()}`);
+                            }
+                          }}
+                          className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                          placeholder="e.g. d3j5s5ce29g1sb"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">User Name</label>
+                        <input
+                          required={dbMode === "form"}
+                          value={dbUser}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDbUser(val);
+                            if (dbHost && dbName && val && dbPassword) {
+                              setConnectionString(`postgresql://${val.trim()}:${dbPassword.trim()}@${dbHost.trim()}:${dbPort.trim()}/${dbName.trim()}`);
+                            }
+                          }}
+                          className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                          placeholder="e.g. hynvocnxbhzfrq"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-muted-foreground mb-1.5 uppercase">Password</label>
+                      <input
+                        required={dbMode === "form"}
+                        type="password"
+                        value={dbPassword}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDbPassword(val);
+                          if (dbHost && dbName && dbUser && val) {
+                            setConnectionString(`postgresql://${dbUser.trim()}:${val.trim()}@${dbHost.trim()}:${dbPort.trim()}/${dbName.trim()}`);
+                          }
+                        }}
+                        className="w-full border border-border rounded-xl p-3 bg-background text-foreground text-sm focus:outline-none"
+                        placeholder="Database user password"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-muted-foreground leading-relaxed mt-2">
+                  Credentials are stored securely. RAGMate agents will only execute read-only queries (SELECT) to retrieve Relational Database schemas and records.
+                </p>
               </div>
             ) : (
               <div className="bg-card/20 border border-border p-6 rounded-2xl space-y-4">

@@ -40,7 +40,7 @@ export default function WorkspaceToolsPage() {
   const fetchStoreTemplates = useUIStore((state) => state.fetchStoreTemplates);
 
   // Tab State: 'store' or 'custom'
-  const [activeTab, setActiveTab] = useState("store");
+  const [activeTab, setActiveTab] = useState("custom");
 
   // Global Search State
   const [searchQuery, setSearchQuery] = useState("");
@@ -158,29 +158,37 @@ export default function WorkspaceToolsPage() {
   return (
     <div className="w-full px-4 sm:px-8 space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Header Section */}
-      <div className="flex flex-row justify-between items-center gap-4 border-b border-border/40 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Workspace Tool Library</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1 hidden sm:block">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
             Configure integrations, API hooks, and database connectors globally, and attach them to any Agent in this workspace.
           </p>
         </div>
+      </div>
 
-        {/* Tab Navigation Switcher (Larger Buttons) */}
-        <div className="flex bg-card/60 border border-border/60 p-1.5 rounded-xl gap-1 shrink-0">
-          <button
-            onClick={() => setActiveTab("store")}
-            className={`px-6 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${activeTab === "store" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            Tool Store
-          </button>
-          <button
-            onClick={() => setActiveTab("custom")}
-            className={`px-6 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${activeTab === "custom" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            My Custom Tools
-          </button>
-        </div>
+      {/* Tabs Navigation (Model Page Style) */}
+      <div className="flex border-b border-border/60">
+        <button
+          onClick={() => setActiveTab("custom")}
+          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "custom"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Terminal size={18} /> My Custom Tools ({customTools.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("store")}
+          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "store"
+              ? "border-primary text-primary font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Webhook size={18} /> Tool Store ({storeTemplates.length})
+        </button>
       </div>
 
       {/* Global Search Bar */}

@@ -253,7 +253,7 @@ async def get_admin_users():
         return await run_in_threadpool(cursor.fetchall)
 
 
-async def upsert_user_subscription(user_id: str, plan_tier: str):
+async def upsert_user_subscription(user_id: str, plan_tier: str, limits_json: str):
     """
     Inserts a new user subscription record or updates an existing one if a conflict occurs.
 
@@ -265,6 +265,7 @@ async def upsert_user_subscription(user_id: str, plan_tier: str):
     Parameters:
         user_id (str): The unique identifier of the user.
         plan_tier (str): The tier name to assign (e.g., "free", "hobby", "pro", "enterprise").
+        limits_json (str): The JSON formatted string containing the usage limits.
 
     Returns:
         None.
@@ -294,12 +295,12 @@ async def upsert_user_subscription(user_id: str, plan_tier: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO user_subscriptions (user_id, plan_tier)
-            VALUES (%s, %s)
+            INSERT INTO user_subscriptions (user_id, plan_tier, limits)
+            VALUES (%s, %s, %s::jsonb)
             ON CONFLICT (user_id) 
-            DO UPDATE SET plan_tier = EXCLUDED.plan_tier, updated_at = now()
+            DO UPDATE SET plan_tier = EXCLUDED.plan_tier, limits = EXCLUDED.limits, updated_at = now()
             """,
-            (user_id, plan_tier),
+            (user_id, plan_tier, limits_json),
         )
 
 

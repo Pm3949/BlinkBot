@@ -224,8 +224,25 @@ async def handle_update_user_subscription(target_user_id: str, req: dict):
         plan_tier = req.get("plan_tier")
         logger.debug(f"Updating user {target_user_id} subscription plan to: {plan_tier} in database...")
         
+        # Determine limits based on tier
+        if plan_tier == "Pro":
+            limits = {"workspaces": 3, "agents": 5, "agentMessages": 500, "storage": 100, "chatbots": 2, "chatbotMessages": 500}
+        elif plan_tier == "Enterprise":
+            limits = {"workspaces": 10, "agents": 20, "agentMessages": 5000, "storage": 1024, "chatbots": 10, "chatbotMessages": 5000}
+        elif plan_tier == "Business":
+            limits = {"workspaces": 999999, "agents": 999999, "agentMessages": 50000, "storage": 10240, "chatbots": 999999, "chatbotMessages": 999999}
+        else:
+            limits = {"workspaces": 1, "agents": 1, "agentMessages": 50, "storage": 50, "chatbots": 1, "chatbotMessages": 50}
+
+        # Override with custom limits if provided in request
+        if req.get("limits"):
+            limits.update(req.get("limits"))
+            
+        import json
+        limits_json = json.dumps(limits)
+        
         # 4. Modify target row in the database
-        await admin_repository.upsert_user_subscription(target_user_id, plan_tier)
+        await admin_repository.upsert_user_subscription(target_user_id, plan_tier, limits_json)
         
         # Log transaction success
         logger.info(f"User {target_user_id} subscription plan successfully updated to {plan_tier}.")

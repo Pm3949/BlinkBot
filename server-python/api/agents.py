@@ -481,9 +481,14 @@ async def generate_tool_description(payload: ToolDescriptionRequest, current_use
     from langchain_core.messages import SystemMessage, HumanMessage
 
     system_instruction = (
-        "You are an expert developer assistant. Your task is to write a highly detailed, concise, and informative "
-        "one-sentence or two-sentence description (instruction for an LLM agent) explaining what this API tool does and when/why to call it.\n"
-        "Output ONLY the plain text description. Do not include markdown codeblocks, prefix labels, quotes, or extra text."
+        "You are an expert AI system architect. Your task is to write a highly optimized, professional tool description "
+        "that will act as instructions for an LLM agent to know exactly when and how to call this API tool.\n\n"
+        "Your description must include:\n"
+        "1. The primary purpose of the tool (e.g. 'Retrieve product list or specific product details').\n"
+        "2. Explicit instructions on when the agent should call it based on user intent.\n"
+        "3. If URL path variables exist (e.g. {endpoint_suffix}), explicitly instruct the agent on what values/segments (such as ID, slug, etc.) it must pass into it to access different sub-resources.\n"
+        "4. Clear instructions on how to use the available query/body parameters.\n\n"
+        "Keep the final description concise (2-3 sentences max). Output ONLY the plain text instruction. Do not include markdown formatting, quotes, or extra labels."
     )
 
     try:
