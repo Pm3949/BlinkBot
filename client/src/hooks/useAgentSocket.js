@@ -106,6 +106,12 @@ export const useAgentSocket = (url) => {
                 logs: data.content,
                 payload: data
               });
+              setAgentSteps(prev => {
+                const markedPrev = prev.map(s => ({ ...s, done: true }));
+                const exists = markedPrev.find(s => s.label === data.content);
+                if (exists) return markedPrev;
+                return [...markedPrev, { status: 'status', label: data.content, done: false }];
+              });
             }
           } else if (data.type === 'routing_decision') {
             const routingEvent = new CustomEvent('agent_routing_decision', { detail: { agent_id: data.agent_id, agent_name: data.agent_name } });
@@ -117,6 +123,10 @@ export const useAgentSocket = (url) => {
               action: `Routed execution path to: ${data.agent_name}`,
               logs: `Selected Target Agent: ${data.agent_name}`,
               payload: data
+            });
+            setAgentSteps(prev => {
+              const markedPrev = prev.map(s => ({ ...s, done: true }));
+              return [...markedPrev, { status: 'routing', label: `Routed to: ${data.agent_name || 'Agent'}`, done: false }];
             });
           } else if (data.type === 'error') {
             console.error('WebSocket received error:', data.content);

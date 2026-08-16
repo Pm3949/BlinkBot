@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: ./server-python
+      dockerfile: Dockerfile
+    container_name: blinkbot-backend
+    ports:
+      - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - ./server-python/dev.env
+    volumes:
+      - ./server-python:/app
+    restart: always

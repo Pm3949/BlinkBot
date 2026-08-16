@@ -106,8 +106,8 @@ export default function ChatSidebar({
                 mb-1
                 ${
                   activeAgentId === project.id
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary text-primary-foreground font-bold shadow-md"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground font-medium"
                 }
               `}
               >

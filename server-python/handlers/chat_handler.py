@@ -898,9 +898,6 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 },
                                 client_id
                             )
-                            await agent_connection_manager.send_json(
-                                {"type": "step", "status": "routing", "label": f"Routing to: {routed_name}"}, client_id
-                            )
             
             # Check for breakpoint interruption before tools execute
             state_snapshot = await active_graph.aget_state(config)

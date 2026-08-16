@@ -175,20 +175,7 @@ export default function ChatPage() {
 
 
 
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-2xl">
-          <span className="font-medium text-sm text-foreground">{activeAgent?.name || "Select an Agent"}</span>
-          {activeAgent && activeAgent.id && (
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={() => navigate(`/agent/${activeAgent.id}/settings`, { state: { agent: activeAgent } })}
-                className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition"
-                title="Agent Settings"
-              >
-                <Settings2 size={16} />
-              </button>
-            </div>
-          )}
-        </div>
+
 
         <div className="absolute top-4 right-4 z-10">
           {activeAgent && activeAgent.id && (

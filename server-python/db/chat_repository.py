@@ -59,28 +59,21 @@ async def fetch_temporary_memory_patch(agent_id: str) -> str:
 async def get_agent_for_chat(agent_id: str):
     """
     Retrieves the full configuration profile of an agent.
-
-    Purpose:
-        Retrieves LLM models, system prompts, output templates, vector databases, and API keys
-        so that the chat engine can configure the LLM runtime correctly.
-
-    Parameters:
-        agent_id (str): The unique database identifier of the agent.
-
-    Returns:
-        tuple | None: A tuple containing all selected agent fields, or None if the agent doesn't exist.
-
-    Side Effects / State Changes:
-        - None. Read-only.
-
-    Errors / Exceptions:
-        - May raise database-related errors.
+    If the agent_id corresponds to a project_id, resolves to its Network Manager agent first.
     """
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
-            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled, use_byok FROM agents WHERE id = %s",
+            "SELECT id FROM agents WHERE project_id = %s AND name LIKE 'Network Manager%%'",
             (agent_id,),
+        )
+        resolved = await run_in_threadpool(cursor.fetchone)
+        target_id = resolved[0] if resolved else agent_id
+
+        await run_in_threadpool(
+            cursor.execute,
+            "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled, use_byok FROM agents WHERE id = %s",
+            (target_id,),
         )
         return await run_in_threadpool(cursor.fetchone)
 
