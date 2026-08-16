@@ -24,6 +24,7 @@ import LoadingSkeleton from "../shared/LoadingSkeleton";
 export default function ImportChatbotModal({ isOpen, onClose }) {
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const { data: agents = [], isLoading } = useAgents(activeWorkspaceId, true);
+  const { data: projects = [] } = useAgentProjects(activeWorkspaceId);
   const importChatbotMutation = useImportChatbot(activeWorkspaceId);
 
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -81,7 +82,11 @@ export default function ImportChatbotModal({ isOpen, onClose }) {
                   // Auto-fill name if empty
                   if (!chatbotName) {
                     const selected = agents.find((a) => a.id === value);
-                    if (selected) setChatbotName(selected.name + " Bot");
+                    if (selected) {
+                      const project = selected.project_id ? projects.find((p) => p.id === selected.project_id) : null;
+                      const baseName = project ? `${selected.name} (${project.name})` : selected.name;
+                      setChatbotName(baseName + " Bot");
+                    }
                   }
                 }}
               >
@@ -89,11 +94,17 @@ export default function ImportChatbotModal({ isOpen, onClose }) {
                   <SelectValue placeholder="-- Select an Agent --" />
                 </SelectTrigger>
                 <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
+                  {agents.map((agent) => {
+                    const project = agent.project_id ? projects.find((p) => p.id === agent.project_id) : null;
+                    const displayName = project 
+                      ? `${agent.name} (${project.name})` 
+                      : agent.name;
+                    return (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {displayName}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             )}

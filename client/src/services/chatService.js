@@ -15,8 +15,12 @@ async function getErrorMessage(response) {
 
 
 
-export async function getChatSessions(workspaceId, userId) {
-  const response = await fetch(`${API_BASE_URL}/api/chat_sessions/${workspaceId}`, {
+export async function getChatSessions(workspaceId, userId, agentId = null) {
+  let url = `${API_BASE_URL}/api/chat_sessions/${workspaceId}`;
+  if (agentId) {
+    url += `?agent_id=${encodeURIComponent(agentId)}`;
+  }
+  const response = await fetch(url, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error("Failed to fetch chat sessions");

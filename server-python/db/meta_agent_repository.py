@@ -98,7 +98,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            ("Network Manager", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, None, "[]", False, "[]", "[]")
+            (f"Network Manager ({blueprint.project_name})", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, None, "[]", False, "[]", "[]")
         )
         # Fetch the Network Manager's database UUID.
         manager_id = (await run_in_threadpool(cursor.fetchone))[0]

@@ -1,21 +1,18 @@
 import { useState } from "react";
 import {
   Plus,
-  Bot,
   MessageSquare,
   MoreVertical,
   Pencil,
   Trash2,
   Bookmark,
   Pin,
+  Network,
 } from "lucide-react";
 
-import { useProjectSubAgents } from "../../hooks/useAgents";
-import { ChevronRight, ChevronDown, Network } from "lucide-react";
 import Logo from "../shared/Logo";
 
 export default function ChatSidebar({
-  standaloneAgents = [],
   projects = [],
   activeAgentId,
   activeSessionId,
@@ -26,6 +23,8 @@ export default function ChatSidebar({
   onRenameSession,
   onTogglePinSession,
   onDeleteSession,
+  isLoadingAgents = false,
+  isLoadingSessions = false,
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const sortedSessions = [...sessions].sort(
@@ -49,52 +48,6 @@ export default function ChatSidebar({
     setOpenMenuId(null);
   };
 
-  const ProjectFolder = ({ project }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const { data: subAgents = [], isLoading } = useProjectSubAgents(isExpanded ? project.id : null);
-
-    return (
-      <div className="mb-2">
-        <button
-          type="button"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-between p-2 rounded-xl text-muted-foreground hover:bg-muted transition"
-        >
-          <div className="flex items-center gap-2">
-            <Network size={16} />
-            <span className="text-sm font-medium truncate">{project.name}</span>
-          </div>
-          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-
-        {isExpanded && (
-          <div className="ml-4 pl-2 mt-1 border-l border-border space-y-1">
-            {isLoading ? (
-              <div className="text-xs text-muted-foreground py-2 pl-2">Loading...</div>
-            ) : subAgents.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-2 pl-2">No agents found</div>
-            ) : (
-              subAgents.map(agent => (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => onAgentSelect({ ...agent, project_id: project.id })}
-                  className={`w-full flex items-center gap-2 p-2 rounded-xl text-sm transition ${
-                    activeAgentId === agent.id
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <Bot size={14} />
-                  <span className="truncate">{agent.name}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
   return (
     <div className="w-80 border-r border-border bg-card flex flex-col">
       <div className="p-5 flex flex-col gap-4 border-b border-border">
@@ -124,51 +77,47 @@ export default function ChatSidebar({
 
       <div className="px-3 py-4">
         <div className="text-xs uppercase text-muted-foreground px-3 mb-3">
-          Agents
+          Networks
         </div>
 
-        {standaloneAgents.length === 0 && projects.length === 0 && (
-          <div className="px-3 py-4 text-sm text-muted-foreground">
-            No agents or networks available.
+        {isLoadingAgents ? (
+          <div className="px-3 py-2 space-y-2">
+            <div className="h-9 bg-muted animate-pulse rounded-2xl" />
+            <div className="h-9 bg-muted animate-pulse rounded-2xl" />
           </div>
-        )}
-
-        {standaloneAgents.map((agent) => (
-          <button
-            key={agent.id}
-            type="button"
-            onClick={() => onAgentSelect(agent)}
-            className={`
-            w-full
-            flex
-            items-center
-            justify-between
-            p-3
-            rounded-2xl
-            mb-1
-            ${
-              activeAgentId === agent.id
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            }
-          `}
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <Bot size={16} />
-              <span className="text-sm font-medium truncate">
-                {agent.name}
-              </span>
-            </div>
-          </button>
-        ))}
-
-        {projects.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="text-xs uppercase text-muted-foreground px-3 mb-3">
-              Networks
-            </div>
+        ) : projects.length === 0 ? (
+          <div className="px-3 py-4 text-sm text-muted-foreground">
+            No networks available.
+          </div>
+        ) : (
+          <div className="space-y-1">
             {projects.map((project) => (
-              <ProjectFolder key={project.id} project={project} />
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => onAgentSelect(project)}
+                className={`
+                w-full
+                flex
+                items-center
+                justify-between
+                p-3
+                rounded-2xl
+                mb-1
+                ${
+                  activeAgentId === project.id
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }
+              `}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Network size={16} />
+                  <span className="text-sm font-medium truncate">
+                    {project.name}
+                  </span>
+                </div>
+              </button>
             ))}
           </div>
         )}
@@ -179,37 +128,40 @@ export default function ChatSidebar({
           Chat History
         </div>
 
-        {!activeAgentId && (
+        {isLoadingSessions ? (
+          <div className="px-3 py-2 space-y-2">
+            <div className="h-12 bg-muted/65 animate-pulse rounded-2xl" />
+            <div className="h-12 bg-muted/65 animate-pulse rounded-2xl" />
+            <div className="h-12 bg-muted/65 animate-pulse rounded-2xl" />
+          </div>
+        ) : !activeAgentId ? (
           <div className="px-3 py-3 text-sm text-muted-foreground">
             Select an agent to view chat history.
           </div>
-        )}
-
-        {activeAgentId && sessions.length === 0 && (
+        ) : sessions.length === 0 ? (
           <div className="px-3 py-3 text-sm text-muted-foreground">
             No chat history for this agent.
           </div>
-        )}
-
-        <div className="space-y-1">
-          {sortedSessions.map((session) => (
-            <div key={session.id} className="relative">
-              <button
-                type="button"
-                onClick={() => onSessionSelect(session)}
-                className={`
-                w-full
-                rounded-2xl
-                p-3
-                pr-11
-                text-left
-                ${
-                  activeSessionId === session.id
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }
-              `}
-              >
+        ) : (
+          <div className="space-y-1">
+            {sortedSessions.map((session) => (
+              <div key={session.id} className="relative">
+                <button
+                  type="button"
+                  onClick={() => onSessionSelect(session)}
+                  className={`
+                  w-full
+                  rounded-2xl
+                  p-3
+                  pr-11
+                  text-left
+                  ${
+                    activeSessionId === session.id
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }
+                `}
+                >
                 <div className="flex items-center gap-3 min-w-0">
                   <MessageSquare size={16} className="shrink-0" />
                   <div className="min-w-0">
@@ -297,9 +249,10 @@ export default function ChatSidebar({
                   </button>
                 </div>
               )}
-            </div>
-          ))}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

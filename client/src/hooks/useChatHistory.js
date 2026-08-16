@@ -10,15 +10,15 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useUIStore } from "../store/useUIStore";
 
-export function useChatSessions() {
+export function useChatSessions(agentId = null) {
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
 
   return useQuery({
-    queryKey: ["chat_sessions", user?.id, activeWorkspaceId],
+    queryKey: ["chat_sessions", user?.id, activeWorkspaceId, agentId],
     queryFn: async () => {
       if (!user || !activeWorkspaceId) return [];
-      const data = await getChatSessions(activeWorkspaceId, user.id);
+      const data = await getChatSessions(activeWorkspaceId, user.id, agentId);
       
       // Map it to match the old store format closely
       return data.map(session => ({
@@ -39,7 +39,7 @@ export function useChatMessages(sessionId) {
   return useQuery({
     queryKey: ["chat_messages", sessionId],
     queryFn: async () => {
-      if (!sessionId) return [];
+      if (!sessionId || sessionId.startsWith("optimistic-session")) return [];
       const msgs = await getChatMessages(sessionId);
       // Map steps from DB (already parsed JSON from JSONB column) onto each message
       return msgs.map(msg => ({
@@ -47,7 +47,7 @@ export function useChatMessages(sessionId) {
         steps: msg.steps || null
       }));
     },
-    enabled: !!sessionId,
+    enabled: !!sessionId && !sessionId.startsWith("optimistic-session"),
   });
 }
 
@@ -73,35 +73,64 @@ export function useChatMutations() {
         updatedAt: data.updated_at
       };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
+    onSuccess: (newSession, variables) => {
+      const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
+      queryClient.setQueryData(
+        ["chat_sessions", user?.id, activeWorkspaceId, variables.agentId || null],
+        (old = []) => {
+          if (old.some(s => s.id === newSession.id)) return old;
+          return [newSession, ...old];
+        }
+      );
     }
   });
 
   const renameSession = useMutation({
     mutationFn: async ({ id, title }) => {
       await updateChatSession(id, { title });
+      return { id, title };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
+    onSuccess: (data) => {
+      queryClient.setQueriesData({ queryKey: ["chat_sessions", user?.id] }, (oldData) => {
+        if (!oldData) return oldData;
+        return oldData.map(session => {
+          if (session.id === data.id) {
+            return { ...session, title: data.title };
+          }
+          return session;
+        });
+      });
     }
   });
 
   const togglePinSession = useMutation({
     mutationFn: async ({ id, pinned }) => {
       await updateChatSession(id, { pinned });
+      return { id, pinned };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
+    onSuccess: (data) => {
+      queryClient.setQueriesData({ queryKey: ["chat_sessions", user?.id] }, (oldData) => {
+        if (!oldData) return oldData;
+        return oldData.map(session => {
+          if (session.id === data.id) {
+            return { ...session, pinned: data.pinned };
+          }
+          return session;
+        });
+      });
     }
   });
 
   const deleteSession = useMutation({
     mutationFn: async (id) => {
       await deleteChatSession(id);
+      return id;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
+    onSuccess: (deletedSessionId) => {
+      queryClient.setQueriesData({ queryKey: ["chat_sessions", user?.id] }, (oldData) => {
+        if (!oldData) return oldData;
+        return oldData.filter(session => session.id !== deletedSessionId);
+      });
     }
   });
 
@@ -117,9 +146,31 @@ export function useChatMutations() {
         
       return data;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["chat_messages", variables.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ["chat_sessions", user?.id] });
+    onSuccess: (newData, variables) => {
+      const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
+
+      // 1. Direct update to the messages cache for this session
+      queryClient.setQueryData(["chat_messages", variables.sessionId], (old = []) => {
+        const formatted = {
+          ...newData,
+          steps: newData.steps || null
+        };
+        if (old.some(m => m.id === formatted.id)) return old;
+        return [...old, formatted];
+      });
+
+      // 2. Direct update to the sessions cache to bump the updatedAt timestamp
+      queryClient.setQueryData(["chat_sessions", user?.id, activeWorkspaceId, variables.agentId || null], (old = []) => {
+        return old.map(session => {
+          if (session.id === variables.sessionId) {
+            return {
+              ...session,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return session;
+        });
+      });
     }
   });
 

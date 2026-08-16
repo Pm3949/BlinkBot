@@ -312,7 +312,7 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
             RETURNING id;
             """,
             (
-                "Network Manager", 
+                f"Network Manager ({name})", 
                 "The central router agent for this network.", 
                 "groq", 
                 "llama-3.3-70b-versatile",

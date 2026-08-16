@@ -33,7 +33,6 @@ export default function ChatPage() {
 
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
-  const { data: standaloneAgents = [], isLoading: isLoadingAgents } = useAgents(activeWorkspaceId);
   const { data: projects = [], isLoading: isLoadingProjects } = useAgentProjects(activeWorkspaceId);
   const [activeAgentId, setActiveAgentId] = useState("");
   const [activeSubAgentDetails, setActiveSubAgentDetails] = useState(null);
@@ -50,6 +49,9 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const selectedAgentId =
+    activeAgentId || projects[0]?.id || "";
+
   const {
     activeSessionId,
     activeSession,
@@ -64,21 +66,14 @@ export default function ChatPage() {
     deleteSession,
     pendingApproval,
     sendApprovalResponse,
-  } = useChat();
+    isLoadingSessions,
+  } = useChat(selectedAgentId);
 
-
-  const selectedAgentId =
-    activeAgentId || activeSession?.agentId || standaloneAgents[0]?.id || "";
-
-  // Since we only have standaloneAgents and activeAgentId could be a sub-agent, 
-  // activeAgent needs to fetch from the server if not in standaloneAgents.
-  // Actually, we should fetch the specific agent details if it's not standalone,
-  // but for chat purposes we just need name/language. Let's pass a placeholder if not found locally.
+  // activeAgent resolves to the currently selected network project
   const activeAgent = useMemo(
-    () => standaloneAgents.find((agent) => agent.id === selectedAgentId) || 
-          (activeSubAgentDetails?.id === selectedAgentId ? activeSubAgentDetails : null) || 
-          { id: selectedAgentId, name: activeSession?.agentName || "Sub-Agent" },
-    [selectedAgentId, standaloneAgents, activeSession, activeSubAgentDetails],
+    () => projects.find((project) => project.id === selectedAgentId) || 
+          { id: selectedAgentId, name: activeSession?.agentName || "Network Manager" },
+    [selectedAgentId, projects, activeSession],
   );
 
   useEffect(() => {
@@ -87,18 +82,10 @@ export default function ChatPage() {
     }
   }, [activeAgent]);
 
-  const selectedAgentSessions = useMemo(
-    () =>
-      sessions.filter(
-        (session) =>
-          String(session.agentId || "general") === String(selectedAgentId),
-      ),
-    [sessions, selectedAgentId],
-  );
+  const selectedAgentSessions = sessions;
 
-  const isActiveSessionForSelectedAgent =
-    String(activeSession?.agentId || "general") === String(selectedAgentId);
-  const visibleMessages = isActiveSessionForSelectedAgent ? messages : [];
+  const isActiveSessionForSelectedAgent = true;
+  const visibleMessages = messages;
 
   useEffect(() => {
     scrollToBottom();
@@ -107,20 +94,22 @@ export default function ChatPage() {
   const handleAgentSelect = (agent) => {
     setActiveAgentId(agent.id);
     setActiveSubAgentDetails(agent);
-    
-    const latestAgentSession = sessions
-      .filter(
-        (session) => String(session.agentId || "general") === String(agent.id),
-      )
-      .sort(
+    selectSession(null);
+  };
+
+  // Auto-select the latest session when the sessions list loads for a selected agent
+  useEffect(() => {
+    if (sessions.length > 0 && !activeSessionId) {
+      const latest = [...sessions].sort(
         (first, second) =>
           Number(Boolean(second.pinned)) - Number(Boolean(first.pinned)) ||
-          new Date(second.updatedAt).getTime() -
-            new Date(first.updatedAt).getTime(),
+          new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime(),
       )[0];
-
-    selectSession(latestAgentSession?.id || null);
-  };
+      if (latest) {
+        selectSession(latest.id);
+      }
+    }
+  }, [sessions, activeSessionId, selectSession]);
 
   const handleNewChat = () => {
     startNewChat({
@@ -152,7 +141,6 @@ export default function ChatPage() {
     <div className="flex h-dvh w-screen overflow-hidden bg-background">
       {isSidebarOpen && (
         <ChatSidebar
-          standaloneAgents={standaloneAgents}
           projects={projects}
           activeAgentId={selectedAgentId}
           activeSessionId={isActiveSessionForSelectedAgent ? activeSessionId : null}
@@ -163,6 +151,8 @@ export default function ChatPage() {
           onRenameSession={renameSession}
           onTogglePinSession={togglePinSession}
           onDeleteSession={deleteSession}
+          isLoadingAgents={isLoadingProjects}
+          isLoadingSessions={isLoadingSessions}
         />
       )}
 
@@ -216,27 +206,35 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
           <VerificationBanner onRetry={handleSend} />
           <div className="max-w-6xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
-            {isLoadingAgents && <LoadingSkeleton count={2} className="h-24" />}
+            {isLoadingProjects && <LoadingSkeleton count={2} className="h-24" />}
 
-            {!isLoadingAgents && standaloneAgents.length === 0 && projects.length === 0 && (
+            {!isLoadingProjects && projects.length === 0 && (
               <div className="text-sm text-muted-foreground">
-                Create an agent or network before starting a chat.
+                Create a network before starting a chat.
               </div>
             )}
 
-            {!isLoadingAgents &&
-              (standaloneAgents.length > 0 || projects.length > 0) &&
+            {!isLoadingProjects &&
+              projects.length > 0 &&
               visibleMessages.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center mt-8">
-                <h3 className="font-semibold text-foreground">
-                  {activeAgent ? activeAgent.name : "Start a chat"}
-                </h3>
+                activeSessionId?.startsWith("optimistic-session") ? (
+                  <div className="flex flex-col items-center justify-center flex-1 py-12">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                    <p className="mt-4 text-sm text-muted-foreground animate-pulse">Creating new chat session...</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center mt-8">
+                    <h3 className="font-semibold text-foreground">
+                      {activeAgent ? activeAgent.name : "Start a chat"}
+                    </h3>
 
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Select a chat from history or start a new chat with this agent.
-                </p>
-              </div>
-            )}
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Select a chat from history or start a new chat with this network.
+                    </p>
+                  </div>
+                )
+              )
+            }
 
             {visibleMessages.map((message) => (
               <MessageBubble

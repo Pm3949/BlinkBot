@@ -39,51 +39,33 @@ from database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import uuid
 
-async def get_chat_sessions(workspace_id: str, user_id: str):
+async def get_chat_sessions(workspace_id: str, user_id: str, agent_id: str = None):
     """
-    Retrieves all chat sessions for a specific user and workspace.
+    Retrieves chat sessions for a specific user and workspace, optionally filtered by agent.
 
     Purpose:
         Fetches the user's chat history for display in the sidebar. Includes the linked
         agent's name for clarity and orders them by pinned status (highest priority)
         and then by update date.
-
-    Parameters:
-        workspace_id (str): The ID of the workspace containing the chat sessions.
-        user_id (str): The unique database identifier of the user who owns the sessions.
-
-    Returns:
-        list of tuples: A list of session records. Each record contains:
-            - id (str): Session UUID.
-            - agent_id (str): Associated agent's UUID.
-            - title (str): The title/header of the conversation.
-            - pinned (bool): True if the session is pinned to the top.
-            - created_at (datetime): Creation timestamp.
-            - updated_at (datetime): Last active timestamp.
-            - agent_name (str | None): Name of the agent (retrieved via LEFT JOIN).
-
-    Side Effects / State Changes:
-        - None. Read-only.
-
-    Errors / Exceptions:
-        - May raise database-related errors.
     """
     # Open database connection in a read-only transaction (commit=False).
     async with get_db_cursor_async(commit=False) as cursor:
-        # Perform query in a thread pool. We perform a LEFT JOIN from `chat_sessions`
-        # to `agents` to query the agent name. Even if the agent was deleted, the
-        # session details will still return with a Null agent name.
-        # Order is DESC for pinned (True comes before False) and updated_at DESC (newest first).
-        await run_in_threadpool(
-            cursor.execute,
-            """
+        query = """
             SELECT s.id, s.agent_id, s.title, s.pinned, s.created_at, s.updated_at, a.name as agent_name
             FROM chat_sessions s
             LEFT JOIN agents a ON s.agent_id = a.id
             WHERE s.workspace_id = %s AND s.user_id = %s
-            ORDER BY s.pinned DESC, s.updated_at DESC
-            """,
-            (workspace_id, user_id)
+        """
+        params = [workspace_id, user_id]
+        if agent_id:
+            query += " AND (s.agent_id = %s OR s.agent_id IN (SELECT id FROM agents WHERE project_id = %s))"
+            params.extend([agent_id, agent_id])
+        query += " ORDER BY s.pinned DESC, s.updated_at DESC"
+
+        await run_in_threadpool(
+            cursor.execute,
+            query,
+            tuple(params)
         )
         # Fetch and return all matching rows.
         return await run_in_threadpool(cursor.fetchall)

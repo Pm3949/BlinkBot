@@ -33,34 +33,16 @@ from utils.logger import get_department_logger
 logger = get_department_logger("agent")
 
 
-async def handle_get_chat_sessions(workspace_id: str, user_id: str):
+async def handle_get_chat_sessions(workspace_id: str, user_id: str, agent_id: str = None):
     """
-    Retrieves the list of all chat sessions for a specific user within a workspace.
-    Fleshes out raw database rows and formats them into serialized dictionaries.
-
-    Parameters:
-        workspace_id (str): The unique database UUID of the active workspace.
-        user_id (str): The unique database UUID of the target user.
-
-    Returns:
-        list: A list of session dictionaries, containing:
-            - 'id': Session UUID.
-            - 'agent_id': Linked agent UUID.
-            - 'title': Session label string.
-            - 'pinned': Boolean flag if pinned to top.
-            - 'created_at': ISO-formatted date string.
-            - 'updated_at': ISO-formatted date string.
-            - 'agent_name': Name of the agent (falls back to "General").
-
-    Exceptions Raised:
-        HTTPException(500): Raised if any SQL query fails.
+    Retrieves the list of chat sessions for a user, optionally filtered by agent_id.
     """
     # Log information indicating retrieval is initiated
-    logger.info(f"Retrieving chat sessions list for workspace ID: {workspace_id} (User ID: {user_id})")
+    logger.info(f"Retrieving chat sessions list for workspace ID: {workspace_id} (User ID: {user_id}, Agent ID: {agent_id})")
     try:
         # Query database row collections matching user and workspace
         logger.debug("Executing chat sessions fetch query in database...")
-        rows = await chat_history_repository.get_chat_sessions(workspace_id, user_id)
+        rows = await chat_history_repository.get_chat_sessions(workspace_id, user_id, agent_id)
         logger.debug(f"Retrieved {len(rows)} chat session records.")
         
         # Loop through rows and format timestamps to ISO 8601 strings
@@ -105,12 +87,28 @@ async def handle_create_chat_session(payload: dict):
     # Log session creation arguments
     logger.info(f"Creating a new chat session. Workspace ID: {payload.get('workspace_id')}")
     try:
+        agent_id = payload.get("agent_id")
+        
+        # Resolve project_id (if passed as agent_id) to the Network Manager's agent_id to avoid ForeignKeyViolation
+        if agent_id:
+            from database import get_db_cursor_async
+            from fastapi.concurrency import run_in_threadpool
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT id FROM agents WHERE project_id = %s AND name = 'Network Manager'",
+                    (agent_id,)
+                )
+                row = await run_in_threadpool(cursor.fetchone)
+                if row:
+                    agent_id = row[0]
+
         # Call repository method to insert record into database table
         logger.debug("Executing database creation query in chat_history_repository...")
         row = await chat_history_repository.create_chat_session(
             payload.get("user_id"),
             payload.get("workspace_id"),
-            payload.get("agent_id"),
+            agent_id,
             payload.get("title", "New chat")  # Fallback title if none provided
         )
         

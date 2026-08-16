@@ -3,10 +3,22 @@ import { toast } from "sonner";
 import { useChatSessions, useChatMessages, useChatMutations } from "./useChatHistory";
 import { useAgentSocket } from "./useAgentSocket";
 
-export function useChat() {
-  const { data: sessions = [] } = useChatSessions();
+export function useChat(agentId = null) {
+  const { data: dbSessions = [], isLoading: isLoadingSessions } = useChatSessions(agentId);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [optimisticSession, setOptimisticSession] = useState(null);
+
+  const sessions = useMemo(() => {
+    let list = [...dbSessions];
+    if (optimisticSession) {
+      const exists = dbSessions.some(s => s.id === optimisticSession.id);
+      if (!exists) {
+        list.push(optimisticSession);
+      }
+    }
+    return list;
+  }, [dbSessions, optimisticSession]);
 
   // Connection config
   const clientId = useMemo(() => {
@@ -24,7 +36,7 @@ export function useChat() {
     return `${baseWsUrl}/ws/chat/${clientId}`;
   }, [clientId]);
 
-  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, clearAgentSteps, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -40,31 +52,40 @@ export function useChat() {
   const { data: dbMessages = [] } = useChatMessages(activeSessionId);
   const { createSession, renameSession: renameDb, togglePinSession: pinDb, deleteSession: delDb, addMessage } = useChatMutations();
 
+  const [optimisticUserMessage, setOptimisticUserMessage] = useState(null);
+
   const messages = useMemo(() => {
-    if (!isTyping) return dbMessages;
-    return [...dbMessages, {
-      id: "optimistic-assistant",
-      role: "assistant",
-      content: agentTextChunks || "",
-      status: agentStatus,
-      steps: agentSteps,
-    }];
-  }, [dbMessages, isTyping, agentTextChunks, agentStatus, agentSteps]);
+    let list = [...dbMessages];
+    if (optimisticUserMessage) {
+      list.push(optimisticUserMessage);
+    }
+    if (isTyping) {
+      list.push({
+        id: "optimistic-assistant",
+        role: "assistant",
+        content: agentTextChunks || "",
+        status: agentStatus,
+        steps: agentSteps,
+      });
+    }
+    return list;
+  }, [dbMessages, optimisticUserMessage, isTyping, agentTextChunks, agentStatus, agentSteps]);
 
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {
     const handleStreamEnd = async (e) => {
-       setIsTyping(false);
        if (activeSessionId) {
           const finalContent = e.detail?.content || '';
           const finalSteps = e.detail?.steps || null;
           if (finalContent) {
             try {
+              // Wait for the message to be saved to DB and cache invalidated first
               await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: finalContent, latency: 0, steps: finalSteps });
             } catch (err) {
               console.error("Database save failed for assistant message:", err);
             }
           }
+          setIsTyping(false); // Now set typing to false, swapping the optimistic bubble for the DB bubble
           clearTextChunks();
        }
     };
@@ -72,14 +93,37 @@ export function useChat() {
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
   }, [activeSessionId, addMessage, clearTextChunks]);
 
+  // Clear optimistic user message if the session changes
+  useEffect(() => {
+    setOptimisticUserMessage(null);
+  }, [activeSessionId]);
 
-  const startNewChat = async ({ agentId, agentName } = {}) => {
-    try {
-      const newSession = await createSession.mutateAsync({ agentId, title: "New chat" });
-      setActiveSessionId(newSession.id);
-    } catch (e) {
-      toast.error("Failed to start new chat");
-    }
+
+  const startNewChat = ({ agentId, agentName } = {}) => {
+    const tempId = "optimistic-session-" + Date.now();
+    setOptimisticSession({
+      id: tempId,
+      agentId,
+      agentName: agentName || "General",
+      title: "New chat",
+      updatedAt: new Date().toISOString()
+    });
+    setActiveSessionId(tempId);
+
+    createSession.mutate(
+      { agentId, title: "New chat" },
+      {
+        onSuccess: (newSession) => {
+          setActiveSessionId(newSession.id);
+          setOptimisticSession(null);
+        },
+        onError: () => {
+          toast.error("Failed to start new chat");
+          setOptimisticSession(null);
+          setActiveSessionId(null);
+        }
+      }
+    );
   };
 
   const sendMessage = async ({ agentId, agentName, content, language }) => {
@@ -90,23 +134,80 @@ export function useChat() {
     }
     if (!message) return;
 
+    // 1. Instantly update UI states (snappy, 0ms latency)
+    clearTextChunks();
+    clearAgentSteps();
+    setIsTyping(true);
+    setOptimisticUserMessage({ id: "optimistic-user-" + Date.now(), role: "user", content: message });
+
     let currentSessionId = activeSessionId;
-    const belongsToAgent = sessions.find(s => s.id === currentSessionId)?.agentId === agentId;
     
-    if (!currentSessionId || !belongsToAgent) {
-      const newSession = await createSession.mutateAsync({ agentId, title: message.slice(0, 40) });
-      currentSessionId = newSession.id;
-      setActiveSessionId(currentSessionId);
+    // 2. If no session exists, create optimistic session and save to DB in background
+    if (!currentSessionId) {
+      const tempId = "optimistic-session-" + Date.now();
+      setOptimisticSession({
+        id: tempId,
+        agentId,
+        agentName: agentName || "General",
+        title: message.slice(0, 40),
+        updatedAt: new Date().toISOString()
+      });
+      setActiveSessionId(tempId);
+
+      // Trigger DB session creation in the background
+      createSession.mutate(
+        { agentId, title: message.slice(0, 40) },
+        {
+          onSuccess: (newSession) => {
+            setOptimisticSession(null);
+            setActiveSessionId(newSession.id);
+            
+            // Save message and run WebSocket request on the newly created session
+            addMessage.mutate(
+              { sessionId: newSession.id, role: "user", content: message, agentId },
+              {
+                onSuccess: () => {
+                  setOptimisticUserMessage(null);
+                }
+              }
+            );
+
+            sendChatRequest({
+                agent_id: agentId,
+                agent_name: agentName,
+                message,
+                history: [],
+                language,
+                session_id: newSession.id
+            });
+          },
+          onError: () => {
+            toast.error("Failed to create chat session");
+            setIsTyping(false);
+            setOptimisticUserMessage(null);
+            setOptimisticSession(null);
+            setActiveSessionId(null);
+          }
+        }
+      );
+      return;
     } else {
        if (dbMessages.length === 0 && activeSession?.title === "New chat") {
            renameDb.mutateAsync({ id: currentSessionId, title: message.slice(0, 40) });
        }
     }
 
-    setIsTyping(true);
-
-    await addMessage.mutateAsync({ sessionId: currentSessionId, role: "user", content: message });
+    // 3. Save message to database in the background (fire-and-forget)
+    addMessage.mutate(
+      { sessionId: currentSessionId, role: "user", content: message, agentId },
+      {
+        onSuccess: () => {
+          setOptimisticUserMessage(null);
+        }
+      }
+    );
     
+    // 4. Send WebSocket request
     const history = dbMessages.map(({ role, content }) => ({ role, content }));
     sendChatRequest({
         agent_id: agentId,
@@ -127,8 +228,22 @@ export function useChat() {
     if (session) pinDb.mutateAsync({ id, pinned: !session.pinned });
   };
   const deleteSession = async (id) => {
-    await delDb.mutateAsync(id);
-    if (activeSessionId === id) setActiveSessionId(null);
+    // 1. Optimistically switch active session if deleting the current one
+    if (activeSessionId === id) {
+      const remaining = sessions.filter(s => s.id !== id);
+      if (remaining.length > 0) {
+        setActiveSessionId(remaining[0].id);
+      } else {
+        setActiveSessionId(null);
+      }
+    }
+
+    // 2. Run backend deletion in the background
+    try {
+      await delDb.mutateAsync(id);
+    } catch (e) {
+      toast.error("Failed to delete chat session");
+    }
   };
 
   return {
@@ -145,5 +260,6 @@ export function useChat() {
     deleteSession,
     pendingApproval,
     sendApprovalResponse,
+    isLoadingSessions,
   };
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { useTraceStore } from '../store/useTraceStore';
 
 export const useAgentSocket = (url) => {
   const [isConnected, setIsConnected] = useState(false);
@@ -58,7 +59,6 @@ export const useAgentSocket = (url) => {
       if (typeof event.data === 'string') {
         try {
           const data = JSON.parse(event.data);
-          const { useTraceStore } = await import('../store/useTraceStore');
           
           if (data.type === 'text_chunk') {
             textAccRef.current += data.content;
@@ -72,16 +72,29 @@ export const useAgentSocket = (url) => {
               const toolName = data.status.replace('tool_done_', '');
               window.dispatchEvent(new CustomEvent('agent_tool_end', { detail: { tool_name: toolName } }));
             }
+            
+            // Add step to Trace Store so it is visible in the Execution Trace panel
+            useTraceStore.getState().addStep({
+              type: data.status.includes('tool_') ? 'tool' : 'routing',
+              agentName: activeAgentNameRef.current,
+              action: data.label || 'Executing Step',
+              logs: data.label || data.status,
+              payload: data
+            });
+
             // Upsert: update label if same status already exists, otherwise append
             setAgentSteps(prev => {
-              const exists = prev.find(s => s.status === data.status);
+              // Mark all previous steps as done since a new one is executing
+              const markedPrev = prev.map(s => ({ ...s, done: true }));
+              // Match by both status and label to distinguish multiple steps of same type
+              const exists = markedPrev.find(s => s.status === data.status && s.label === data.label);
               if (exists) {
-                return prev.map(s => s.status === data.status
-                  ? { ...s, label: data.label, done: false }
+                return markedPrev.map(s => (s.status === data.status && s.label === data.label)
+                  ? { ...s, done: false } // only the current active step remains loading
                   : s
                 );
               }
-              return [...prev, { status: data.status, label: data.label, done: false }];
+              return [...markedPrev, { status: data.status, label: data.label, done: false }];
             });
           } else if (data.type === 'status') {
             setAgentStatus(data.content);
@@ -203,6 +216,7 @@ export const useAgentSocket = (url) => {
       setAgentTextChunks(''); // clear on new send
       setAgentStatus('');
       setAgentSteps([]);     // reset steps for new message
+      useTraceStore.getState().clearSteps(); // clear the trace log panel for the new request
       textAccRef.current = '';
       socketRef.current.send(JSON.stringify({ type: 'chat_request', payload }));
     } else {
@@ -222,6 +236,11 @@ export const useAgentSocket = (url) => {
     textAccRef.current = '';
     setAgentTextChunks('');
     setAgentStatus('');
+  }, []);
+
+  const clearAgentSteps = useCallback(() => {
+    agentStepsRef.current = [];
+    _setAgentSteps([]);
   }, []);
 
   const sendApprovalResponse = useCallback((decision, toolCallId) => {
@@ -244,6 +263,7 @@ export const useAgentSocket = (url) => {
     agentSteps,
     sendChatRequest,
     clearTextChunks,
+    clearAgentSteps,
     pendingApproval,
     sendApprovalResponse
   };

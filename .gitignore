@@ -1,5 +1,6 @@
 # --- Environment Files (KEEP SECRET) ---
 .env
+dev.env
 .env.local
 .env.development.local
 .env.test.local
@@ -37,3 +38,5 @@ temp_uploads/
 *.sqlite
 server_start.txt
 next_features.txt
+local_schema.sql
+supabase_data.sql

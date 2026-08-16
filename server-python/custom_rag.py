@@ -467,7 +467,7 @@ class CustomRAGEngine:
     def vectorize(self, chunks: list, model_name: str = "all-MiniLM-L6-v2") -> list:
         """
         Converts text chunks into dense vector embeddings.
-        Uses Hugging Face Serverless Inference API to prevent OOM errors on cloud hosts like Render.
+        Uses Cloudflare Workers AI or Hugging Face Serverless Inference API to prevent OOM errors on cloud hosts like Render.
 
         Parameters:
             chunks (list of str): Input text chunks.
@@ -478,13 +478,41 @@ class CustomRAGEngine:
         """
         logger.info("Generating vectors for %s chunks...", len(chunks))
         
+        # 1. Try Cloudflare Workers AI if credentials are set
+        cf_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        cf_api_token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+        if cf_account_id and cf_api_token:
+            logger.info("Using Cloudflare Workers AI for embeddings...")
+            try:
+                cf_model = "@cf/baai/bge-small-en-v1.5"
+                cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model}"
+                cf_headers = {"Authorization": f"Bearer {cf_api_token}"}
+                response = requests.post(
+                    cf_url,
+                    headers=cf_headers,
+                    json={"text": chunks},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    res_json = response.json()
+                    if res_json.get("success") and "result" in res_json:
+                        embeddings = res_json["result"]["data"]
+                        # Ensure it is a 2D list of floats
+                        if len(chunks) == 1 and embeddings and not isinstance(embeddings[0], list):
+                            return [embeddings]
+                        return embeddings
+                logger.warning(f"Cloudflare Workers AI failed with status {response.status_code}: {response.text}. Falling back to Hugging Face / Local.")
+            except Exception as e:
+                logger.error(f"Error querying Cloudflare Workers AI API: {str(e)}. Falling back to Hugging Face / Local.")
+
+        # 2. Fallback to Hugging Face Serverless Inference API
         # Standardize model name for Hugging Face
         hf_model = model_name
         if hf_model == "all-MiniLM-L6-v2":
             hf_model = "sentence-transformers/all-MiniLM-L6-v2"
             
         api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{hf_model}"
-        hf_token = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
+        hf_token = (os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or "").strip()
         headers = {}
         if hf_token:
             headers["Authorization"] = f"Bearer {hf_token}"
@@ -507,13 +535,8 @@ class CustomRAGEngine:
         except Exception as e:
             logger.error(f"Error querying Hugging Face cloud embedding API: {str(e)}. Falling back to local SentenceTransformer.")
             
-        # Fallback to local model if API call fails
-        try:
-            model = self._get_model(model_name)
-            embeddings = model.encode(chunks).tolist()
-            return embeddings
-        except Exception as exc:
-            raise RuntimeError(f"Failed to generate embeddings: {exc}") from exc
+        # Raise an error if both Cloudflare and Hugging Face fail
+        raise RuntimeError("Cloud vectorization failed: Cloudflare and Hugging Face APIs are both unreachable or failed.")
 
     def hybrid_search(
         self,
@@ -600,7 +623,7 @@ class CustomRAGEngine:
 
     def rerank_documents(self, query: str, documents: list, top_k: int = 5, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list:
         """
-        Reranks document chunks against a query using a CrossEncoder model.
+        Reranks document chunks against a query using Cloudflare Workers AI or local CrossEncoder.
 
         Parameters:
             query (str): Query string.
@@ -613,7 +636,45 @@ class CustomRAGEngine:
         """
         if not documents:
             return []
-            
+
+        # Import decrypt_key to decrypt documents before scoring them.
+        from core.security import decrypt_key
+
+        # 1. Try Cloudflare Workers AI Reranker if credentials are set
+        cf_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        cf_api_token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+        if cf_account_id and cf_api_token:
+            logger.info("Using Cloudflare Workers AI for reranking...")
+            try:
+                cf_model = "@cf/baai/bge-reranker-base"
+                cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model}"
+                cf_headers = {"Authorization": f"Bearer {cf_api_token}"}
+                
+                decrypted_docs = [decrypt_key(doc[0]) or doc[0] for doc in documents]
+                response = requests.post(
+                    cf_url,
+                    headers=cf_headers,
+                    json={"query": query, "documents": decrypted_docs},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    res_json = response.json()
+                    if res_json.get("success") and "result" in res_json:
+                        results = res_json["result"]
+                        # Cloudflare returns: [{"index": idx, "score": score}, ...]
+                        doc_scores = []
+                        for item in results:
+                            idx = item["index"]
+                            score = item["score"]
+                            doc_scores.append((documents[idx], score))
+                        
+                        doc_scores.sort(key=lambda x: x[1], reverse=True)
+                        return [doc for doc, score in doc_scores[:top_k]]
+                logger.warning(f"Cloudflare Workers AI reranking failed with status {response.status_code}: {response.text}. Falling back to local/original order.")
+            except Exception as e:
+                logger.error(f"Error querying Cloudflare Workers AI Reranker API: {str(e)}. Falling back to local/original order.")
+
+        # 2. Fallback to local CrossEncoder model
         # Retrieve the CrossEncoder model.
         reranker = self._get_reranker_model(model_name)
         # Fallback if the model fails to load.
@@ -622,9 +683,6 @@ class CustomRAGEngine:
             return documents[:top_k]
             
         logger.info(f"Reranking {len(documents)} chunks...")
-        
-        # Import decrypt_key to decrypt documents before scoring them.
-        from core.security import decrypt_key
         
         pairs = []
         # Prepare inputs for the CrossEncoder: [query, doc_text] pairs.

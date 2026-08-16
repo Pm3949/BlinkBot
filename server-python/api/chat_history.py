@@ -79,30 +79,14 @@ class ChatMessageCreate(BaseModel):
 # ==========================================
 
 @router.get("/api/chat_sessions/{workspace_id}")
-async def get_chat_sessions(workspace_id: str, current_user: dict = Depends(get_current_user)):
+async def get_chat_sessions(workspace_id: str, agent_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """
-    Retrieves all chat sessions for a user within a target workspace.
-
-    Purpose:
-        Fetches active chat threads to populate the UI sidebar.
-
-    Parameters:
-        workspace_id (str): UUID of the workspace.
-        current_user (dict): JWT details.
-
-    Returns:
-        list of dict: Chat sessions containing titles, creation dates, and pin statuses.
-
-    Side Effects / State Changes:
-        - None. Read-only query.
-
-    Errors / Exceptions:
-        - Raises 401 Unauthorized if verification checks fail.
+    Retrieves all chat sessions for a user within a target workspace, optionally filtered by agent.
     """
     # Extract the user's UUID.
     user_id = current_user["sub"]
     # Retrieve sessions via the handler.
-    return await handle_get_chat_sessions(workspace_id, user_id)
+    return await handle_get_chat_sessions(workspace_id, user_id, agent_id)
 
 
 @router.post("/api/chat_sessions")

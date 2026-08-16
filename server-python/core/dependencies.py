@@ -77,7 +77,7 @@ def warm_up_models_background():
     def load():
         try:
             # Skip warming up local models if using cloud inference
-            if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("CLOUD_MODE", "").lower() == "true":
+            if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("CLOUDFLARE_API_TOKEN") or os.getenv("CLOUD_MODE", "").lower() == "true":
                 logger.info("☁️ Cloud mode detected. Skipping local model preloading to conserve RAM.")
                 return
 
