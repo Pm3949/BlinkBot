@@ -22,6 +22,28 @@ class ToolUpdate(BaseModel):
     configuration: dict
     code_content: Optional[str] = None
 
+class DatabaseTestPayload(BaseModel):
+    connection_string: str
+
+@router.post("/api/tools/test-database")
+async def test_database_connection(payload: DatabaseTestPayload, current_user: dict = Depends(get_current_user)):
+    try:
+        from langchain_community.utilities import SQLDatabase
+        from fastapi.concurrency import run_in_threadpool
+        
+        def do_connect():
+            # Initialize with 0 sample rows to verify connection quickly without fetching schema info
+            SQLDatabase.from_uri(payload.connection_string, sample_rows_in_table_info=0)
+            
+        await run_in_threadpool(do_connect)
+        return {"status": "success", "message": "Connection established successfully!"}
+    except Exception as e:
+        logger.warning(f"Database connection test failed: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Connection failed: {str(e)}"}
+        )
+
 @router.get("/api/workspaces/{workspace_id}/tools")
 async def get_workspace_tools(workspace_id: str, current_user: dict = Depends(get_current_user)):
     try:

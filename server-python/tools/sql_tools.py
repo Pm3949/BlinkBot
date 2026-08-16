@@ -109,7 +109,7 @@ def create_sql_tools(connection_string: str, db_name: str) -> List[BaseTool]:
     # ------------------------------------------
     # 1. LIST TABLES TOOL
     # ------------------------------------------
-    @tool(name=f"list_tables_{clean_db_name}")
+    @tool(f"list_tables_{clean_db_name}")
     def list_tables(tool_input: str = "") -> str:
         """List all available tables in the database."""
         try:
@@ -121,7 +121,7 @@ def create_sql_tools(connection_string: str, db_name: str) -> List[BaseTool]:
     # ------------------------------------------
     # 2. GET SCHEMA TOOL
     # ------------------------------------------
-    @tool(name=f"get_schema_{clean_db_name}")
+    @tool(f"get_schema_{clean_db_name}")
     def get_schema(table_names: str) -> str:
         """
         Get the schema and sample rows for the specified comma-separated tables.
@@ -138,7 +138,7 @@ def create_sql_tools(connection_string: str, db_name: str) -> List[BaseTool]:
     # ------------------------------------------
     # 3. EXECUTE SQL QUERY TOOL
     # ------------------------------------------
-    @tool(name=f"execute_sql_{clean_db_name}")
+    @tool(f"execute_sql_{clean_db_name}")
     def execute_sql(query: str) -> str:
         """
         Execute a raw SQL query against the database and return the results.

@@ -89,3 +89,19 @@ export async function detachToolFromAgent(agentId, toolId) {
   }
   return response.json();
 }
+
+export async function testDatabaseConnection(connectionString) {
+  const response = await fetch(`${API_URL}/api/tools/test-database`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ connection_string: connectionString })
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || errorData.detail || "Database connection test failed");
+  }
+  return response.json();
+}

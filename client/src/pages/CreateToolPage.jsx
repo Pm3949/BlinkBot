@@ -13,7 +13,7 @@ import {
   X
 } from "lucide-react";
 import { useUIStore } from "../store/useUIStore";
-import { createWorkspaceTool, updateWorkspaceTool, getWorkspaceTools } from "../services/workspaceToolsService";
+import { createWorkspaceTool, updateWorkspaceTool, getWorkspaceTools, testDatabaseConnection } from "../services/workspaceToolsService";
 import { toast } from "sonner";
 
 const PYTHON_BOILERPLATE = `from langchain_core.tools import tool
@@ -144,6 +144,7 @@ export default function CreateToolPage() {
   const [queryParams, setQueryParams] = useState([]);
   const [expectedOutput, setExpectedOutput] = useState("");
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+  const [isTestingDb, setIsTestingDb] = useState(false);
 
   // Database Config
   const [connectionString, setConnectionString] = useState("");
@@ -467,6 +468,37 @@ export default function CreateToolPage() {
       toast.error("Test failed. Check console for CORS or network errors.");
     } finally {
       setIsTestingWebhook(false);
+    }
+  };
+
+  const handleTestDb = async () => {
+    let connStr = connectionString;
+    if (dbMode === "form") {
+      if (!dbHost.trim() || !dbName.trim() || !dbUser.trim() || !dbPassword.trim()) {
+        toast.error("Please fill in all connection details before testing");
+        return;
+      }
+      connStr = `postgresql://${dbUser.trim()}:${dbPassword.trim()}@${dbHost.trim()}:${dbPort.trim()}/${dbName.trim()}`;
+    }
+    
+    if (!connStr.trim()) {
+      toast.error("Database connection string is required");
+      return;
+    }
+    
+    setIsTestingDb(true);
+    const id = toast.loading("Testing database connection...");
+    try {
+      const res = await testDatabaseConnection(connStr);
+      if (res.status === "success") {
+        toast.success(res.message || "Database connected successfully!", { id });
+      } else {
+        toast.error(res.message || "Connection failed", { id });
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to establish connection", { id });
+    } finally {
+      setIsTestingDb(false);
     }
   };
 
@@ -1162,6 +1194,17 @@ export default function CreateToolPage() {
                     </div>
                   </div>
                 )}
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleTestDb}
+                    disabled={isTestingDb}
+                    className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-sm transition rounded-xl flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isTestingDb ? "Testing Connection..." : "Test Connection"}
+                  </button>
+                </div>
 
                 <p className="text-[10px] text-muted-foreground leading-relaxed mt-2">
                   Credentials are stored securely. RAGMate agents will only execute read-only queries (SELECT) to retrieve Relational Database schemas and records.
