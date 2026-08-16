@@ -65,7 +65,7 @@ from fastapi import Request, Response
 # Import all modular feature routers from the api package.
 from api import (
     documents, analytics, admin, billing, chat, chat_history, workspaces, 
-    agents, chatbots, settings, feedback, notifications, meta_agent, 
+    agents, chatbots, settings, notifications, meta_agent, 
     demo, connectors, auth, oauth, models, workspace_tools
 )
 from slowapi.errors import RateLimitExceeded
@@ -271,7 +271,6 @@ app.include_router(workspaces.router)
 app.include_router(agents.router)
 app.include_router(chatbots.router)
 app.include_router(settings.router)
-app.include_router(feedback.router)
 app.include_router(notifications.router)
 app.include_router(meta_agent.router)
 app.include_router(demo.router)

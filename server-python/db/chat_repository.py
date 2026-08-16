@@ -51,63 +51,9 @@ logger = get_db_logger("chat_repository")
 async def fetch_temporary_memory_patch(agent_id: str) -> str:
     """
     Finds and compiles recent unresolved user negative feedback for an agent.
-
-    Purpose:
-        Retrieves comments left by users indicating where the agent gave bad or incorrect answers.
-        Formulates a system prompt instruction "patch" that lists past mistakes, acting as an active
-        feedback loop to instruct the agent not to repeat those errors.
-
-    Parameters:
-        agent_id (str): The unique database identifier of the agent.
-
-    Returns:
-        str: A formatted instruction string containing the corrections, or an empty string
-             if there are no open negative feedback reports (tickets).
-
-    Side Effects / State Changes:
-        - None. Read-only.
-
-    Errors / Exceptions:
-        - May raise database-related errors.
+    Retired: Always returns an empty string since the feedback system has been removed.
     """
-    # Open connection with commit=False (read-only).
-    async with get_db_cursor_async(commit=False) as cursor:
-        await run_in_threadpool(
-            cursor.execute,
-            "SELECT memory_enabled FROM agents WHERE id = %s",
-            (agent_id,)
-        )
-        res = await run_in_threadpool(cursor.fetchone)
-        if res and not res[0]:
-            return ""
-
-        # Query feedback tickets linked to this agent that have a status of 'open'.
-        # We perform an INNER JOIN with chat_messages to fetch the actual content of the flagged answer.
-        await run_in_threadpool(
-            cursor.execute,
-            """
-            SELECT f.category, f.comment_text, m.content
-            FROM message_feedback f
-            JOIN chat_messages m ON f.message_id = m.id
-            WHERE f.agent_id = %s AND f.status = 'open'
-            """,
-            (agent_id,)
-        )
-        # Fetch all matched rows.
-        open_tickets = await run_in_threadpool(cursor.fetchall)
-        # If the query returned empty results, return an empty string immediately.
-        if not open_tickets:
-            return ""
-            
-        # Compile user feedback comments into a descriptive instructions list.
-        patch = "\n\nCRITICAL TEMPORARY CORRECTIONS (USER FEEDBACK):\n"
-        patch += "The following errors were flagged in your previous answers. You MUST NOT repeat these mistakes and MUST incorporate these corrections in your responses:\n"
-        for cat, comment, msg_content in open_tickets:
-            # Truncate the original bad response to the first 50 characters to avoid flooding the context window.
-            short_msg = msg_content[:50] + "..." if msg_content else "Unknown message"
-            patch += f"- [Flagged {cat} in past answer: '{short_msg}']: {comment}\n"
-        
-        return patch
+    return ""
 
 
 async def get_agent_for_chat(agent_id: str):

@@ -10,7 +10,6 @@ import { usePrimaryWorkspace, useUserWorkspaces } from "../hooks/useSettings";
 import { useAuth } from "../context/AuthContext";
 import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
-import VerificationBanner from "../components/chat/VerificationBanner";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
 
@@ -204,7 +203,6 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
-          <VerificationBanner onRetry={handleSend} />
           <div className="max-w-6xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingProjects && <LoadingSkeleton count={2} className="h-24" />}
 

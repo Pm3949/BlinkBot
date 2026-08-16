@@ -230,7 +230,7 @@ async def get_analytics_top_chatbots(user_id: str):
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT c.settings->>'name' as name, c.message_count 
+            SELECT c.name, c.message_count 
             FROM chatbots c JOIN agents a ON c.agent_id = a.id 
             WHERE a.user_id = %s 
             ORDER BY c.message_count DESC LIMIT 5

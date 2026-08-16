@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAuthHeaders } from '../lib/api';
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, MessageSquare, Database, Cpu, Bot, ThumbsUp, Globe, Inbox, BarChart2 } from 'lucide-react';
+import { Activity, MessageSquare, Database, Cpu, Bot, Globe, BarChart2 } from 'lucide-react';
 import LoadingSkeleton from '../components/shared/LoadingSkeleton';
-import FeedbackInbox from '../components/team/FeedbackInbox';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -66,13 +65,8 @@ export default function AnalyticsPage() {
     );
   }
 
-  const { metrics, internalSeries, widgetSeries, topChatbots, feedbackStats, creditStats } = data;
+  const { metrics, internalSeries, widgetSeries, topChatbots, creditStats } = data;
   
-  const totalVotes = (feedbackStats?.upVotes || 0) + (feedbackStats?.downVotes || 0);
-  const positiveRatio = totalVotes > 0 
-    ? Math.round((feedbackStats.upVotes / totalVotes) * 100)
-    : 0;
-
   const bal = creditStats?.balance || 0;
   const estTokens = bal * 10000;
   const estTokensFormatted = estTokens >= 1000000 
@@ -89,7 +83,7 @@ export default function AnalyticsPage() {
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           <Activity className="text-primary" /> Analytics & Intelligence
         </h1>
-        <p className="text-muted-foreground mt-1">Monitor agent performance, user questions, and knowledge gap feedback.</p>
+        <p className="text-muted-foreground mt-1">Monitor agent performance, user questions, and wallet credit consumption.</p>
       </div>
 
       {/* Section Tabs */}
@@ -104,18 +98,6 @@ export default function AnalyticsPage() {
         >
           <BarChart2 size={18} />
           Overview & Usage
-        </button>
-
-        <button
-          onClick={() => setActiveTab('feedback')}
-          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-sm transition-colors border-b-2 ${
-            activeTab === 'feedback'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Inbox size={18} />
-          User Feedback & Knowledge Gaps
         </button>
 
         <button
@@ -173,16 +155,22 @@ export default function AnalyticsPage() {
                 {widgetSeries.length > 0 ? (
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={widgetSeries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                      <AreaChart data={widgetSeries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorMessages" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" vertical={false} />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+                        <YAxis stroke="#94a3b8" fontSize={11} allowDecimals={false} tickLine={false} axisLine={false} dx={-10} />
                         <Tooltip
                           contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
                           itemStyle={{ color: 'hsl(var(--foreground))' }}
                         />
-                        <Line type="monotone" dataKey="messages" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 8 }} />
-                      </LineChart>
+                        <Area type="monotone" dataKey="messages" stroke="#22c55e" strokeWidth={3} fillOpacity={1} fill="url(#colorMessages)" dot={{ r: 4, stroke: "#22c55e", strokeWidth: 2, fill: "hsl(var(--card))" }} activeDot={{ r: 7 }} />
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 ) : (
@@ -201,14 +189,20 @@ export default function AnalyticsPage() {
                   <div className="h-80 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={internalSeries} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                        <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+                        <defs>
+                          <linearGradient id="colorBar" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" vertical={false} />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+                        <YAxis stroke="#94a3b8" fontSize={11} allowDecimals={false} tickLine={false} axisLine={false} dx={-10} />
                         <Tooltip
                           contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
-                          cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
+                          cursor={{ fill: 'rgba(255, 255, 255, 0.04)', radius: 4 }}
                         />
-                        <Bar dataKey="messages" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="messages" fill="url(#colorBar)" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -285,74 +279,6 @@ export default function AnalyticsPage() {
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* TAB 2: USER FEEDBACK & KNOWLEDGE GAPS */}
-      {activeTab === 'feedback' && (
-        <div className="space-y-8 animate-fadeIn">
-          {/* Feedback Metrics Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <MetricCard
-              title="Positive Rating Ratio"
-              value={totalVotes > 0 ? `${positiveRatio}%` : '100%'}
-              icon={ThumbsUp}
-              colorClass="bg-emerald-500/10 text-emerald-500"
-            />
-            <MetricCard
-              title="Upvotes Received"
-              value={feedbackStats?.upVotes || 0}
-              icon={ThumbsUp}
-              colorClass="bg-blue-500/10 text-blue-500"
-            />
-            <MetricCard
-              title="Reported Knowledge Gaps"
-              value={feedbackStats?.downVotes || 0}
-              icon={Inbox}
-              colorClass="bg-amber-500/10 text-amber-500"
-            />
-          </div>
-
-          {/* Feedback Distribution Chart */}
-          <div className="glass-card p-6 border border-border/50">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <MessageSquare className="text-amber-500 w-5 h-5" /> Downvote Categories Distribution
-            </h3>
-            
-            {feedbackStats?.categoryDistribution?.length > 0 ? (
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={feedbackStats.categoryDistribution}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {feedbackStats.categoryDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
-                      itemStyle={{ color: 'hsl(var(--foreground))' }}
-                    />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                No categorized downvotes reported yet.
-              </p>
-            )}
-          </div>
-
-          {/* Full Knowledge Gaps Feedback Inbox Component */}
-          <FeedbackInbox />
         </div>
       )}
 

@@ -1,12 +1,9 @@
 
 import { useState, useEffect } from "react";
-import { Bot, User, Copy, Volume2, Square, Clock, ThumbsUp, ThumbsDown, Globe, FileText, BookOpen } from "lucide-react";
+import { Bot, User, Copy, Volume2, Square, Clock, Globe, FileText, BookOpen } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-
-import { useFeedback } from "../../hooks/useFeedback";
-import FeedbackModal from "./FeedbackModal";
 import { getAuthHeaders } from "../../lib/api";
 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -21,10 +18,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioRef = useState(new Audio())[0];
-  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isSourcesModalOpen, setIsSourcesModalOpen] = useState(false);
-  const [vote, setVote] = useState(null);
-  const { submitMutation } = useFeedback();
 
   const isMasterAgent = agent?.name?.toLowerCase().includes("master") && !content?.includes("[Routed to:");
 
@@ -33,33 +27,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
     ? Math.max(...sources.map((s) => s.relevance_percent ?? Math.round((s.similarity || 0) * 100)))
     : null;
 
-  const handleUpvote = async () => {
-    if (vote) return;
-    setVote("upvote");
-    toast.success("Thank you for your feedback!");
-  };
 
-  const handleDownvote = () => {
-    if (vote) return;
-    setIsFeedbackModalOpen(true);
-  };
-
-  const handleFeedbackSubmit = async (data) => {
-    try {
-      await submitMutation.mutateAsync({
-        message_id: id,
-        agent_id: agent?.id,
-        vote_type: "downvote",
-        category: data.category,
-        comment_text: data.comment_text,
-      });
-      setVote("downvote");
-      setIsFeedbackModalOpen(false);
-      toast.success("Feedback submitted! AI memory temporarily patched.");
-    } catch (e) {
-      toast.error("Failed to submit feedback.");
-    }
-  };
 
   useEffect(() => {
     return () => {
@@ -273,26 +241,6 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
                 </button>
 
                 <button
-                  onClick={handleUpvote}
-                  disabled={!!vote}
-                  type="button"
-                  className={`p-2 rounded-xl hover:bg-muted ${vote === "upvote" ? "text-green-500" : ""}`}
-                  title="Helpful response"
-                >
-                  <ThumbsUp size={16} />
-                </button>
-
-                <button
-                  onClick={handleDownvote}
-                  disabled={!!vote}
-                  type="button"
-                  className={`p-2 rounded-xl hover:bg-muted ${vote === "downvote" ? "text-destructive" : ""}`}
-                  title="Report issue"
-                >
-                  <ThumbsDown size={16} />
-                </button>
-
-                <button
                   onClick={handleTTS}
                   type="button"
                   className={`p-2 rounded-xl hover:bg-muted ${isSpeaking ? "text-primary" : ""}`}
@@ -343,12 +291,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
         </div>
       )}
       
-      <FeedbackModal
-        isOpen={isFeedbackModalOpen}
-        onClose={() => setIsFeedbackModalOpen(false)}
-        onSubmit={handleFeedbackSubmit}
-        isSubmitting={submitMutation.isPending}
-      />
+
 
       {/* Dynamic RAG Sources Citation Inspector Modal */}
       {isSourcesModalOpen && hasSources && (
