@@ -915,7 +915,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     if isinstance(output, dict):
                         routed_name = output.get("routed_agent_name")
                         routed_id = output.get("active_agent_id")
-                        if routed_id:
+                        if routed_name == gateway_name:
+                            # Remove the last redundant "Deciding which agent to use..." step
+                            if steps_list and steps_list[-1]["label"] == "Deciding which agent to use...":
+                                steps_list.pop()
+                        elif routed_id:
                             await safe_send(
                                 {
                                     "type": "routing_decision",
