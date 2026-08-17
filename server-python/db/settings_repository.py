@@ -140,6 +140,9 @@ async def get_effective_user_settings(user_id: str):
         member of a workspace whose owner has enabled key-sharing (`share_keys = TRUE`). If so,
         resolves and returns the owner's keys as the active configuration.
 
+        Both DB queries (user keys + owner keys) are fired in PARALLEL using asyncio.gather()
+        to eliminate the sequential wait that existed in the previous implementation.
+
     Parameters:
         user_id (str): The unique database user UUID.
 
@@ -152,35 +155,42 @@ async def get_effective_user_settings(user_id: str):
     Errors / Exceptions:
         - May raise database-related errors.
     """
-    # Step 1: Fetch the user's own settings.
-    settings = await get_user_settings(user_id)
-    # If the user has configured at least one API key, return their settings directly.
-    # We check indices 0 to 6 (the credential slots).
-    if settings and any(settings[i] for i in range(7)):
-        return settings
-        
-    # Step 2: Fallback query if no personal keys are configured.
-    # Join user_settings (s) with workspaces (w) on s.user_id = w.owner_id,
-    # and join with workspace_members (m) on w.id = m.workspace_id.
-    # Filters where the caller is a member (m.user_id = %s) and the owner allows key sharing (s.share_keys = TRUE).
-    async with get_db_cursor_async(commit=False) as cursor:
-        await run_in_threadpool(
-            cursor.execute,
-            """
-            SELECT s.openai_api_key, s.groq_api_key, s.gemini_api_key, s.openrouter_api_key, s.anthropic_api_key, s.huggingface_api_key, s.nvidia_api_key, s.two_factor_enabled, s.share_keys
-            FROM user_settings s
-            JOIN workspaces w ON s.user_id = w.owner_id
-            JOIN workspace_members m ON w.id = m.workspace_id
-            WHERE m.user_id = %s AND s.share_keys = TRUE
-            LIMIT 1;
-            """,
-            (user_id,)
-        )
-        row = await run_in_threadpool(cursor.fetchone)
-        # If shared owner settings are found, return them.
-        if row:
-            return row
-            
-    # Fallback to returning the user's own settings (even if empty).
-    return settings
+    import asyncio
+
+    async def fetch_owner_keys():
+        """Fetches workspace owner's shared API keys if share_keys is enabled."""
+        async with get_db_cursor_async(commit=False) as cursor:
+            await run_in_threadpool(
+                cursor.execute,
+                """
+                SELECT s.openai_api_key, s.groq_api_key, s.gemini_api_key, s.openrouter_api_key,
+                       s.anthropic_api_key, s.huggingface_api_key, s.nvidia_api_key,
+                       s.two_factor_enabled, s.share_keys
+                FROM user_settings s
+                JOIN workspaces w ON s.user_id = w.owner_id
+                JOIN workspace_members m ON w.id = m.workspace_id
+                WHERE m.user_id = %s AND s.share_keys = TRUE
+                LIMIT 1
+                """,
+                (user_id,)
+            )
+            return await run_in_threadpool(cursor.fetchone)
+
+    # ── Fire both queries simultaneously ──────────────────────────────────────
+    user_keys, owner_keys = await asyncio.gather(
+        get_user_settings(user_id),
+        fetch_owner_keys(),
+    )
+
+    # ── Apply fallback logic in Python ────────────────────────────────────────
+    # Use the user's own keys if they have at least one API key configured.
+    if user_keys and any(user_keys[i] for i in range(7)):
+        return user_keys
+
+    # Fall back to the workspace owner's shared keys if available.
+    if owner_keys:
+        return owner_keys
+
+    # Final fallback: return user's own settings even if empty.
+    return user_keys
 

@@ -378,6 +378,42 @@ async def get_documents(agent_id: str, current_user: dict = Depends(get_current_
     return await handle_get_documents(agent_id)
 
 
+@router.get("/agents/batch-documents")
+async def get_batch_documents(agent_ids: str, current_user: dict = Depends(get_current_user)):
+    """
+    Fetches documents for multiple agents in a single parallel request.
+
+    Purpose:
+        Replaces N sequential calls to /agents/{id}/documents with a single batch endpoint.
+        All agent document queries are fired simultaneously using asyncio.gather(), reducing
+        total latency from N × query_time to max(query_time).
+
+    Parameters:
+        agent_ids (str): Comma-separated list of agent UUIDs.
+                         Example: ?agent_ids=uuid1,uuid2,uuid3
+        current_user (dict): JWT details.
+
+    Returns:
+        dict: Mapping of agent_id → list of document records.
+              Example: { "uuid1": [...], "uuid2": [...], "uuid3": [] }
+
+    Side Effects / State Changes:
+        - None. Read-only queries.
+    """
+    import asyncio
+
+    # Parse and validate the comma-separated agent IDs.
+    ids = [aid.strip() for aid in agent_ids.split(",") if aid.strip()]
+    if not ids:
+        return {}
+
+    # Fire all document fetches in parallel.
+    results = await asyncio.gather(*[handle_get_documents(aid) for aid in ids])
+
+    # Return as a map: agent_id → documents list.
+    return {agent_id: docs for agent_id, docs in zip(ids, results)}
+
+
 @router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     """

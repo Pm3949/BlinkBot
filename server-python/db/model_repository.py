@@ -73,72 +73,98 @@ def mask_key(key: str) -> str:
 async def get_active_models(user_id: str = None):
     """
     Retrieves all currently active AI models available to a specific user.
-    Retrieves active models from system_ai_models plus user custom models from user_ai_models.
+    Uses a single UNION ALL query to fetch system_ai_models + user_ai_models
+    in one DB round-trip instead of two sequential queries.
     """
     models = []
-    # 1. Fetch system active models
-    async with get_db_cursor_async(commit=False) as cursor:
-        await run_in_threadpool(
-            cursor.execute,
-            """
-            SELECT id, provider, id as model_id, name, 'System model' as description, FALSE as requires_key, 
-                   '' as base_url, category, created_at, credits_per_1k_tokens, tier_badge,
-                   input_cost_per_1m, output_cost_per_1m
+
+    if user_id:
+        # ── Single UNION ALL: system models + this user's custom models ──────────
+        query = """
+            SELECT
+                id::text            AS id,
+                provider,
+                id                  AS model_id,
+                name,
+                'System model'      AS description,
+                FALSE               AS requires_key,
+                ''                  AS base_url,
+                COALESCE(category, 'General') AS category,
+                created_at,
+                credits_per_1k_tokens::float,
+                tier_badge,
+                COALESCE(input_cost_per_1m,  0.0)::float AS input_cost_per_1m,
+                COALESCE(output_cost_per_1m, 0.0)::float AS output_cost_per_1m,
+                NULL::uuid          AS user_id,
+                NULL::text          AS api_key
+            FROM system_ai_models
+            WHERE is_active = TRUE
+
+            UNION ALL
+
+            SELECT
+                id::text            AS id,
+                provider,
+                model_identifier    AS model_id,
+                name,
+                'Custom user model: ' || model_identifier AS description,
+                TRUE                AS requires_key,
+                base_url,
+                'General'           AS category,
+                created_at,
+                0.0::float          AS credits_per_1k_tokens,
+                'Custom'            AS tier_badge,
+                0.0::float          AS input_cost_per_1m,
+                0.0::float          AS output_cost_per_1m,
+                user_id,
+                api_key
+            FROM user_ai_models
+            WHERE is_active = TRUE AND user_id = %s
+
+            ORDER BY provider ASC, name ASC
+        """
+        async with get_db_cursor_async(commit=False) as cursor:
+            await run_in_threadpool(cursor.execute, query, (user_id,))
+            rows = await run_in_threadpool(cursor.fetchall)
+    else:
+        # ── System models only (no user_id provided) ──────────────────────────
+        query = """
+            SELECT
+                id::text, provider, id, name,
+                'System model', FALSE, '',
+                COALESCE(category, 'General'), created_at,
+                credits_per_1k_tokens::float, tier_badge,
+                COALESCE(input_cost_per_1m,  0.0)::float,
+                COALESCE(output_cost_per_1m, 0.0)::float,
+                NULL::uuid, NULL::text
             FROM system_ai_models
             WHERE is_active = TRUE
             ORDER BY provider ASC, name ASC
-            """
-        )
-        sys_rows = await run_in_threadpool(cursor.fetchall)
-        for r in sys_rows:
-            models.append({
-                "id": r[0],
-                "provider": r[1],
-                "model_id": r[2],
-                "name": r[3],
-                "description": r[4],
-                "requires_key": r[5],
-                "base_url": r[6],
-                "category": r[7] or "General",
-                "created_at": r[8].isoformat() if r[8] else None,
-                "user_id": None,
-                "api_key": "",
-                "credits_per_1k_tokens": float(r[9]),
-                "tier_badge": r[10],
-                "input_cost_per_1m": float(r[11]) if r[11] is not None else 0.0,
-                "output_cost_per_1m": float(r[12]) if r[12] is not None else 0.0
-            })
-
-    # 2. Fetch user's custom models
-    if user_id:
+        """
         async with get_db_cursor_async(commit=False) as cursor:
-            await run_in_threadpool(
-                cursor.execute,
-                """
-                SELECT id, provider, model_identifier, name, base_url, created_at, user_id, api_key
-                FROM user_ai_models
-                WHERE is_active = TRUE AND user_id = %s
-                ORDER BY provider ASC, name ASC
-                """,
-                (user_id,)
-            )
-            user_rows = await run_in_threadpool(cursor.fetchall)
-            for r in user_rows:
-                models.append({
-                    "id": str(r[0]),
-                    "provider": r[1],
-                    "model_id": r[2],
-                    "name": r[3],
-                    "description": f"Custom user model: {r[2]}",
-                    "requires_key": True,
-                    "base_url": r[4],
-                    "category": "General",
-                    "created_at": r[5].isoformat() if r[5] else None,
-                    "user_id": str(r[6]),
-                    "api_key": mask_key(decrypt_key(r[7])) if r[7] else "",
-                    "credits_per_1k_tokens": 0.0,
-                    "tier_badge": "Custom"
-                })
+            await run_in_threadpool(cursor.execute, query)
+            rows = await run_in_threadpool(cursor.fetchall)
+
+    # ── Map rows → dicts, differentiating system vs custom by user_id ─────────
+    for r in rows:
+        is_system = r[13] is None  # user_id slot is NULL for system models
+        models.append({
+            "id":                   r[0],
+            "provider":             r[1],
+            "model_id":             r[2],
+            "name":                 r[3],
+            "description":          r[4],
+            "requires_key":         r[5],
+            "base_url":             r[6],
+            "category":             r[7] or "General",
+            "created_at":           r[8].isoformat() if r[8] else None,
+            "user_id":              None if is_system else str(r[13]),
+            "api_key":              "" if is_system else (mask_key(decrypt_key(r[14])) if r[14] else ""),
+            "credits_per_1k_tokens": float(r[9]),
+            "tier_badge":           r[10],
+            "input_cost_per_1m":    float(r[11]) if r[11] is not None else 0.0,
+            "output_cost_per_1m":   float(r[12]) if r[12] is not None else 0.0,
+        })
 
     return models
 

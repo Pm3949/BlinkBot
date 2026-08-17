@@ -41,6 +41,32 @@ export async function getDocuments(agentId) {
   return data.documents || [];
 }
 
+export async function getBatchDocuments(agentIds) {
+  if (!agentIds || !agentIds.length) return {};
+
+  const queryParam = agentIds.join(",");
+  const response = await fetch(
+    `${API_BASE_URL}/agents/batch-documents?agent_ids=${queryParam}`,
+    {
+      method: "GET",
+      headers: {
+        "ngrok-skip-browser-warning": "69420",
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
+      }
+    }
+  );
+
+  if (!response.ok) {
+    const message = await getErrorMessage(response);
+    throw new Error(
+      message || "Failed to fetch batch documents.",
+    );
+  }
+  return response.json();
+}
+
+
 export async function uploadDocument({
   agentId,
   file,

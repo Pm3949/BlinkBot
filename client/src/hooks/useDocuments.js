@@ -17,6 +17,7 @@ export function useDocuments(agentId) {
     queryKey: ["documents", agentId],
     queryFn: () => getDocuments(agentId),
     enabled: !!agentId,
+    staleTime: 1000 * 60 * 2, // 2 min — invalidated on upload/delete mutations
   });
 }
 

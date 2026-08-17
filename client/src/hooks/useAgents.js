@@ -15,11 +15,9 @@ import {
 export function useAgents(workspaceId, includeGateways = false) {
   return useQuery({
     queryKey: ["agents", workspaceId, includeGateways],
-
-    queryFn: () =>
-      getAgents(workspaceId, includeGateways),
-
+    queryFn: () => getAgents(workspaceId, includeGateways),
     enabled: !!workspaceId,
+    staleTime: 1000 * 60 * 2, // 2 min — invalidated by mutations
   });
 }
 
@@ -92,22 +90,20 @@ export function useDeleteAgent(workspaceId) {
 export function useAgentProjects(workspaceId) {
   return useQuery({
     queryKey: ["agent-projects", workspaceId],
-
     queryFn: () =>
       import("../services/agentService").then((m) => m.getAgentProjects(workspaceId)),
-
     enabled: !!workspaceId,
+    staleTime: 1000 * 60 * 2, // 2 min
   });
 }
 
 export function useProjectSubAgents(projectId) {
   return useQuery({
     queryKey: ["agent-projects-sub-agents", projectId],
-
     queryFn: () =>
       import("../services/agentService").then((m) => m.getProjectSubAgents(projectId)),
-
     enabled: !!projectId,
+    staleTime: 1000 * 60 * 2, // 2 min
   });
 }
 
@@ -135,6 +131,7 @@ export function useProjectTools(projectId) {
       return response.json();
     },
     enabled: !!projectId,
+    staleTime: 1000 * 60 * 5, // 5 min — tools rarely change mid-session
   });
 }
 

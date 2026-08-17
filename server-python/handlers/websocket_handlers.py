@@ -94,7 +94,8 @@ class AgentConnectionManager:
                 logger.error(f"Failed to send JSON message to client {client_id}: {str(e)}", exc_info=True)
                 self.disconnect(client_id)
         else:
-            logger.warning(f"Failed to send message: Client ID {client_id} is not connected.")
+            # Raise WebSocketDisconnect to immediately halt any active background generator tasks
+            raise WebSocketDisconnect(code=1000, reason="Client disconnected")
 
 # Instantiate global singleton connection manager
 agent_connection_manager = AgentConnectionManager()

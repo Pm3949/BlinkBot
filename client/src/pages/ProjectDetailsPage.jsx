@@ -11,7 +11,7 @@ import { Switch } from '../components/ui/switch';
 import { Button } from '../components/ui/button';
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Handle, Position } from '@xyflow/react';
 import { getAgentAttachedTools, getWorkspaceTools, attachToolToAgent, detachToolFromAgent } from '../services/workspaceToolsService';
-import { getDocuments } from '../services/documentService';
+import { getDocuments, getBatchDocuments } from '../services/documentService';
 import { useUploadDocument } from '../hooks/useDocuments';
 
 const MasterNode = ({ data }) => (
@@ -359,25 +359,29 @@ export default function ProjectDetailsPage() {
       setLoadingExtras(true);
       try {
         const toolsMap = {};
-        const docsMap = {};
-        await Promise.all(
-          subAgents.map(async (agent) => {
-            try {
-              const [tools, docs] = await Promise.all([
-                getAgentAttachedTools(agent.id),
-                getDocuments(agent.id),
-              ]);
-              toolsMap[agent.id] = tools;
-              docsMap[agent.id] = docs;
-            } catch (err) {
-              console.error(`Failed to load extras for agent ${agent.id}:`, err);
-              toolsMap[agent.id] = [];
-              docsMap[agent.id] = [];
-            }
-          })
-        );
+        const agentIds = subAgents.map(a => a.id);
+
+        // Fetch documents for all agents in one batch call, and fetch tools for all agents in parallel
+        const [batchDocsResponse, ...toolsResults] = await Promise.all([
+          getBatchDocuments(agentIds).catch(err => {
+            console.error("Failed to fetch batch documents:", err);
+            return {};
+          }),
+          ...subAgents.map(agent =>
+            getAgentAttachedTools(agent.id).catch(err => {
+              console.error(`Failed to load tools for agent ${agent.id}:`, err);
+              return [];
+            })
+          )
+        ]);
+
+        // Map tools results back to respective agents
+        subAgents.forEach((agent, index) => {
+          toolsMap[agent.id] = toolsResults[index] || [];
+        });
+
         setAgentsTools(toolsMap);
-        setAgentsDocs(docsMap);
+        setAgentsDocs(batchDocsResponse || {});
       } catch (err) {
         console.error("Failed to load agents extra details:", err);
       } finally {

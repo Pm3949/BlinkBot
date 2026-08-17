@@ -378,21 +378,8 @@ export default function AgentSettingsPage() {
   const [loadingMemory, setLoadingMemory] = useState(false);
 
   const fetchMemory = async () => {
-    if (!selectedAgentId) return;
-    setLoadingMemory(true);
-    try {
-      const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/memory`, {
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAgentMemory(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch agent memory:", err);
-    } finally {
-      setLoadingMemory(false);
-    }
+    // Memory list rendering is retired, keeping placeholder to prevent build breaks
+    setAgentMemory([]);
   };
 
   useEffect(() => {
@@ -421,7 +408,7 @@ export default function AgentSettingsPage() {
   const handleClearAllMemory = async () => {
     if (!window.confirm("Are you sure you want to permanently wipe all conversation history, chat threads, and logs for this agent? This action is irreversible.")) return;
     try {
-      const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/memory`, {
+      const res = await fetch(`${API_URL}/api/agents/${selectedAgentId}/chat_sessions`, {
         method: "DELETE",
         headers: getAuthHeaders()
       });
