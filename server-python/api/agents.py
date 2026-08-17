@@ -28,6 +28,7 @@ import logging
 from utils.logger import get_department_logger
 from typing import Optional
 from pydantic import BaseModel
+from core.config import DEFAULT_LLM_PROVIDER, DEFAULT_LLM_MODEL
 from fastapi import APIRouter, Depends
 from core.auth import get_current_user
 
@@ -42,7 +43,7 @@ from handlers.agent_handler import (
     handle_delete_agent_project,
     handle_get_project_tools,
     handle_update_project_tool,
-    handle_create_project_tool
+    handle_create_project_tool,
 )
 
 # Set standard module logger.
@@ -55,34 +56,45 @@ router = APIRouter(tags=["agents"])
 # PYDANTIC INPUT VALIDATION SCHEMAS
 # ==========================================
 
+
 class AgentCreate(BaseModel):
     """
     Validation schema for creating a new AI Agent.
     """
-    name: str # Display name of the agent
-    description: Optional[str] = "" # Optional explanation of what the agent does
-    llm_provider: str # LLM provider service (e.g. 'openai', 'groq', 'gemini')
-    llm_model: str # The specific LLM model ID
-    embedding_model: Optional[str] = "text-embedding-3-small" # RAG embedding model ID
-    chunk_strategy: Optional[str] = "semantic" # Strategy used to partition files (e.g., 'sentence', 'semantic')
-    system_prompt: Optional[str] = "" # Core system instruction guidelines
-    output_format: Optional[str] = "" # Output constraint rules
-    api_key: Optional[str] = "" # Option to pass a custom provider API key
-    language: Optional[str] = "en" # Language locale parameter
-    workspace_id: str # Target workspace UUID
-    web_search_enabled: bool = False # Toggles live web search integration
-    project_id: Optional[str] = None # Optional parent project UUID
-    parent_agent_id: Optional[str] = None # Optional parent agent UUID for hierarchical routing
-    endpoints: Optional[list] = [] # Optional list of custom REST API endpoints
-    databases: Optional[list] = [] # Optional list of connected database objects
-    code_interpreter_enabled: bool = False # Toggles local sandboxed python code execution capabilities
-    native_integrations: Optional[list] = [] # List of native integrations (e.g., Google Drive)
+
+    name: str  # Display name of the agent
+    description: Optional[str] = ""  # Optional explanation of what the agent does
+    llm_provider: str  # LLM provider service (e.g. 'openai', 'groq', 'gemini')
+    llm_model: str  # The specific LLM model ID
+    embedding_model: Optional[str] = "text-embedding-3-small"  # RAG embedding model ID
+    chunk_strategy: Optional[str] = (
+        "semantic"  # Strategy used to partition files (e.g., 'sentence', 'semantic')
+    )
+    system_prompt: Optional[str] = ""  # Core system instruction guidelines
+    output_format: Optional[str] = ""  # Output constraint rules
+    api_key: Optional[str] = ""  # Option to pass a custom provider API key
+    language: Optional[str] = "en"  # Language locale parameter
+    workspace_id: str  # Target workspace UUID
+    web_search_enabled: bool = False  # Toggles live web search integration
+    project_id: Optional[str] = None  # Optional parent project UUID
+    parent_agent_id: Optional[str] = (
+        None  # Optional parent agent UUID for hierarchical routing
+    )
+    endpoints: Optional[list] = []  # Optional list of custom REST API endpoints
+    databases: Optional[list] = []  # Optional list of connected database objects
+    code_interpreter_enabled: bool = (
+        False  # Toggles local sandboxed python code execution capabilities
+    )
+    native_integrations: Optional[list] = (
+        []
+    )  # List of native integrations (e.g., Google Drive)
 
 
 class AgentUpdate(BaseModel):
     """
     Validation schema for updating properties of an existing AI Agent.
     """
+
     name: Optional[str] = None
     description: Optional[str] = None
     llm_provider: Optional[str] = None
@@ -105,23 +117,26 @@ class AgentProjectCreate(BaseModel):
     """
     Validation schema for establishing a multi-agent project group.
     """
-    name: str # Project title
-    description: Optional[str] = "" # Project details summary
-    workspace_id: str # Parent workspace identifier
+
+    name: str  # Project title
+    description: Optional[str] = ""  # Project details summary
+    workspace_id: str  # Parent workspace identifier
 
 
 class ToolCreate(BaseModel):
     """
     Validation schema for creating custom API tools linked to project networks.
     """
-    name: str # Custom tool display name
-    config: dict # Integration configurations (headers, URL endpoints, formats)
+
+    name: str  # Custom tool display name
+    config: dict  # Integration configurations (headers, URL endpoints, formats)
 
 
 class ToolUpdate(BaseModel):
     """
     Validation schema for editing custom tool configurations.
     """
+
     name: str
     config: dict
 
@@ -130,8 +145,13 @@ class ToolUpdate(BaseModel):
 # ENDPOINT IMPLEMENTATIONS
 # ==========================================
 
+
 @router.get("/api/agents")
-async def get_agents(workspace_id: str, include_gateways: bool = False, current_user: dict = Depends(get_current_user)):
+async def get_agents(
+    workspace_id: str,
+    include_gateways: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Retrieves all active agents configured under a target workspace.
 
@@ -157,7 +177,9 @@ async def get_agents(workspace_id: str, include_gateways: bool = False, current_
 
 
 @router.post("/api/agents")
-async def create_agent(agent: AgentCreate, current_user: dict = Depends(get_current_user)):
+async def create_agent(
+    agent: AgentCreate, current_user: dict = Depends(get_current_user)
+):
     """
     Creates a new AI agent profile.
 
@@ -187,7 +209,9 @@ async def create_agent(agent: AgentCreate, current_user: dict = Depends(get_curr
 
 
 @router.put("/api/agents/{agent_id}")
-async def update_agent(agent_id: str, payload: dict, current_user: dict = Depends(get_current_user)):
+async def update_agent(
+    agent_id: str, payload: dict, current_user: dict = Depends(get_current_user)
+):
     """
     Updates the configuration settings of an existing agent.
 
@@ -213,7 +237,9 @@ async def update_agent(agent_id: str, payload: dict, current_user: dict = Depend
 
 
 @router.post("/api/agent-projects")
-async def create_agent_project(project: AgentProjectCreate, current_user: dict = Depends(get_current_user)):
+async def create_agent_project(
+    project: AgentProjectCreate, current_user: dict = Depends(get_current_user)
+):
     """
     Creates a new multi-agent project network.
 
@@ -241,7 +267,9 @@ async def create_agent_project(project: AgentProjectCreate, current_user: dict =
 
 
 @router.get("/api/agent-projects")
-async def get_agent_projects(workspace_id: str, current_user: dict = Depends(get_current_user)):
+async def get_agent_projects(
+    workspace_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Retrieves all multi-agent projects configured in a workspace.
 
@@ -266,7 +294,9 @@ async def get_agent_projects(workspace_id: str, current_user: dict = Depends(get
 
 
 @router.get("/api/agent-projects/{project_id}/sub-agents")
-async def get_project_sub_agents(project_id: str, current_user: dict = Depends(get_current_user)):
+async def get_project_sub_agents(
+    project_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Retrieves all sub-agents linked to a specific multi-agent project.
 
@@ -291,7 +321,9 @@ async def get_project_sub_agents(project_id: str, current_user: dict = Depends(g
 
 
 @router.delete("/api/agent-projects/{project_id}")
-async def delete_agent_project(project_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_agent_project(
+    project_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Deletes a multi-agent project and all associated sub-agents.
 
@@ -317,7 +349,9 @@ async def delete_agent_project(project_id: str, current_user: dict = Depends(get
 
 
 @router.get("/api/agent-projects/{project_id}/tools")
-async def get_project_tools(project_id: str, current_user: dict = Depends(get_current_user)):
+async def get_project_tools(
+    project_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Retrieves all tools configured for a multi-agent project.
 
@@ -342,7 +376,9 @@ async def get_project_tools(project_id: str, current_user: dict = Depends(get_cu
 
 
 @router.put("/api/tools/{tool_id}")
-async def update_project_tool(tool_id: str, payload: ToolUpdate, current_user: dict = Depends(get_current_user)):
+async def update_project_tool(
+    tool_id: str, payload: ToolUpdate, current_user: dict = Depends(get_current_user)
+):
     """
     Updates the configuration of an existing custom project tool.
 
@@ -369,7 +405,9 @@ async def update_project_tool(tool_id: str, payload: ToolUpdate, current_user: d
 
 
 @router.post("/api/agent-projects/{project_id}/tools")
-async def create_project_tool(project_id: str, payload: ToolCreate, current_user: dict = Depends(get_current_user)):
+async def create_project_tool(
+    project_id: str, payload: ToolCreate, current_user: dict = Depends(get_current_user)
+):
     """
     Creates a new custom tool and links it to a project.
 
@@ -394,15 +432,41 @@ async def create_project_tool(project_id: str, payload: ToolCreate, current_user
     return await handle_create_project_tool(project_id, payload.name, payload.config)
 
 
+import re
+
+def clean_reasoning_thoughts(text: str) -> str:
+    if not isinstance(text, str):
+        return text
+    
+    # 1. Normalize HTML entities (APIs often escape brackets)
+    text = text.replace("&lt;", "<").replace("&gt;", ">")
+    
+    # 2. Remove fully enclosed blocks (consolidated regex)
+    text = re.sub(r"<(think|thought)>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"\[(think|thought)\].*?\[/\1\]", "", text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 3. Remove standalone text headers
+    text = re.sub(r"(?i)^\s*(thinking process|thought|thinking):\s*", "", text)
+    
+    # 4. Remove leftover/unclosed tags WITHOUT deleting the rest of the text
+    # (Your previous `r"<think>.*"` would delete the final answer if the tag was unclosed)
+    text = re.sub(r"(?i)</?(think|thought)>", "", text)
+    text = re.sub(r"(?i)\[/?(think|thought)\]", "", text)
+    
+    # 5. Clean up any leftover whitespace or newlines
+    return text.strip()
+
 class PromptOptimizeRequest(BaseModel):
     draft_prompt: str
-    llm_provider: Optional[str] = "groq"
-    llm_model: Optional[str] = "llama-3.3-70b-versatile"
+    llm_provider: Optional[str] = DEFAULT_LLM_PROVIDER
+    llm_model: Optional[str] = DEFAULT_LLM_MODEL
     custom_api_key: Optional[str] = ""
 
 
 @router.post("/api/agents/optimize-prompt")
-async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: dict = Depends(get_current_user)):
+async def optimize_agent_prompt(
+    payload: PromptOptimizeRequest, current_user: dict = Depends(get_current_user)
+):
     """
     Optimizes a draft system prompt using an LLM.
     """
@@ -411,6 +475,7 @@ async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: di
     from langchain_core.messages import SystemMessage, HumanMessage
 
     from prompts.optimizer_prompts import PROMPT_OPTIMIZER_SYSTEM_INSTRUCTION
+
     system_instruction = PROMPT_OPTIMIZER_SYSTEM_INSTRUCTION
 
     try:
@@ -419,12 +484,12 @@ async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: di
             provider=payload.llm_provider,
             model_name=payload.llm_model,
             api_key=payload.custom_api_key or None,
-            user_id=current_user["sub"]
+            user_id=current_user["sub"],
         )
 
         messages = [
             SystemMessage(content=system_instruction),
-            HumanMessage(content=f"Draft Prompt: {payload.draft_prompt}")
+            HumanMessage(content=f"Draft Prompt: {payload.draft_prompt}"),
         ]
 
         response = await llm.ainvoke(messages)
@@ -443,7 +508,7 @@ async def optimize_agent_prompt(payload: PromptOptimizeRequest, current_user: di
         elif isinstance(content, dict):
             content = content.get("text", str(content))
 
-        optimized_text = content.strip()
+        optimized_text = clean_reasoning_thoughts(content)
 
         # Clean code block indicators if model generated them
         if optimized_text.startswith("```"):
@@ -466,29 +531,41 @@ class ToolDescriptionRequest(BaseModel):
     method: str
     payload_format: Optional[str] = ""
     expected_output: Optional[str] = ""
-    llm_provider: Optional[str] = "groq"
-    llm_model: Optional[str] = "llama-3.3-70b-versatile"
+    llm_provider: Optional[str] = DEFAULT_LLM_PROVIDER
+    llm_model: Optional[str] = DEFAULT_LLM_MODEL
     custom_api_key: Optional[str] = ""
+    path_variables: Optional[list] = []
+    query_parameters: Optional[list] = []
 
 
 @router.post("/api/agents/generate-tool-description")
-async def generate_tool_description(payload: ToolDescriptionRequest, current_user: dict = Depends(get_current_user)):
+async def generate_tool_description(
+    payload: ToolDescriptionRequest, current_user: dict = Depends(get_current_user)
+):
     """
-    Generates a concise tool instruction description using LLM based on tool specifications.
+    Generates a concise tool instruction description and parameter-level descriptions using LLM.
     """
-    logger.info("Generating dynamic tool description...")
+    logger.info("Generating dynamic tool and parameter descriptions...")
     from handlers.chat_handler import create_resilient_llm_instance
     from langchain_core.messages import SystemMessage, HumanMessage
+    import json
 
     system_instruction = (
-        "You are an expert AI system architect. Your task is to write a highly optimized, professional tool description "
-        "that will act as instructions for an LLM agent to know exactly when and how to call this API tool.\n\n"
-        "Your description must include:\n"
-        "1. The primary purpose of the tool (e.g. 'Retrieve product list or specific product details').\n"
-        "2. Explicit instructions on when the agent should call it based on user intent.\n"
-        "3. If URL path variables exist (e.g. {endpoint_suffix}), explicitly instruct the agent on what values/segments (such as ID, slug, etc.) it must pass into it to access different sub-resources.\n"
-        "4. Clear instructions on how to use the available query/body parameters.\n\n"
-        "Keep the final description concise (2-3 sentences max). Output ONLY the plain text instruction. Do not include markdown formatting, quotes, or extra labels."
+        "You are an expert AI system architect. Your task is to write a highly optimized JSON description "
+        "containing instructions for an LLM agent to know exactly when and how to call this API tool, "
+        "and clear instructions for each of its parameters/path variables.\n\n"
+        "You MUST return a JSON object with the following format:\n"
+        "{\n"
+        '  "description": "Concise summary of the tool\'s primary purpose and when to call it (2-3 sentences max).",\n'
+        '  "path_variables": {\n'
+        '    "var_name": "Clear, concise instruction of what this path variable represents."\n'
+        "  },\n"
+        '  "query_parameters": {\n'
+        '    "param_name": "Clear, concise instruction of what this query/body parameter represents."\n'
+        "  }\n"
+        "}\n\n"
+        "Ensure all keys in the input's Path Variables and Query/Body Parameters are mapped in the JSON response. "
+        "Output ONLY the raw JSON structure without markdown formatting or code blocks."
     )
 
     try:
@@ -496,7 +573,7 @@ async def generate_tool_description(payload: ToolDescriptionRequest, current_use
             provider=payload.llm_provider,
             model_name=payload.llm_model,
             api_key=payload.custom_api_key or None,
-            user_id=current_user["sub"]
+            user_id=current_user["sub"],
         )
 
         user_content = (
@@ -504,50 +581,110 @@ async def generate_tool_description(payload: ToolDescriptionRequest, current_use
             f"Path: {payload.path}\n"
             f"Method: {payload.method}\n"
             f"Payload Format: {payload.payload_format}\n"
-            f"Expected Output: {payload.expected_output}"
+            f"Expected Output: {payload.expected_output}\n"
+            f"Path Variables: {payload.path_variables}\n"
+            f"Query/Body Parameters: {payload.query_parameters}"
         )
 
         messages = [
             SystemMessage(content=system_instruction),
-            HumanMessage(content=user_content)
+            HumanMessage(content=user_content),
         ]
 
         response = await llm.ainvoke(messages)
-        description = response.content
+        description_content = response.content
 
-        if isinstance(description, list):
+        if isinstance(description_content, list):
             parts = []
-            for part in description:
+            for part in description_content:
                 if isinstance(part, dict) and "text" in part:
                     parts.append(part["text"])
                 elif isinstance(part, str):
                     parts.append(part)
                 else:
                     parts.append(str(part))
-            description = "".join(parts)
-        elif isinstance(description, dict):
-            description = description.get("text", str(description))
+            description_content = "".join(parts)
+        elif isinstance(description_content, dict):
+            description_content = description_content.get(
+                "text", str(description_content)
+            )
 
-        description = description.strip()
-        # Clean quotes
-        if description.startswith('"') and description.endswith('"'):
-            description = description[1:-1].strip()
-        elif description.startswith("'") and description.endswith("'"):
-            description = description[1:-1].strip()
+        description_content = clean_reasoning_thoughts(description_content)
 
-        return {"description": description}
+        # Strip markdown codeblock if present
+        if description_content.startswith("```"):
+            lines = description_content.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            description_content = "\n".join(lines).strip()
+
+        try:
+            parsed_res = json.loads(description_content)
+        except json.JSONDecodeError:
+            # Try to extract JSON from the string if model wrapped it in text
+            json_match = re.search(r"\{.*\}", description_content, re.DOTALL)
+            if json_match:
+                try:
+                    parsed_res = json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    parsed_res = None
+            else:
+                parsed_res = None
+
+            if not parsed_res:
+                # If model returned pure plain text description, map it to the expected schema format
+                fallback_path_vars = {
+                    v: f"Path parameter {v}" for v in (payload.path_variables or [])
+                }
+                fallback_query_params = {
+                    q: f"Query parameter {q}" for q in (payload.query_parameters or [])
+                }
+                parsed_res = {
+                    "description": description_content.strip() or f"Use this tool to interact with {payload.tool_name} at {payload.path}.",
+                    "path_variables": fallback_path_vars,
+                    "query_parameters": fallback_query_params,
+                }
+
+        # Recursively clean any leftover <think> blocks inside the parsed JSON values
+        def clean_think_tags(val):
+            if isinstance(val, str):
+                return clean_reasoning_thoughts(val)
+            elif isinstance(val, dict):
+                return {k: clean_think_tags(v) for k, v in val.items()}
+            elif isinstance(val, list):
+                return [clean_think_tags(x) for x in val]
+            return val
+
+        parsed_res = clean_think_tags(parsed_res)
+        return parsed_res
     except Exception as e:
         logger.error(f"Error generating tool description: {e}", exc_info=True)
-        return {"description": f"Use this tool to interact with {payload.tool_name} at {payload.path}."}
+        # Return fallback structures matching the JSON schema
+        fallback_path_vars = {
+            v: f"Path parameter {v}" for v in (payload.path_variables or [])
+        }
+        fallback_query_params = {
+            q: f"Query parameter {q}" for q in (payload.query_parameters or [])
+        }
+        return {
+            "description": f"Use this tool to interact with {payload.tool_name} at {payload.path}.",
+            "path_variables": fallback_path_vars,
+            "query_parameters": fallback_query_params,
+        }
 
 
 @router.get("/api/agents/{agent_id}/analytics")
-async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(get_current_user)):
+async def get_agent_token_analytics(
+    agent_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Get token usage and cost metrics for a specific agent.
     """
     from core.database import get_db_cursor_async
     from fastapi.concurrency import run_in_threadpool
+
     try:
         user_id = current_user["sub"]
         async with get_db_cursor_async(commit=False) as cursor:
@@ -563,10 +700,10 @@ async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(
                 FROM token_usages
                 WHERE user_id = %s AND agent_id = %s
                 """,
-                (user_id, agent_id)
+                (user_id, agent_id),
             )
             totals = await run_in_threadpool(cursor.fetchone)
-            
+
             # Query daily metrics for charts (last 30 days)
             await run_in_threadpool(
                 cursor.execute,
@@ -583,16 +720,16 @@ async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(
                 GROUP BY DATE(created_at)
                 ORDER BY DATE(created_at) ASC
                 """,
-                (user_id, agent_id)
+                (user_id, agent_id),
             )
             daily_rows = await run_in_threadpool(cursor.fetchall)
-            
+
             return {
                 "totals": {
                     "prompt_tokens": totals[0],
                     "completion_tokens": totals[1],
                     "total_tokens": totals[2],
-                    "estimated_cost": float(totals[3])
+                    "estimated_cost": float(totals[3]),
                 },
                 "daily": [
                     {
@@ -601,18 +738,19 @@ async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(
                         "completion_tokens": r[2],
                         "tokens": r[3],
                         "cost": float(r[4]),
-                        "calls": r[5]
+                        "calls": r[5],
                     }
                     for r in daily_rows
-                ]
+                ],
             }
     except Exception as e:
         logger.error(f"Error fetching token analytics: {e}", exc_info=True)
         return {
-            "totals": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0},
-            "daily": []
+            "totals": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost": 0.0,
+            },
+            "daily": [],
         }
-
-
-
-

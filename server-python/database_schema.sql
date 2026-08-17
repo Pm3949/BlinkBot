@@ -55,8 +55,8 @@ USING (auth.uid() = user_id);
 
 
 ALTER TABLE agents 
-ADD COLUMN provider TEXT DEFAULT 'groq',
-ADD COLUMN model TEXT DEFAULT 'llama-3.3-70b-versatile',
+ADD COLUMN provider TEXT DEFAULT 'gemini',
+ADD COLUMN model TEXT DEFAULT 'gemini-3-flash',
 ADD COLUMN api_key TEXT,
 ADD COLUMN description TEXT,
 ADD COLUMN embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',

@@ -50,6 +50,7 @@ from fastapi.concurrency import run_in_threadpool
 from core.security import encrypt_key
 from prompts.system_agent_prompts import GENERAL_ASSISTANT_SYSTEM_PROMPT
 from utils.logger import get_db_logger
+from core.config import DEFAULT_LLM_PROVIDER, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDING_MODEL, DEFAULT_CHUNK_STRATEGY
 
 logger = get_db_logger("agent_repository")
 
@@ -169,8 +170,8 @@ async def create_agent(payload_data: dict):
                 payload_data.get("description", ""), 
                 payload_data.get("llm_provider"), 
                 payload_data.get("llm_model"),
-                payload_data.get("embedding_model", "text-embedding-3-small"), 
-                payload_data.get("chunk_strategy", "semantic"), 
+                payload_data.get("embedding_model", DEFAULT_EMBEDDING_MODEL), 
+                payload_data.get("chunk_strategy", DEFAULT_CHUNK_STRATEGY), 
                 payload_data.get("system_prompt", ""), 
                 payload_data.get("output_format", ""),
                 # Protect credentials: the API key is encrypted using the core security module.
@@ -314,10 +315,10 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
             (
                 f"Network Manager ({name})", 
                 "The central router agent for this network.", 
-                "groq", 
-                "llama-3.3-70b-versatile",
-                "all-MiniLM-L6-v2", 
-                "sentence", 
+                DEFAULT_LLM_PROVIDER, 
+                DEFAULT_LLM_MODEL,
+                DEFAULT_EMBEDDING_MODEL, 
+                DEFAULT_CHUNK_STRATEGY, 
                 "You are the master coordinator for this network. Analyze user requests and delegate to your sub-agents as necessary.", 
                 "",
                 encrypt_key(""), 
@@ -349,10 +350,10 @@ async def create_agent_project(name: str, description: str, workspace_id: str, u
             (
                 "General Assistant", 
                 "A friendly greeting and welcome assistant.", 
-                "groq", 
-                "llama-3.3-70b-versatile",
-                "all-MiniLM-L6-v2", 
-                "sentence", 
+                DEFAULT_LLM_PROVIDER, 
+                DEFAULT_LLM_MODEL,
+                DEFAULT_EMBEDDING_MODEL, 
+                DEFAULT_CHUNK_STRATEGY, 
                 GENERAL_ASSISTANT_SYSTEM_PROMPT, # Predefined prompt imported from our system agent prompts.
                 "",
                 encrypt_key(""), 

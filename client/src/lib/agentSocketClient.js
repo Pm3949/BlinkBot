@@ -134,11 +134,20 @@ class AgentSocketClient {
       }
 
       // Trace logs update
+      let logsContent = data.label || data.status;
+      if (data.tool_input) {
+        const inputStr = typeof data.tool_input === 'object' ? JSON.stringify(data.tool_input, null, 2) : String(data.tool_input);
+        logsContent = `${data.label}\n\nInput Parameters:\n${inputStr}`;
+      } else if (data.tool_output) {
+        const outputStr = typeof data.tool_output === 'object' ? JSON.stringify(data.tool_output, null, 2) : String(data.tool_output);
+        logsContent = `${data.label}\n\nOutput Results:\n${outputStr}`;
+      }
+
       useTraceStore.getState().addStep({
         type: data.status.includes('tool_') ? 'tool' : 'routing',
         agentName: buffers.activeAgentName,
         action: data.label || 'Executing Step',
-        logs: data.label || data.status,
+        logs: logsContent,
         payload: data
       });
 

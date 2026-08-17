@@ -19,6 +19,11 @@ import { useWorkspacePermissions } from "../../hooks/useSettings";
 
 const providers = [
   {
+    id: "gemini",
+    name: "Gemini",
+    desc: "Google Gemini Models",
+  },
+  {
     id: "groq",
     name: "Groq",
     desc: "Free Models",
@@ -31,6 +36,14 @@ const providers = [
 ];
 
 const AVAILABLE_MODELS = {
+  gemini: [
+    {
+      id: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash (Smart)",
+      requiresKey: false,
+    },
+  ],
+
   groq: [
     {
       id: "llama-3.1-8b-instant",
@@ -60,12 +73,12 @@ const AVAILABLE_MODELS = {
 
 const EMBEDDING_MODELS = [
   {
-    id: "all-MiniLM-L6-v2",
-    name: "Sentence-Transformers MiniLM (Fast)",
-  },
-  {
     id: "BAAI/bge-small-en-v1.5",
     name: "BAAI BGE-Small (High Accuracy)",
+  },
+  {
+    id: "all-MiniLM-L6-v2",
+    name: "Sentence-Transformers MiniLM (Fast)",
   },
 ];
 
@@ -105,8 +118,8 @@ export default function CreateAgentWizard({ onClose }) {
     name: "",
     description: "",
     provider: "groq",
-    model: "llama-3.3-70b-versatile",
-    embedding_model: "all-MiniLM-L6-v2",
+    model: "qwen/qwen3.6-27b",
+    embedding_model: "BAAI/bge-small-en-v1.5",
     chunk_strategy: "sentence",
     system_prompt: "",
     api_key: "",

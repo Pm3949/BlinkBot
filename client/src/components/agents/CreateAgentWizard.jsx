@@ -46,16 +46,6 @@ export const providers = [
 export const AVAILABLE_MODELS = {
   groq: [
     {
-      id: "llama-3.1-8b-instant",
-      name: "Llama 3.1 8B (Free - Fast)",
-      requiresKey: false,
-    },
-    {
-      id: "llama-3.3-70b-versatile",
-      name: "Llama 3.3 70B (Free - Smart)",
-      requiresKey: false,
-    },
-    {
       id: "mixtral-8x7b-32768",
       name: "Mixtral 8x7B (Large Context)",
       requiresKey: false,
@@ -63,6 +53,14 @@ export const AVAILABLE_MODELS = {
     {
       id: "qwen-2.5-32b",
       name: "Qwen 2.5 32B (Coding/Logic)",
+      requiresKey: false,
+    },
+  ],
+
+  gemini: [
+    {
+      id: "gemini-3-flash",
+      name: "Gemini 3 Flash (Smart)",
       requiresKey: false,
     },
   ],
@@ -95,6 +93,11 @@ export const AVAILABLE_MODELS = {
 };
 
 export const EMBEDDING_MODELS = [
+  {
+    id: "BAAI/bge-small-en-v1.5",
+    name: "BAAI BGE-Small (High Accuracy)",
+    disabled: false,
+  },
   {
     id: "all-MiniLM-L6-v2",
     name: "Fast & Light (all-MiniLM-L6-v2)",
@@ -156,8 +159,8 @@ export default function CreateAgentWizard({ onClose, projectId = null, parentAge
     name: "",
     description: "",
     provider: "groq",
-    model: "llama-3.3-70b-versatile",
-    embedding_model: "all-MiniLM-L6-v2",
+    model: "qwen/qwen3.6-27b",
+    embedding_model: "BAAI/bge-small-en-v1.5",
     chunk_strategy: "sentence",
     system_prompt: "",
     output_format: "",

@@ -39,6 +39,7 @@ from core.meta_agent_schemas import AgentBlueprint
 from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from prompts.system_agent_prompts import NETWORK_MANAGER_SYSTEM_PROMPT, GENERAL_ASSISTANT_SYSTEM_PROMPT
+from core.config import DEFAULT_LLM_PROVIDER, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDING_MODEL, DEFAULT_CHUNK_STRATEGY
 
 async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprint: AgentBlueprint, config_data: dict):
     """
@@ -88,9 +89,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
         # Fetch the project UUID.
         project_id = (await run_in_threadpool(cursor.fetchone))[0]
         
-        # Step 2: Create the permanent "Network Manager" (the central routing gateway agent).
-        # We pass default presets for providers ("groq"), models ("llama-3.3-70b-versatile"),
-        # and embedding models ("all-MiniLM-L6-v2") to configure the gateway.
+        # We pass default presets for providers, models, and embedding models to configure the gateway.
         await run_in_threadpool(
             cursor.execute,
             """
@@ -98,7 +97,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
             """,
-            (f"Network Manager ({blueprint.project_name})", "The central router agent for this network.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, None, "[]", False, "[]", "[]")
+            (f"Network Manager ({blueprint.project_name})", "The central router agent for this network.", DEFAULT_LLM_PROVIDER, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDING_MODEL, DEFAULT_CHUNK_STRATEGY, NETWORK_MANAGER_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, None, "[]", False, "[]", "[]")
         )
         # Fetch the Network Manager's database UUID.
         manager_id = (await run_in_threadpool(cursor.fetchone))[0]
@@ -111,7 +110,7 @@ async def deploy_agent_blueprint_to_db(workspace_id: str, user_id: str, blueprin
             INSERT INTO agents (name, description, llm_provider, llm_model, embedding_model, chunk_strategy, system_prompt, output_format, api_key, language, user_id, workspace_id, web_search_enabled, project_id, parent_agent_id, endpoints, code_interpreter_enabled, databases, native_integrations)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            ("General Assistant", "A friendly greeting and welcome assistant.", "groq", "llama-3.3-70b-versatile", "all-MiniLM-L6-v2", "sentence", GENERAL_ASSISTANT_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, manager_id, "[]", False, "[]", "[]")
+            ("General Assistant", "A friendly greeting and welcome assistant.", DEFAULT_LLM_PROVIDER, DEFAULT_LLM_MODEL, DEFAULT_EMBEDDING_MODEL, DEFAULT_CHUNK_STRATEGY, GENERAL_ASSISTANT_SYSTEM_PROMPT, "", "", "en", user_id, workspace_id, False, project_id, manager_id, "[]", False, "[]", "[]")
         )
 
         # Step 4: Create document placeholders (knowledge bases).

@@ -26,7 +26,7 @@ and scrub sensitive PII data to maintain user privacy.
 
 import os  # Read system environment settings
 import uuid  # Generate unique tracking session IDs
-from typing import Optional, List, Dict  # Strict Python type annotations
+from typing import Optional, List, Dict, Any # Strict Python type annotations
 import asyncio  # Asynchronous thread execution controls
 from contextvars import ContextVar  # Track client context across async loops
 from fastapi import WebSocket, HTTPException, WebSocketDisconnect  # WebSocket protocols
@@ -42,6 +42,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+# pyrefly: ignore [missing-import]
 from langchain_community.tools import DuckDuckGoSearchRun
 
 from core.database import get_db_cursor_async
@@ -73,6 +74,32 @@ def _get_content_string(content) -> str:
                 parts.append(str(part))
         return "".join(parts)
     return str(content) if content is not None else ""
+
+
+def prune_json_payload(data: Any) -> Any:
+    """Recursively prunes large fields (like descriptions, images, base64 data) from JSON payloads to save tokens and prevent truncation."""
+    if isinstance(data, list):
+        return [prune_json_payload(item) for item in data[:20]]  # limit list size to top 20
+    elif isinstance(data, dict):
+        pruned = {}
+        # Keys we always want to keep
+        keep_keys = {"id", "name", "title", "price", "status", "email", "slug", "role", "category", "next", "next_step"}
+        # Keys we want to explicitly drop or truncate
+        drop_keys = {"image", "images", "avatar", "icon", "description", "backstory", "creationAt", "updatedAt", "created_at", "updated_at"}
+        
+        for k, v in data.items():
+            if k in drop_keys:
+                continue
+            if k in keep_keys or len(data) < 8:  # if dict is small, keep most keys
+                pruned[k] = prune_json_payload(v)
+            elif isinstance(v, (dict, list)):
+                pruned[k] = prune_json_payload(v)
+            elif isinstance(v, str) and len(v) > 200:
+                pruned[k] = v[:200] + "...[truncated]"
+            else:
+                pruned[k] = v
+        return pruned
+    return data
 
 def create_llm_instance(provider: str, model_name: str, api_key: Optional[str] = None, base_url: Optional[str] = None, **kwargs):
     """
@@ -338,11 +365,6 @@ def create_webhook_tool(endpoint, project_tools_dict):
     @tool
     async def execute_webhook(**kwargs) -> str:
         """Execute the webhook with the provided arguments."""
-        import time
-        cb = _circuit_breakers.setdefault(full_url, {"failures": 0, "last_failure": 0.0})
-        if cb["failures"] >= 3 and (time.time() - cb["last_failure"] < 900):
-            return "Error: Circuit Breaker Tripped - The target service is currently offline. Please use a fallback tool if available."
-
         try:
             payload_dict = kwargs.get("kwargs", kwargs)
             if "payload" in payload_dict and len(payload_dict) == 1:
@@ -362,15 +384,10 @@ def create_webhook_tool(endpoint, project_tools_dict):
                 async with session.request(method, full_url, **kwargs_request) as response:
                     logger.info(f"✅ WEBHOOK RESPONSE STATUS: {response.status}")
                     
-                    if 200 <= response.status < 300:
-                        cb["failures"] = 0
-                    else:
-                        cb["failures"] += 1
-                        cb["last_failure"] = time.time()
-
                     try:
                         resp = await response.json()
-                        resp_str = json_lib.dumps(resp)
+                        pruned_resp = prune_json_payload(resp)
+                        resp_str = json_lib.dumps(pruned_resp)
                     except Exception:
                         resp_str = await response.text()
                     
@@ -383,10 +400,8 @@ def create_webhook_tool(endpoint, project_tools_dict):
                         )
                     return resp_str
         except Exception as e:
-            cb["failures"] += 1
-            cb["last_failure"] = time.time()
             logger.error(f"❌ Error executing webhook {name}: {str(e)}", exc_info=True)
-            return f"Error executing {name}: {str(e)}"
+            return f"Error: Custom API tool '{name}' failed or is unreachable: {str(e)}"
             
     execute_webhook.name = name
     execute_webhook.description = description
@@ -420,10 +435,20 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
     full_url = base_url.rstrip("/") + "/" + path.lstrip("/")
     description = config.get("description", f"Execute API action for {tool_name}.")
     payload_format = config.get("payload_format", "")
+    end_point_suffix = config.get("end_point_suffix", "")
     expected_output = config.get("expected_output", "")
     
     if payload_format:
         description += f"\nExpected JSON arguments: {payload_format}"
+
+    if end_point_suffix:
+        description += f"\nThis tool supports dynamic endpoint suffixes. To target a specific suffix pattern, pass the pattern string as a key with the corresponding variable value. Available suffix patterns:\n"
+        try:
+            suffix_dict = json_lib.loads(end_point_suffix)
+            for pattern, desc in suffix_dict.items():
+                description += f"- '{pattern}': {desc}\n"
+        except Exception:
+            description += f"{end_point_suffix}\n"
         
     if expected_output:
         description += f"\nThe expected response from the API: {expected_output}"
@@ -433,11 +458,6 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
     @tool(clean_name, description=description)
     async def execute_workspace_webhook(**kwargs) -> str:
         """Execute the webhook with the provided arguments."""
-        import time
-        cb = _circuit_breakers.setdefault(full_url, {"failures": 0, "last_failure": 0.0})
-        if cb["failures"] >= 3 and (time.time() - cb["last_failure"] < 900):
-            return "Error: Circuit Breaker Tripped - The target service is currently offline. Please use a fallback tool if available."
-            
         try:
             payload_dict = kwargs.get("kwargs", kwargs)
             if "payload" in payload_dict and len(payload_dict) == 1:
@@ -476,9 +496,18 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
                     configured_keys = [k.strip('"\'') for k in json_lib.loads(payload_format).keys()]
                 except Exception:
                     pass
-                    
+
+            suffix_keys = []
+            if end_point_suffix:
+                try:
+                    suffix_keys = [k.strip('"\'') for k in json_lib.loads(end_point_suffix).keys()]
+                except Exception:
+                    pass
+
+            combined_keys = configured_keys + suffix_keys
+            
             if isinstance(payload_dict, dict):
-                for config_key in configured_keys:
+                for config_key in combined_keys:
                     if "{" in config_key and "}" in config_key:
                         key_vars = re.findall(r'\{([^}]+)\}', config_key)
                         val = None
@@ -511,7 +540,8 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
                             if isinstance(val, float) and val.is_integer():
                                 val = int(val)
                                 
-                            if matched_key and matched_key != config_key and "{" not in matched_key:
+                            clean_key_vars = [kv.strip('"\'') for kv in key_vars]
+                            if matched_key and matched_key != config_key and "{" not in matched_key and matched_key not in clean_key_vars:
                                 # Use pre-substituted key directly (e.g. "1/related")
                                 resolved_segment = matched_key
                             else:
@@ -578,12 +608,6 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
                 
             async with aiohttp.ClientSession() as session:
                 async with session.request(method, full_url_resolved, **kwargs_request) as response:
-                    if 200 <= response.status < 300:
-                        cb["failures"] = 0
-                    else:
-                        cb["failures"] += 1
-                        cb["last_failure"] = time.time()
-                        
                     if client_id:
                         try:
                             asyncio.create_task(
@@ -601,7 +625,8 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
                         
                     try:
                         resp = await response.json()
-                        resp_str = json_lib.dumps(resp)
+                        pruned_resp = prune_json_payload(resp)
+                        resp_str = json_lib.dumps(pruned_resp)
                     except Exception:
                         resp_str = await response.text()
                         
@@ -609,8 +634,6 @@ def create_workspace_webhook_tool(tool_id, tool_name, config):
                         return resp_str[:8000] + "\n\n[OUTPUT TRUNCATED: Payload exceeded 8000 chars.]"
                     return resp_str
         except Exception as e:
-            cb["failures"] += 1
-            cb["last_failure"] = time.time()
             logger.error(f"❌ Error executing workspace webhook {clean_name}: {str(e)}", exc_info=True)
             return f"Error: Custom API tool '{clean_name}' failed or is unreachable: {str(e)}"
             
@@ -870,8 +893,24 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 break
                     if is_webhook_tool:
                         status_msg = f"Executing custom API tool {t_name}..."
+                        tool_label = f"Custom API: {t_name.replace('_', ' ').replace('-', ' ').title()}"
+                        tool_input = event.get("data", {}).get("input", {})
                         await safe_send({"type": "status", "content": status_msg})
+                        await safe_send(
+                            {
+                                "type": "step",
+                                "status": f"tool_call_{t_name}",
+                                "label": f"Calling: {tool_label}",
+                                "tool_input": tool_input
+                            }
+                        )
                         steps_list.append({"status": "status", "label": status_msg, "done": True})
+                        steps_list.append({
+                            "status": f"tool_call_{t_name}",
+                            "label": f"Calling: {tool_label}",
+                            "tool_input": tool_input,
+                            "done": True
+                        })
                         continue
                         
                     if t_name == "search_knowledge_base":
@@ -885,11 +924,23 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         status_msg = f"Running action: {action_name}..."
                         tool_label = action_name
                     await safe_send({"type": "status", "content": status_msg})
+                    
+                    tool_input = event.get("data", {}).get("input", {})
                     await safe_send(
-                        {"type": "step", "status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}"}
+                        {
+                            "type": "step",
+                            "status": f"tool_call_{t_name}",
+                            "label": f"Calling: {tool_label}",
+                            "tool_input": tool_input
+                        }
                     )
                     steps_list.append({"status": "status", "label": status_msg, "done": True})
-                    steps_list.append({"status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}", "done": True})
+                    steps_list.append({
+                        "status": f"tool_call_{t_name}",
+                        "label": f"Calling: {tool_label}",
+                        "tool_input": tool_input,
+                        "done": True
+                    })
                     
                 elif kind == "on_tool_end":
                     t_name = event["name"]
@@ -900,15 +951,54 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 is_webhook_tool = True
                                 break
                     if is_webhook_tool:
+                        tool_label = f"Custom API: {t_name.replace('_', ' ').title()}"
+                        tool_output = event.get("data", {}).get("output", "")
+                        try:
+                            if not isinstance(tool_output, (str, int, float, bool, list, dict)):
+                                tool_output = str(tool_output)
+                        except Exception:
+                            tool_output = str(tool_output)
                         await safe_send({"type": "status", "content": ""})
+                        await safe_send(
+                            {
+                                "type": "step",
+                                "status": f"tool_done_{t_name}",
+                                "label": f"Got results from: {tool_label}",
+                                "tool_output": tool_output
+                            }
+                        )
+                        steps_list.append({
+                            "status": f"tool_done_{t_name}",
+                            "label": f"Got results from: {tool_label}",
+                            "tool_output": tool_output,
+                            "done": True
+                        })
                         continue
                         
                     tool_label = t_name.replace("_", " ").title()
+                    
+                    tool_output = event.get("data", {}).get("output", "")
+                    try:
+                        if not isinstance(tool_output, (str, int, float, bool, list, dict)):
+                            tool_output = str(tool_output)
+                    except Exception:
+                        tool_output = str(tool_output)
+
                     await safe_send({"type": "status", "content": ""})
                     await safe_send(
-                        {"type": "step", "status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}"}
+                        {
+                            "type": "step",
+                            "status": f"tool_done_{t_name}",
+                            "label": f"Got results from: {tool_label}",
+                            "tool_output": tool_output
+                        }
                     )
-                    steps_list.append({"status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}", "done": True})
+                    steps_list.append({
+                        "status": f"tool_done_{t_name}",
+                        "label": f"Got results from: {tool_label}",
+                        "tool_output": tool_output,
+                        "done": True
+                    })
                     
                 elif kind == "on_chain_start" and event["name"] == "supervisor":
                     await safe_send(
@@ -1555,6 +1645,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         request_llm_cache[cache_key] = res
                         return res
 
+                    has_documents_map = {}
+
                     def tools_factory(aid: str, emb_model: str, web_enabled: bool, llm_inst):
                         aid_str = str(aid)
                         if aid_str in request_tools_cache:
@@ -1565,7 +1657,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         
                         @tool
                         async def search_knowledge_base(query: str) -> str:
-                            """Search the workspace database / RAG knowledge base for uploaded documents, files, and domain information. ALWAYS invoke this tool first before answering domain or factual questions."""
+                            """Search the workspace database / RAG knowledge base for uploaded documents, files, and domain information when relevant to the query."""
                             logger.info(f"🔍 Knowledge base search triggered for query: '{query}'")
                             hyde_query = await rag_engine.generate_hyde_query(query, llm_inst)
                             logger.debug(f"Generated HyDE query: '{hyde_query}'")
@@ -1606,7 +1698,9 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 logger.error(f"Web search failed: {se}", exc_info=True)
                                 return "Web search failed or blocked."
 
-                        t_list = [search_knowledge_base]
+                        t_list = []
+                        if has_documents_map.get(aid_str, False) or has_documents_map.get(str(agent_id), False):
+                            t_list.append(search_knowledge_base)
                         if web_enabled:
                             t_list.append(search_web)
 
@@ -1738,6 +1832,23 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     except Exception as e:
                         logger.error(f"Error pre-fetching workspace tools: {e}", exc_info=True)
                         registry.tools = {}
+
+                    # Pre-fetch document counts for the main agent and sub-agents
+                    for aid in agent_ids:
+                        has_documents_map[aid] = False
+                    try:
+                        async with get_db_cursor_async(commit=False) as cursor:
+                            placeholders = ",".join(["%s"] * len(agent_ids))
+                            await run_in_threadpool(
+                                cursor.execute,
+                                f"SELECT agent_id, count(*) FROM documents WHERE agent_id IN ({placeholders}) AND status = 'completed' GROUP BY agent_id",
+                                tuple(agent_ids)
+                            )
+                            doc_rows = await run_in_threadpool(cursor.fetchall)
+                            for r in doc_rows:
+                                has_documents_map[str(r[0])] = r[1] > 0
+                    except Exception as e:
+                        logger.error(f"Error pre-fetching document counts: {e}", exc_info=True)
 
                     graph = build_multi_agent_graph(
                         master_agent_id=agent_id,

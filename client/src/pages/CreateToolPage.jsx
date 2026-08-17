@@ -185,40 +185,78 @@ export default function CreateToolPage() {
             setApiKey(targetTool.configuration?.api_key || "");
             setHeaders(JSON.stringify(targetTool.configuration?.headers || {}, null, 2));
             const pf = targetTool.configuration?.payload_format || "";
+            const eps = targetTool.configuration?.end_point_suffix || "";
             setPayloadFormat(pf);
-            try {
-              if (pf && pf.trim().startsWith("{")) {
-                const parsed = JSON.parse(pf);
-                const pVars = [];
-                const qParams = [];
-                const currentPath = targetTool.configuration?.path || "";
-                Object.entries(parsed).forEach(([key, val]) => {
-                  let required = true;
-                  let type = "string";
-                  let desc = val;
-                  if (typeof val === "string") {
-                    if (val.includes("(optional)")) {
-                      required = false;
-                      desc = desc.replace("(optional)", "").trim();
-                    }
-                    const firstWord = desc.split(" ")[0].toLowerCase();
-                    if (["string", "integer", "number", "boolean", "object", "array"].includes(firstWord)) {
-                      type = firstWord;
-                      desc = desc.substring(firstWord.length).replace(/^-/, "").trim();
-                    }
-                  }
-                  const obj = { name: key, type, required, description: desc };
-                  const isPathVar = currentPath.includes(`{${key}}`) || key.includes("{") || key.includes("}");
-                  if (isPathVar) {
-                    pVars.push(obj);
-                  } else {
-                    qParams.push(obj);
-                  }
-                });
-                setPathVars(pVars);
-                setQueryParams(qParams);
+
+            const pVars = [];
+            const qParams = [];
+
+            const parseParamStr = (jsonStr) => {
+              if (!jsonStr || !jsonStr.trim().startsWith("{")) return {};
+              try {
+                return JSON.parse(jsonStr);
+              } catch (e) {
+                return {};
               }
-            } catch (e) {}
+            };
+
+            const parsedPf = parseParamStr(pf);
+            const parsedEps = parseParamStr(eps);
+
+            Object.entries(parsedPf).forEach(([key, val]) => {
+              let required = true;
+              let type = "string";
+              let desc = val;
+              if (typeof val === "string") {
+                if (val.includes("(optional)")) {
+                  required = false;
+                  desc = desc.replace("(optional)", "").trim();
+                }
+                const firstWord = desc.split(" ")[0].toLowerCase();
+                if (["string", "integer", "number", "boolean", "object", "array"].includes(firstWord)) {
+                  type = firstWord;
+                  desc = desc.substring(firstWord.length).replace(/^-/, "").trim();
+                }
+              }
+              qParams.push({ name: key, type, required, description: desc });
+            });
+
+            Object.entries(parsedEps).forEach(([key, val]) => {
+              let required = true;
+              let type = "string";
+              let desc = val;
+              if (typeof val === "string") {
+                if (val.includes("(optional)")) {
+                  required = false;
+                  desc = desc.replace("(optional)", "").trim();
+                }
+                const firstWord = desc.split(" ")[0].toLowerCase();
+                if (["string", "integer", "number", "boolean", "object", "array"].includes(firstWord)) {
+                  type = firstWord;
+                  desc = desc.substring(firstWord.length).replace(/^-/, "").trim();
+                }
+              }
+              pVars.push({ name: key, type, required, description: desc });
+            });
+
+            // Legacy fallback if eps is missing but path contains variables inside pf keys
+            if (pVars.length === 0 && Object.keys(parsedPf).length > 0) {
+              const currentPath = targetTool.configuration?.path || "";
+              const finalQParams = [];
+              qParams.forEach(obj => {
+                const isPathVar = currentPath.includes(`{${obj.name}}`) || obj.name.includes("{") || obj.name.includes("}");
+                if (isPathVar) {
+                  pVars.push(obj);
+                } else {
+                  finalQParams.push(obj);
+                }
+              });
+              setQueryParams(finalQParams);
+            } else {
+              setQueryParams(qParams);
+            }
+            
+            setPathVars(pVars);
             setExpectedOutput(targetTool.configuration?.expected_output || "");
           } else if (targetTool.tool_type === "database") {
             const connStr = targetTool.configuration?.connection_string || "";
@@ -265,11 +303,12 @@ export default function CreateToolPage() {
     // Format configuration
     let configuration = {};
     if (toolType === "api_webhook") {
-      let finalPayloadFormat = payloadFormat;
-      const combined = [...pathVars, ...queryParams];
-      if (combined.length > 0) {
+      let finalPayloadFormat = "";
+      let finalEndPointSuffix = "";
+
+      if (queryParams.length > 0) {
         const payloadObj = {};
-        combined.forEach(p => {
+        queryParams.forEach(p => {
           if (!p.name.trim()) return;
           let desc = p.type;
           if (!p.required) desc += " (optional)";
@@ -277,9 +316,20 @@ export default function CreateToolPage() {
           payloadObj[p.name.trim()] = desc;
         });
         finalPayloadFormat = JSON.stringify(payloadObj, null, 2);
-      } else {
-        finalPayloadFormat = "";
       }
+
+      if (pathVars.length > 0) {
+        const suffixObj = {};
+        pathVars.forEach(p => {
+          if (!p.name.trim()) return;
+          let desc = p.type;
+          if (!p.required) desc += " (optional)";
+          if (p.description) desc += ` - ${p.description}`;
+          suffixObj[p.name.trim()] = desc;
+        });
+        finalEndPointSuffix = JSON.stringify(suffixObj, null, 2);
+      }
+
       let parsedHeaders = {};
       try {
         parsedHeaders = JSON.parse(headers);
@@ -296,6 +346,7 @@ export default function CreateToolPage() {
         headers: parsedHeaders,
         description: description,
         payload_format: finalPayloadFormat,
+        end_point_suffix: finalEndPointSuffix,
         expected_output: expectedOutput,
         requires_approval: requiresApproval
       };
@@ -525,13 +576,43 @@ export default function CreateToolPage() {
           payload_format: payloadFormat || "",
           expected_output: expectedOutput || "",
           llm_provider: "groq",
-          llm_model: "llama-3.3-70b-versatile"
+          llm_model: "openai/gpt-oss-120b",
+          path_variables: pathVars.map(v => v.name),
+          query_parameters: queryParams.map(v => v.name)
         })
       });
       if (!res.ok) throw new Error("Failed to generate description");
       const data = await res.json();
       if (data?.description) {
         setDescription(data.description);
+        
+        // Update path variables descriptions
+        if (data.path_variables && typeof data.path_variables === "object") {
+          setPathVars(prev => prev.map(v => {
+            const cleanName = v.name.trim();
+            // Match exact key, key without curly braces, or key with curly braces
+            const keyWithoutBraces = cleanName.replace(/[{}]/g, "");
+            const keyWithBraces = `{${keyWithoutBraces}}`;
+            const aiDesc = data.path_variables[cleanName] || data.path_variables[keyWithoutBraces] || data.path_variables[keyWithBraces] || "";
+            if (aiDesc) {
+              return { ...v, description: aiDesc };
+            }
+            return v;
+          }));
+        }
+
+        // Update query parameters descriptions
+        if (data.query_parameters && typeof data.query_parameters === "object") {
+          setQueryParams(prev => prev.map(p => {
+            const cleanName = p.name.trim();
+            const aiDesc = data.query_parameters[cleanName] || "";
+            if (aiDesc) {
+              return { ...p, description: aiDesc };
+            }
+            return p;
+          }));
+        }
+
         toast.success("AI Description generated!", { id: loadingToastId });
       } else {
         throw new Error("No description returned");

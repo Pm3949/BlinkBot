@@ -176,6 +176,7 @@ def build_multi_agent_graph(
                 content = "".join(parts).strip()
             else:
                 content = str(content).strip()
+            logger.debug(f"Supervisor raw LLM response: '{content}'")
 
             # Extract JSON block cleanly by finding the first '{' and last '}'
             first_brace = content.find("{")
@@ -184,9 +185,27 @@ def build_multi_agent_graph(
                 content = content[first_brace : last_brace + 1]
 
             # Parse the JSON response.
-            parsed = json.loads(content)
-            next_step = parsed.get("next", "FINISH").strip()
-            logger.debug(f"Supervisor router decision: content_parsed=True, next_step={next_step}")
+            try:
+                parsed = json.loads(content)
+                next_step = parsed.get("next", "FINISH").strip()
+                logger.debug(f"Supervisor router decision: content_parsed=True, next_step={next_step}")
+            except json.JSONDecodeError:
+                # If JSON parsing fails, scan the raw content for any sub-agent IDs or names
+                found_id = None
+                for sa in sub_agents:
+                    sa_id = str(sa[0])
+                    if sa_id.lower() in content.lower():
+                        found_id = sa_id
+                        break
+                if found_id:
+                    next_step = found_id
+                    logger.debug(f"Supervisor router decision: content_parsed=False, regex_matched_id={next_step}")
+                elif "finish" in content.lower() or "end" in content.lower():
+                    next_step = "FINISH"
+                    logger.debug("Supervisor router decision: content_parsed=False, resolved_to=FINISH")
+                else:
+                    next_step = "FINISH"
+                    logger.debug("Supervisor router decision: content_parsed=False, fallback_to=FINISH")
         except Exception as e:
             # Fall back to ending the execution loop on errors.
             logger.error(f"Supervisor routing failed: {e}", exc_info=True)

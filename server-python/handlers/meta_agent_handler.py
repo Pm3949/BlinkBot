@@ -34,6 +34,7 @@ from google import genai  # Google GenAI SDK client
 from google.genai import types  # Parameter configurations for Gemini models
 from core.meta_agent_schemas import AgentBlueprint, SingleAgentResponse  # Pydantic schemas validating AI structures
 from db import meta_agent_repository  # Database access layer for deploying blueprints
+from core.config import DEFAULT_LLM_MODEL, FALLBACK_GROQ_MODEL
 
 # Load environment configuration variables
 load_dotenv()
@@ -49,7 +50,7 @@ from prompts.meta_prompts import NETWORK_SYSTEM_PROMPT, SINGLE_SYSTEM_PROMPT
 
 async def _generate_with_gemini(prompt: str, response_schema, system_instruction: str):
     """
-    Sends requests to Google Gemini model (gemini-2.5-flash) to retrieve structured output
+    Sends requests to Google Gemini model (gemini-3-flash) to retrieve structured output
     that matches a given Pydantic schema class.
     Retries up to 3 times with exponential backoff on HTTP 503 errors.
 
@@ -79,9 +80,9 @@ async def _generate_with_gemini(prompt: str, response_schema, system_instruction
     # Retry loop to recover from temporary service overloads
     for attempt in range(1, 4):
         try:
-            logger.info(f"Gemini API call attempt {attempt}/3 using gemini-2.5-flash...")
+            logger.info(f"Gemini API call attempt {attempt}/3 using {DEFAULT_LLM_MODEL}...")
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=DEFAULT_LLM_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",         # Enforces output content type JSON
@@ -139,13 +140,13 @@ async def _generate_with_groq(prompt: str, response_schema_class, system_instruc
         f"You MUST respond with ONLY valid JSON that exactly matches this schema:\n{schema_json}"
     )
 
-    logger.info("Sending request to Groq llama-3.3-70b-versatile...")
+    logger.info(f"Sending request to Groq {FALLBACK_GROQ_MODEL}...")
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
             json={
-                "model": "llama-3.3-70b-versatile",
+                "model": FALLBACK_GROQ_MODEL,
                 "messages": [
                     {"role": "system", "content": full_system},
                     {"role": "user", "content": prompt}
