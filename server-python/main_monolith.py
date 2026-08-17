@@ -56,7 +56,7 @@ from gtts import gTTS
 from fastapi.middleware.cors import CORSMiddleware
 from groq import Groq
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import get_db_connection
+from core.database import get_db_connection
 from fastapi.staticfiles import StaticFiles
 from core.dependencies import UPLOAD_DIR
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -457,7 +457,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize database migrations automatically.
     try:
-        from database import get_db_cursor_async
+        from core.database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         import glob
         
@@ -494,7 +494,7 @@ async def lifespan(app: FastAPI):
 
     # Synchronize default settings & system prompts for Network Manager and General Assistant core agents.
     try:
-        from database import get_db_cursor_async
+        from core.database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         from prompts.system_agent_prompts import NETWORK_MANAGER_SYSTEM_PROMPT, GENERAL_ASSISTANT_SYSTEM_PROMPT
         

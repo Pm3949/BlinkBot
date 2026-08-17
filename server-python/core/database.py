@@ -54,9 +54,12 @@ if not DB_URL:
 
 # Initialize the global connection pool cache.
 try:
-    # Pre-allocates a minimum of 1 connection and caps active concurrent connections at 30.
-    db_pool = psycopg2.pool.ThreadedConnectionPool(1, 30, DB_URL)
-    logger.info("Database connection pool initialized successfully (min=1, max=30)")
+    # Read pool limits dynamically from environment, defaulting to min=1, max=10.
+    db_pool_min = int(os.getenv("DB_POOL_MIN", "1"))
+    db_pool_max = int(os.getenv("DB_POOL_MAX", "10"))
+    
+    db_pool = psycopg2.pool.ThreadedConnectionPool(db_pool_min, db_pool_max, DB_URL)
+    logger.info(f"Database connection pool initialized successfully (min={db_pool_min}, max={db_pool_max})")
 except Exception as e:
     # Raise a critical runtime error if the database pool fails to initialize.
     logger.critical(f"Failed to initialize database pool: {e}", exc_info=True)

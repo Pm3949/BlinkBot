@@ -40,7 +40,7 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
    - `get_member_by_id(member_id)`: Retrieves membership details.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import json
 

@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db import billing_repository
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 async def test_wallet_and_billing_operations():

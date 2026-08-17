@@ -271,7 +271,7 @@ async def get_available_models(current_user: dict = Depends(get_current_user)):
     All 4 independent DB queries are fired in parallel using asyncio.gather() for maximum performance.
     """
     import asyncio
-    from database import get_db_cursor_async
+    from core.database import get_db_cursor_async
     from fastapi.concurrency import run_in_threadpool
     from db import billing_repository, settings_repository
 

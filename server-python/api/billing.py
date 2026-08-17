@@ -24,7 +24,7 @@ import fitz
 from utils.logger import get_department_logger
 from fastapi import APIRouter, Depends, Response, HTTPException
 from fastapi.responses import StreamingResponse
-from schemas import CheckoutRequest, RazorpayVerifyRequest
+from core.schemas import CheckoutRequest, RazorpayVerifyRequest
 from core.auth import get_current_user
 
 # Import the payment and subscription handlers.

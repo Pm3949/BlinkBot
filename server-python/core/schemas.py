@@ -232,4 +232,3 @@ class Login2FA(BaseModel):
     """
     user_id: str # UUID of the user.
     totp_code: str # The 6-digit verification code.
-

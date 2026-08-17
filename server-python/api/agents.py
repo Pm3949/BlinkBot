@@ -546,7 +546,7 @@ async def get_agent_token_analytics(agent_id: str, current_user: dict = Depends(
     """
     Get token usage and cost metrics for a specific agent.
     """
-    from database import get_db_cursor_async
+    from core.database import get_db_cursor_async
     from fastapi.concurrency import run_in_threadpool
     try:
         user_id = current_user["sub"]

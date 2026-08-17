@@ -33,7 +33,7 @@ CONCURRENCY & TRANSACTION PHILOSOPHY:
   updates use `commit=True` to persist modifications immediately.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 async def get_user_subscription(user_id: str):

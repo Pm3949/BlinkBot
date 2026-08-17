@@ -1,5 +1,5 @@
 import asyncio
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 async def main():
     sql = """
 CREATE OR REPLACE FUNCTION public.get_user_limit(user_id uuid, limit_key text, default_val integer)

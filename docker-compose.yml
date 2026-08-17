@@ -1,16 +1,57 @@
+version: "3.8"
+
 services:
-  backend:
-    build:
-      context: ./server-python
-      dockerfile: Dockerfile
-    container_name: blinkbot-backend
-    ports:
-      - "8000:8000"
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    env_file:
-      - ./server-python/dev.env
-    volumes:
-      - ./server-python:/app
+  redis:
+    image: redis:alpine
+    container_name: ragmate-redis
     restart: always
+    ports:
+      - "6379:6379"
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragmate-control-plane
+    restart: always
+    command: uvicorn main_control_plane:app --host 0.0.0.0 --port 8000 --workers 4
+    expose:
+      - "8000"
+    env_file:
+      - server-python/dev.env
+    environment:
+      - DB_POOL_MIN=1
+      - DB_POOL_MAX=10
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  ai-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragmate-ai-engine
+    restart: always
+    command: uvicorn main_ai_engine:app --host 0.0.0.0 --port 8001 --workers 1
+    expose:
+      - "8001"
+    env_file:
+      - server-python/dev.env
+    environment:
+      - DB_POOL_MIN=1
+      - DB_POOL_MAX=30
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  nginx:
+    image: nginx:alpine
+    container_name: ragmate-nginx
+    restart: always
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - control-plane
+      - ai-engine

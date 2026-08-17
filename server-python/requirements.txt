@@ -161,3 +161,8 @@ bandit
 # wikipedia: Used by agents to search Wikipedia pages for encyclopedic information.
 wikipedia
 
+# --- Distributed Messaging Backplane ---
+# redis: Provides Redis connection client for Pub/Sub.
+redis>=5.0.0
+
+

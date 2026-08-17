@@ -30,7 +30,7 @@ DATABASE SCHEMAS AND JSONB:
   `%s::jsonb` to optimize query indexes and retrieval.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import json
 

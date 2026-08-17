@@ -28,7 +28,7 @@ from utils.logger import get_department_logger
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, File, Form, UploadFile, Depends, Header, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from schemas import URLRequest, ConnectorRequest
+from core.schemas import URLRequest, ConnectorRequest
 from api.auth import limiter
 from handlers.websocket_handlers import upload_status_manager
 from core.auth import get_current_user

@@ -32,7 +32,7 @@ from typing import List
 import logging
 from utils.logger import get_department_logger
 from langchain_core.tools import tool, BaseTool
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
 import httpx
 

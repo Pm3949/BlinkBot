@@ -109,4 +109,3 @@ class SingleAgentResponse(BaseModel):
     description: str = Field(..., description="Brief summary of the assistant's behavior")
     system_prompt: str = Field(..., description="Persona, context instructions, and rules")
     output_format_instructions: str = Field(..., description="Formatting rules for the output")
-

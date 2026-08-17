@@ -35,7 +35,7 @@ CONCURRENCY & DB MOTIVATION:
   directly at the database level.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import uuid
 

@@ -46,7 +46,7 @@ from core.dependencies import rag_engine, UPLOAD_DIR
 from core.security import encrypt_data, decrypt_data
 from core.security_scan import validate_magic_bytes, scan_malicious_content
 from utils import background_ingestion, get_user_limits_by_id
-from schemas import URLRequest, ConnectorRequest
+from core.schemas import URLRequest, ConnectorRequest
 from handlers.document_processor import async_background_ingestion
 from handlers.websocket_handlers import upload_status_manager
 from db import document_repository

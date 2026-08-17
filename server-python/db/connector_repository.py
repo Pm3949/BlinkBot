@@ -32,7 +32,7 @@ TOKEN COALESCE PATTERN:
   `COALESCE(%s, refresh_token)` in SQL.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import psycopg2.extras
 

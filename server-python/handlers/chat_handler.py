@@ -44,7 +44,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from db import chat_repository, chat_history_repository
 from core.dependencies import rag_engine
 from core.security import decrypt_key
@@ -203,7 +203,7 @@ async def create_resilient_llm_instance(provider: str, model_name: str, api_key:
     logger.info(f"Creating resilient LLM instance for model: {model_name} (provider: {provider})")
     try:
         from db import model_repository, settings_repository
-        from database import get_db_cursor_async
+        from core.database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         
         # Fetch connection parameters from user_ai_models if registered by user

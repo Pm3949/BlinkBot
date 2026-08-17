@@ -31,7 +31,7 @@ import httpx  # Perform non-blocking async HTTP client requests (to Google APIs)
 import tempfile  # Create local files on disk (purged after processing)
 import asyncio  # Asynchronous thread execution controls
 from fastapi import HTTPException  # Return clean HTTP error responses to client
-from database import get_db_cursor_async  # Non-blocking async database cursors
+from core.database import get_db_cursor_async  # Non-blocking async database cursors
 from fastapi.concurrency import run_in_threadpool  # Run synchronous functions in an async threadpool
 from db import connector_repository  # Database query repository for connectors
 

@@ -42,7 +42,7 @@ operations to background threads. This keeps the async event loop free to handle
 concurrent HTTP and WebSockets connections.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 async def get_analytics_metrics(user_id: str):

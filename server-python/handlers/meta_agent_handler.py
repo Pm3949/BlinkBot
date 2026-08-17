@@ -32,7 +32,7 @@ from fastapi import HTTPException  # Raise clean HTTP error status codes to clie
 from dotenv import load_dotenv  # Load local environment settings from .env file
 from google import genai  # Google GenAI SDK client
 from google.genai import types  # Parameter configurations for Gemini models
-from meta_agent_schemas import AgentBlueprint, SingleAgentResponse  # Pydantic schemas validating AI structures
+from core.meta_agent_schemas import AgentBlueprint, SingleAgentResponse  # Pydantic schemas validating AI structures
 from db import meta_agent_repository  # Database access layer for deploying blueprints
 
 # Load environment configuration variables

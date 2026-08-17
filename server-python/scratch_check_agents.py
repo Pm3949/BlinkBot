@@ -1,5 +1,5 @@
 import asyncio
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 async def main():
     user_id = 'fd577a82-a4de-424b-8720-37af3eb52d0d'
     async with get_db_cursor_async(commit=False) as cursor:

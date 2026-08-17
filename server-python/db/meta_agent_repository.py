@@ -35,8 +35,8 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
 """
 
 import json
-from meta_agent_schemas import AgentBlueprint
-from database import get_db_cursor_async
+from core.meta_agent_schemas import AgentBlueprint
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from prompts.system_agent_prompts import NETWORK_MANAGER_SYSTEM_PROMPT, GENERAL_ASSISTANT_SYSTEM_PROMPT
 

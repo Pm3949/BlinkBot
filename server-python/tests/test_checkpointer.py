@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 # Ensure server-python root is in search path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from utils.postgres_saver import PostgresCheckpointSaver
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata

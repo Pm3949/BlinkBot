@@ -33,7 +33,7 @@ def background_ingestion(
     synchronously in the HTTP request, the frontend would hang and eventually timeout. 
     By running it in the background, we can immediately return a "Processing" status to the user.
     """
-    from database import get_db_connection
+    from core.database import get_db_connection
     conn = None
     cursor = None
     try:
@@ -217,7 +217,7 @@ def get_user_limits(user_id: str, cursor) -> dict:
         return default_limits
 
 async def get_user_limits_by_id(user_id: str) -> dict:
-    from database import get_db_cursor_async
+    from core.database import get_db_cursor_async
     from fastapi.concurrency import run_in_threadpool
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(

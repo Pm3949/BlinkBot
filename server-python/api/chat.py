@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Request, Header, Response, WebSocket
 
 # Import Pydantic schemas validating input payloads.
-from schemas import ChatRequest, WidgetChatRequest
+from core.schemas import ChatRequest, WidgetChatRequest
 # Import API rate limiter instance.
 from api.auth import limiter
 # Import chat handler logic.

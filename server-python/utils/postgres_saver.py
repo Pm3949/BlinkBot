@@ -8,7 +8,7 @@ from langgraph.checkpoint.base import (
     CheckpointTuple,
     ChannelVersions,
 )
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 class PostgresCheckpointSaver(BaseCheckpointSaver):

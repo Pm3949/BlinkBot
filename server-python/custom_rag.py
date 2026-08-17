@@ -550,7 +550,7 @@ class CustomRAGEngine:
         completely offloading the CPU-heavy NumPy cosine calculations to the database
         without blocking the async event loop.
         """
-        from database import get_db_cursor_async
+        from core.database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
         
         results = []

@@ -344,7 +344,7 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
     # If the key is masked (represented as asterisks) and is custom_openai, fetch/decrypt the original key from DB
     if (not api_key or api_key.startswith("********")) and provider == "custom_openai":
         try:
-            from database import get_db_cursor_async
+            from core.database import get_db_cursor_async
             from fastapi.concurrency import run_in_threadpool
             async with get_db_cursor_async(commit=False) as cursor:
                 await run_in_threadpool(

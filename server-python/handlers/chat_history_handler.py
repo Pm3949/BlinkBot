@@ -91,7 +91,7 @@ async def handle_create_chat_session(payload: dict):
         
         # Resolve project_id (if passed as agent_id) to the Network Manager's agent_id to avoid ForeignKeyViolation
         if agent_id:
-            from database import get_db_cursor_async
+            from core.database import get_db_cursor_async
             from fastapi.concurrency import run_in_threadpool
             async with get_db_cursor_async(commit=False) as cursor:
                 await run_in_threadpool(

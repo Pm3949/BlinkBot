@@ -21,7 +21,7 @@ import logging
 from utils.logger import get_department_logger
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from schemas import InviteRequest, WorkspaceCreate
+from core.schemas import InviteRequest, WorkspaceCreate
 from core.auth import get_current_user
 
 # Import workspace and team management handlers.

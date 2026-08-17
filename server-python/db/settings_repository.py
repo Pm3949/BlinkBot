@@ -26,7 +26,7 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
      If empty, joins workspaces and members to locate the owner's settings, checking if `share_keys` is active.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 async def get_user_settings(user_id: str):

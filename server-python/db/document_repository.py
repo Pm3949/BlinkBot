@@ -44,7 +44,7 @@ SECURITY & VECTOR PRINCIPLES:
   during execution.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 async def get_agent_and_user_storage(agent_id: str):

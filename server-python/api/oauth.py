@@ -23,7 +23,7 @@ from fastapi.responses import RedirectResponse
 import os
 import logging
 from utils.logger import get_department_logger
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from starlette.concurrency import run_in_threadpool
 from fastapi_sso.sso.github import GithubSSO
 

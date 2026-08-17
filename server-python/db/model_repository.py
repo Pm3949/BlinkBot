@@ -35,7 +35,7 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
 """
 
 import json
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from core.security import encrypt_key, decrypt_key
 

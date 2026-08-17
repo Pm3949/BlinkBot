@@ -23,7 +23,7 @@ from utils.logger import get_department_logger
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from core.auth import get_current_user
-from meta_agent_schemas import AgentBlueprint, DeployRequest, SingleAgentResponse
+from core.meta_agent_schemas import AgentBlueprint, DeployRequest, SingleAgentResponse
 
 # Import the meta-agent generation and deployment handlers.
 from handlers.meta_agent_handler import (

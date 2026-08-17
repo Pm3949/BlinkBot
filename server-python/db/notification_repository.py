@@ -25,7 +25,7 @@ HOW THE SCRIPT WORKS FROM TOP TO BOTTOM:
 
 import logging
 from utils.logger import get_department_logger
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 
 # Initialize standard module-level logger.

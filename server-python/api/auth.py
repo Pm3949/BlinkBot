@@ -29,7 +29,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 # Import Pydantic validation schemas.
-from schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword, Login2FA
+from core.schemas import UserRegister, VerifyOTP, UserLogin, ForgotPassword, ResetPassword, Login2FA
 # Import authentication business logic handlers.
 from handlers.auth_handler import (
     handle_google_login,

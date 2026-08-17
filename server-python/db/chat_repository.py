@@ -40,7 +40,7 @@ VECTOR CONCEPTS IN RAG:
   embeddings of the agent, its parent agent, or peer agents in the same project.
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from typing import Optional, List, Dict
 from utils.logger import get_db_logger

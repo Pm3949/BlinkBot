@@ -43,7 +43,7 @@ DATABASE CONCURRENCY & DICT CURSORS:
   as keys in the returned row objects (e.g., `row['email']` instead of index-based `row[1]`).
 """
 
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 import psycopg2.extras
 

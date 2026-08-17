@@ -45,7 +45,7 @@ CONCURRENCY & SECURITY PHILOSOPHY:
 """
 
 import json
-from database import get_db_cursor_async
+from core.database import get_db_cursor_async
 from fastapi.concurrency import run_in_threadpool
 from core.security import encrypt_key
 from prompts.system_agent_prompts import GENERAL_ASSISTANT_SYSTEM_PROMPT
