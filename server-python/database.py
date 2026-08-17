@@ -114,45 +114,34 @@ async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
         Simplifies transaction handling. Automatically commits changes on success,
         rolls back modifications on failure, and closes the cursor and returns 
         the connection to the pool upon exit.
-
-    Parameters:
-        commit (bool): If True, commits the transaction on successful block completion.
-                       Defaults to False.
-        cursor_factory (type, optional): Custom cursor class (e.g. DictCursor).
-                                         Defaults to None.
-
-    Yields:
-        psycopg2.extensions.cursor: The cursor object.
-
-    Side Effects / State Changes:
-        - Modifies row records if insert/update/delete SQL queries are run and committed.
-        - Borrows and returns connection pool resources.
-
-    Errors / Exceptions:
-        - Automatically rolls back the transaction and re-raises any database exceptions.
+        
+        Optimized: All blocking psycopg2 methods (pool.getconn, commit, rollback, putconn)
+        are delegated to run_in_threadpool to keep the main asyncio event loop non-blocking.
     """
-    # Borrow a connection from the pool.
-    conn = db_pool.getconn()
+    # Borrow a connection from the pool on a worker thread
+    conn = await run_in_threadpool(db_pool.getconn)
     
-    # Instantiate the cursor using the custom factory if provided.
-    cursor = conn.cursor(cursor_factory=cursor_factory) if cursor_factory else conn.cursor()
+    # Instantiate the cursor using the custom factory if provided on a worker thread
+    if cursor_factory:
+        cursor = await run_in_threadpool(conn.cursor, cursor_factory=cursor_factory)
+    else:
+        cursor = await run_in_threadpool(conn.cursor)
+
     try:
         # Yield the cursor control block back to the caller.
         yield cursor
-        # If the block executed successfully and commit is True, commit the transaction.
+        # If the block executed successfully and commit is True, commit the transaction on a worker thread.
         if commit:
-            conn.commit()
+            await run_in_threadpool(conn.commit)
     except Exception as e:
-        # If any exception occurred during block execution, roll back the transaction.
-        conn.rollback()
+        # If any exception occurred, roll back on a worker thread.
+        await run_in_threadpool(conn.rollback)
         logger.warning(f"Transaction rolled back due to error: {type(e).__name__}")
-        # Re-raise the exception.
         raise
     finally:
-        # Close the cursor.
-        cursor.close()
-        # Return the connection to the pool.
-        db_pool.putconn(conn)
+        # Close the cursor and return the connection on a worker thread.
+        await run_in_threadpool(cursor.close)
+        await run_in_threadpool(db_pool.putconn, conn)
 
 
 @asynccontextmanager
@@ -163,26 +152,19 @@ async def get_db_connection_async():
     Purpose:
         Provides raw connection access for custom cursor configurations
         or manual transaction management.
-
-    Yields:
-        psycopg2.extensions.connection: The borrowed connection object.
-
-    Side Effects / State Changes:
-        - Borrows and returns connection pool resources.
-
-    Errors / Exceptions:
-        - Automatically rolls back and re-raises exceptions if the block fails.
+        
+        Optimized: Delegated pool methods to run_in_threadpool to ensure non-blocking loop execution.
     """
-    # Borrow a connection from the pool.
-    conn = db_pool.getconn()
+    # Borrow a connection from the pool on a worker thread
+    conn = await run_in_threadpool(db_pool.getconn)
     try:
         # Yield the raw connection object to the caller.
         yield conn
     except Exception as e:
-        # Roll back on error.
-        conn.rollback()
+        # Roll back on error on a worker thread.
+        await run_in_threadpool(conn.rollback)
         logger.warning(f"Raw connection transaction rolled back due to error: {type(e).__name__}")
         raise
     finally:
-        # Return the connection.
-        db_pool.putconn(conn)
+        # Return the connection on a worker thread.
+        await run_in_threadpool(db_pool.putconn, conn)

@@ -22,6 +22,7 @@ From top to bottom, the file works as follows:
    - Outputs the complete structured package, rounding numeric parameters cleanly.
 """
 
+import asyncio
 from fastapi import HTTPException  # Import web-server module to raise user-facing HTTP error responses
 from db import analytics_repository  # Database access layer handling queries for analytics tables
 
@@ -47,7 +48,7 @@ async def handle_get_analytics(user_id: str):
             - "widgetSeries": Daily message chart metrics for external embedded widget.
             - "topChatbots": Listing of chatbots sorted by utilization.
             - "recentQuestions": Feed of recent queries entered by clients.
-            - "feedbackStats": Satisfaction parameters (up/down votes and category distribution).
+            - "creditStats": Wallet credit balance, breakdown, and historical charts.
 
     Exceptions Raised:
         HTTPException(500): Raised if any SQL query fails or connection breakdown occurs.
@@ -55,35 +56,41 @@ async def handle_get_analytics(user_id: str):
     # Log information indicating retrieval is initiated for this user
     logger.info(f"Fetching analytics data for user ID: {user_id}")
     try:
-        # 1. Fetch raw total counters (agents count, documents count, storage size, widget volume)
-        logger.debug("Retrieving analytics metrics counts...")
-        total_agents, total_docs, total_storage_mb, total_widget_msgs = await analytics_repository.get_analytics_metrics(user_id)
-        logger.debug(f"Metrics retrieved: agents={total_agents}, docs={total_docs}, storage={total_storage_mb}MB, widget_msgs={total_widget_msgs}")
+        # Trigger all database query tasks concurrently using asyncio.gather
+        logger.debug("Executing parallel database fetches for analytics components...")
         
-        # 2. Fetch chart history lists (daily chat trends for app chat vs external widget chat)
-        logger.debug("Retrieving message series charts data...")
-        internal_rows, widget_rows = await analytics_repository.get_analytics_series(user_id)
+        metrics_task = analytics_repository.get_analytics_metrics(user_id)
+        series_task = analytics_repository.get_analytics_series(user_id)
+        chatbots_task = analytics_repository.get_analytics_top_chatbots(user_id)
+        questions_task = analytics_repository.get_analytics_recent_questions(user_id)
+        credit_task = analytics_repository.get_credit_analytics(user_id)
+
+        (
+            (total_agents, total_docs, total_storage_mb, total_widget_msgs),
+            (internal_rows, widget_rows),
+            bot_rows,
+            q_rows,
+            (credit_balance, credit_by_model, credit_series)
+        ) = await asyncio.gather(
+            metrics_task,
+            series_task,
+            chatbots_task,
+            questions_task,
+            credit_task
+        )
+        
+        logger.debug(f"Metrics retrieved: agents={total_agents}, docs={total_docs}, storage={total_storage_mb}MB, widget_msgs={total_widget_msgs}")
         
         # Convert date objects to strings so they are safely JSON-serializable for the API
         internal_series = [{"date": str(r[0]), "messages": r[1]} for r in internal_rows]
         widget_series = [{"date": str(r[0]), "messages": r[1]} for r in widget_rows]
 
-        # 3. Fetch chatbot utilization list (which widgets are utilized the most)
-        logger.debug("Retrieving top chatbots utilization metrics...")
-        bot_rows = await analytics_repository.get_analytics_top_chatbots(user_id)
         # Map rows and ensure a fallback name exists if the chatbot is unnamed
         top_chatbots = [{"name": r[0] or "Unnamed Chatbot", "messages": r[1]} for r in bot_rows]
 
-        # 4. Fetch recent logs/questions feed (real-time stream of what users are asking)
-        logger.debug("Retrieving recent logs/questions feed...")
-        q_rows = await analytics_repository.get_analytics_recent_questions(user_id)
         # Convert datetime parameters to string formatting and decrypt encrypted question content
         from utils.data_vault import secure_unpack
         recent_questions = [{"content": secure_unpack(r[0]), "created_at": str(r[1]), "agent_name": r[2]} for r in q_rows]
-
-        # 6. Fetch Model Credit Usage metrics
-        logger.debug("Retrieving wallet credit analytics...")
-        credit_balance, credit_by_model, credit_series = await analytics_repository.get_credit_analytics(user_id)
 
         # Log dashboard collection success
         logger.info(f"Successfully processed analytics dashboard compilation for user {user_id}")
@@ -111,3 +118,4 @@ async def handle_get_analytics(user_id: str):
         # If any queries crash, log the traceback and throw an HTTP 500 error
         logger.error(f"Failed to fetch analytics for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+

@@ -310,22 +310,18 @@ async def generate_tts(req: TTSRequest) -> StreamingResponse:
     """
     Generates speech audio from text using Google TTS (gTTS).
 
-    Parameters:
-        req (TTSRequest): Contains the input text and target language parameters.
-
-    Returns:
-        StreamingResponse: Stream of the generated MP3 file content.
-
-    Errors / Exceptions:
-        - Raises 500 Internal Server Error if audio generation fails.
+    Optimized: Delegates the blocking gTTS HTTP network request (write_to_fp) 
+    to run_in_threadpool to keep the FastAPI main event loop non-blocking.
     """
     try:
-        # Generate the audio transcription.
+        # Instantiate gTTS object
         tts = gTTS(text=req.text, lang=req.language, slow=False)
-        # Use an in-memory BytesIO stream instead of writing to disk to improve response speed.
         fp = BytesIO()
-        tts.write_to_fp(fp)
-        # Reset the stream pointer back to the beginning before returning the response.
+        
+        # Execute the blocking Google Translate HTTP network write in the threadpool
+        await run_in_threadpool(tts.write_to_fp, fp)
+        
+        # Reset the stream pointer back to the beginning
         fp.seek(0)
         return StreamingResponse(fp, media_type="audio/mpeg")
     except Exception as e:
@@ -338,19 +334,8 @@ async def speech_to_text(file: UploadFile = File(...), language: str = Form(None
     """
     Transcribes audio to text using Groq's Whisper API.
 
-    Parameters:
-        file (UploadFile): The uploaded audio file.
-        language (str, optional): Target language code override.
-
-    Returns:
-        dict: The transcribed text string.
-
-    Side Effects:
-        - Writes and deletes a temporary audio file on disk.
-
-    Errors / Exceptions:
-        - Raises 500 if the Groq client is unconfigured or transcription fails.
-        - Raises 400 Bad Request if the uploaded file is not an audio format.
+    Optimized: Delegates the blocking disk file I/O operations and synchronous 
+    Groq Whisper API network request to run_in_threadpool to keep the loop non-blocking.
     """
     # Verify the Groq client is initialized.
     if not groq_client:
@@ -360,31 +345,42 @@ async def speech_to_text(file: UploadFile = File(...), language: str = Form(None
     if not file.content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="File must be an audio format")
         
-    # Save the upload stream to a temporary file on disk as required by the Groq API.
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
-        temp_audio.write(await file.read())
-        temp_audio_path = temp_audio.name
+    # Save the upload stream to a temporary file on disk (run file writes inside threadpool)
+    file_bytes = await file.read()
+    temp_audio_fd, temp_audio_path = tempfile.mkstemp(suffix=".webm")
+    
+    def write_temp_file():
+        with os.fdopen(temp_audio_fd, "wb") as temp_audio:
+            temp_audio.write(file_bytes)
+            
+    await run_in_threadpool(write_temp_file)
         
     try:
-        # Open and send the temporary file to Groq.
-        with open(temp_audio_path, "rb") as f:
-            kwargs = {
-                "file": (file.filename, f.read()),
-                "model": "whisper-large-v3"
-            }
-            # Inject language configuration if provided.
-            if language and language != "auto":
-                kwargs["language"] = language
+        # Run blocking file read and Groq API call inside the worker threadpool
+        def run_transcription():
+            with open(temp_audio_path, "rb") as f:
+                kwargs = {
+                    "file": (file.filename, f.read()),
+                    "model": "whisper-large-v3"
+                }
+                # Inject language configuration if provided.
+                if language and language != "auto":
+                    kwargs["language"] = language
+                    
+                return groq_client.audio.transcriptions.create(**kwargs)
                 
-            transcription = groq_client.audio.transcriptions.create(**kwargs)
+        transcription = await run_in_threadpool(run_transcription)
         return {"text": transcription.text}
     except Exception as e:
         logger.error(f"Error processing audio: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Crucial: Always delete temporary files to avoid disk exhaustion.
-        if os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
+        # Crucial: Always delete temporary files on a worker thread to avoid event loop latency
+        def clean_temp_file():
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+        await run_in_threadpool(clean_temp_file)
+
 
 
 # ==========================================
