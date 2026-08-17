@@ -135,11 +135,18 @@ async def handle_update_model(model_id: str, payload: dict, user_id: str = None)
 
         effective_user_id = user_id
         if not is_user_model:
-            from db import admin_repository
-            admin_status = await admin_repository.get_user_super_admin_status(user_id)
-            if not admin_status or not admin_status[0]:
-                raise HTTPException(status_code=403, detail="Only super admins can modify system models")
-            effective_user_id = None
+            # Regular users may toggle is_active on system models — the repository
+            # enforces they can only change that one field. Block everything else
+            # unless the caller is a super admin.
+            non_toggle_fields = {k for k in payload if k != "is_active"}
+            if non_toggle_fields:
+                from db import admin_repository
+                admin_status = await admin_repository.get_user_super_admin_status(user_id)
+                if not admin_status or not admin_status[0]:
+                    raise HTTPException(status_code=403, detail="Only super admins can modify system models")
+                effective_user_id = None
+            # For is_active-only updates keep effective_user_id = user_id so the
+            # repository knows this is a regular user toggle (not an admin write).
 
         # Call update query in database repository
         updated = await model_repository.update_model(model_id, payload, user_id=effective_user_id)

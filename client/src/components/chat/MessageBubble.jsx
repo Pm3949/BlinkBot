@@ -144,7 +144,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
         }
       `}
       >
-        <div className="prose max-w-none text-inherit dark:prose-invert whitespace-pre-wrap break-words">
+        <div className="prose max-w-none text-inherit dark:prose-invert break-words">
           {isWebSource && (
             <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-500 bg-blue-500/10 border border-blue-500/20 w-fit px-2.5 py-1 rounded-full mb-3">
               <Globe size={12} />
@@ -196,7 +196,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
                 );
               },
               a({ node, href, children, ...props }) {
-                const isImg = href && (/\.(png|jpe?g|gif|webp|svg|png_t|jpg_t)(\?.*)?$/i.test(href) || href.includes("fakestoreapi.com/img"));
+                const isImg = href && (/\.(png|jpe?g|gif|webp|svg|png_t|jpg_t)(\?.*)?$/i.test(href) || href.includes("fakestoreapi.com/img") || href.includes("placehold.co"));
                 if (isImg) {
                   return (
                     <img

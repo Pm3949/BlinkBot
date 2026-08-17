@@ -170,7 +170,7 @@ async def create_model(payload: ModelCreate, current_user: dict = Depends(get_cu
     return await model_handler.handle_create_model(payload.dict(), user_id=user_id)
 
 
-@router.put("/api/models/{model_id}")
+@router.put("/api/models/{model_id:path}")
 async def update_model(model_id: str, payload: ModelUpdate, current_user: dict = Depends(get_current_user)):
     """
     Updates an existing model configuration.
@@ -196,7 +196,7 @@ async def update_model(model_id: str, payload: ModelUpdate, current_user: dict =
     return await model_handler.handle_update_model(model_id, payload.dict(exclude_unset=True), user_id=user_id)
 
 
-@router.delete("/api/models/{model_id}")
+@router.delete("/api/models/{model_id:path}")
 async def delete_model(model_id: str, current_user: dict = Depends(get_current_user)):
     """
     Deletes a model entry from the catalog.

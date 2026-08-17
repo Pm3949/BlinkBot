@@ -193,20 +193,15 @@ export default function ModelsPage() {
         toast.error(`Activation failed: ${errMsg}`);
       }
     } else {
-      // Deactivating model
-      try {
-        await updateModelMutation.mutateAsync({
-          modelId: dbId,
-          data: { is_active: false }
-        });
-        setModelTestState((prev) => ({
-          ...prev,
-          [model_id]: { status: null, error: null }
-        }));
-        toast.success(`Model '${model_id}' deactivated`);
-      } catch {
-        toast.error("Failed to deactivate model");
-      }
+      // Deactivating model — fire & forget, UI updates instantly via optimistic cache
+      setModelTestState((prev) => ({ ...prev, [model_id]: { status: null, error: null } }));
+      updateModelMutation.mutate(
+        { modelId: dbId, data: { is_active: false } },
+        {
+          onSuccess: () => toast.success(`Model '${modelItem.name || model_id}' deactivated`),
+          onError: () => toast.error("Failed to deactivate model"),
+        }
+      );
     }
   };
 

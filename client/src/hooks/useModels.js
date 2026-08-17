@@ -65,7 +65,54 @@ export function useUpdateModel() {
       if (!response.ok) throw new Error("Failed to update model");
       return response.json();
     },
-    onSuccess: () => {
+    // Optimistic update: flip is_active in cache immediately before the server responds
+    onMutate: async ({ modelId, data }) => {
+      if (!("is_active" in data)) return; // only optimise toggle actions
+
+      // Cancel any in-flight refetches so they don't overwrite our optimistic value
+      await queryClient.cancelQueries({ queryKey: ["all-models"] });
+      await queryClient.cancelQueries({ queryKey: ["active-models"] });
+
+      // Snapshot current cache for rollback
+      const previousAllModels = queryClient.getQueryData(["all-models"]);
+      const previousActiveModels = queryClient.getQueryData(["active-models"]);
+
+      // Apply optimistic patch to all-models cache
+      queryClient.setQueryData(["all-models"], (old) => {
+        if (!old?.models) return old;
+        return {
+          ...old,
+          models: old.models.map((m) =>
+            m.id === modelId ? { ...m, is_active: data.is_active } : m
+          ),
+        };
+      });
+
+      // Apply optimistic patch to active-models cache
+      queryClient.setQueryData(["active-models"], (old) => {
+        if (!old?.models) return old;
+        return {
+          ...old,
+          models: old.models.map((m) =>
+            m.id === modelId ? { ...m, is_active: data.is_active } : m
+          ),
+        };
+      });
+
+      // Return snapshot so onError can roll back
+      return { previousAllModels, previousActiveModels };
+    },
+    // Roll back cache if the server call fails
+    onError: (_err, _vars, context) => {
+      if (context?.previousAllModels !== undefined) {
+        queryClient.setQueryData(["all-models"], context.previousAllModels);
+      }
+      if (context?.previousActiveModels !== undefined) {
+        queryClient.setQueryData(["active-models"], context.previousActiveModels);
+      }
+    },
+    // Always re-sync with server after mutation settles
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["active-models"] });
       queryClient.invalidateQueries({ queryKey: ["all-models"] });
     },
