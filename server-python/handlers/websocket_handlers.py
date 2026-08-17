@@ -56,6 +56,7 @@ class AgentConnectionManager:
                             await websocket.send_json(data)
                         except Exception as send_err:
                             logger.error(f"Error forwarding Redis msg to client {client_id}: {send_err}")
+                            break
             except asyncio.CancelledError:
                 pass
             finally:

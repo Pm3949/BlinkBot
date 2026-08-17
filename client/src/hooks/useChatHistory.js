@@ -24,6 +24,7 @@ export function useChatSessions(agentId = null) {
       return data.map(session => ({
         id: session.id,
         agentId: session.agent_id,
+        projectId: session.project_id,
         agentName: session.agent_name || "General",
         title: session.title,
         pinned: session.pinned,
@@ -67,6 +68,7 @@ export function useChatMutations() {
       return {
         id: data.id,
         agentId: data.agent_id,
+        projectId: data.project_id,
         title: data.title,
         pinned: data.pinned,
         createdAt: data.created_at,

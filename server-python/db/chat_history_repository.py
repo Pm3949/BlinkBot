@@ -51,7 +51,7 @@ async def get_chat_sessions(workspace_id: str, user_id: str, agent_id: str = Non
     # Open database connection in a read-only transaction (commit=False).
     async with get_db_cursor_async(commit=False) as cursor:
         query = """
-            SELECT s.id, s.agent_id, s.title, s.pinned, s.created_at, s.updated_at, a.name as agent_name
+            SELECT s.id, s.agent_id, s.title, s.pinned, s.created_at, s.updated_at, a.name as agent_name, a.project_id
             FROM chat_sessions s
             LEFT JOIN agents a ON s.agent_id = a.id
             WHERE s.workspace_id = %s AND s.user_id = %s

@@ -2,16 +2,16 @@
 ================================================================================
 ARCHITECTURAL CONTEXT & FILE OVERVIEW
 ================================================================================
-This script acts as the business logic coordinator for managing chat histories, 
+This script acts as the business logic coordinator for managing chat histories,
 messages, and conversation sessions in RAGMate.
 
 From top to bottom, the file performs the following tasks:
-1. Imports: Loads FastAPI exception modules and database wrappers from the 
+1. Imports: Loads FastAPI exception modules and database wrappers from the
    chat_history_repository.
 2. Logging: Initializes a department logger specifically scoped to "agent" interactions
    to audit message queries and purging actions.
 3. Session Management Handlers:
-   - `handle_get_chat_sessions`: Fetches and formats the list of all chat sessions 
+   - `handle_get_chat_sessions`: Fetches and formats the list of all chat sessions
      for a user in a given workspace, converting database timestamp values to ISO strings.
    - `handle_create_chat_session`: Inserts a new chat session entry into database tables.
    - `handle_update_chat_session`: Alters properties of a session (like renaming titles or pinning them).
@@ -23,7 +23,9 @@ From top to bottom, the file performs the following tasks:
    - `handle_create_chat_message`: Inserts a single message (user or assistant role) along with latency metrics.
 """
 
-from fastapi import HTTPException  # Import web exceptions to raise clean HTTP error codes
+from fastapi import (
+    HTTPException,
+)  # Import web exceptions to raise clean HTTP error codes
 from db import chat_history_repository  # Database access layer for chat history tables
 
 # Logging utilities
@@ -33,37 +35,55 @@ from utils.logger import get_department_logger
 logger = get_department_logger("agent")
 
 
-async def handle_get_chat_sessions(workspace_id: str, user_id: str, agent_id: str = None):
+async def handle_get_chat_sessions(
+    workspace_id: str, user_id: str, agent_id: str = None
+):
     """
     Retrieves the list of chat sessions for a user, optionally filtered by agent_id.
     """
     # Log information indicating retrieval is initiated
-    logger.info(f"Retrieving chat sessions list for workspace ID: {workspace_id} (User ID: {user_id}, Agent ID: {agent_id})")
+    logger.info(
+        f"Retrieving chat sessions list for workspace ID: {workspace_id} (User ID: {user_id}, Agent ID: {agent_id})"
+    )
     try:
         # Query database row collections matching user and workspace
         logger.debug("Executing chat sessions fetch query in database...")
-        rows = await chat_history_repository.get_chat_sessions(workspace_id, user_id, agent_id)
+        rows = await chat_history_repository.get_chat_sessions(
+            workspace_id, user_id, agent_id
+        )
         logger.debug(f"Retrieved {len(rows)} chat session records.")
-        
+
         # Loop through rows and format timestamps to ISO 8601 strings
         sessions = []
         for row in rows:
-            sessions.append({
-                "id": row[0],                                                # Session UUID
-                "agent_id": row[1],                                          # Linked Agent ID
-                "title": row[2],                                             # Custom session title
-                "pinned": row[3],                                            # Pinned state (boolean flag)
-                "created_at": row[4].isoformat() if row[4] else None,        # Creation date ISO format string
-                "updated_at": row[5].isoformat() if row[5] else None,        # Last updated date ISO format string
-                "agent_name": row[6] or "General"                            # Name of agent, fallback to default "General"
-            })
-            
+            sessions.append(
+                {
+                    "id": row[0],  # Session UUID
+                    "agent_id": row[1],  # Linked Agent ID
+                    "title": row[2],  # Custom session title
+                    "pinned": row[3],  # Pinned state (boolean flag)
+                    "created_at": (
+                        row[4].isoformat() if row[4] else None
+                    ),  # Creation date ISO format string
+                    "updated_at": (
+                        row[5].isoformat() if row[5] else None
+                    ),  # Last updated date ISO format string
+                    "agent_name": row[6]
+                    or "General",  # Name of agent, fallback to default "General"
+                    "project_id": row[7] if len(row) > 7 else None,
+                }
+            )
+
         # Log successful list formatting
-        logger.info(f"Successfully processed and returned {len(sessions)} chat sessions.")
+        logger.info(
+            f"Successfully processed and returned {len(sessions)} chat sessions."
+        )
         return sessions
     except Exception as e:
         # Catch errors, log, and raise a 500 error
-        logger.error(f"Error fetching chat sessions for user {user_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error fetching chat sessions for user {user_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to fetch chat sessions")
 
 
@@ -85,19 +105,22 @@ async def handle_create_chat_session(payload: dict):
         HTTPException(500): Raised if SQL database writes fail.
     """
     # Log session creation arguments
-    logger.info(f"Creating a new chat session. Workspace ID: {payload.get('workspace_id')}")
+    logger.info(
+        f"Creating a new chat session. Workspace ID: {payload.get('workspace_id')}"
+    )
     try:
         agent_id = payload.get("agent_id")
-        
+
         # Resolve project_id (if passed as agent_id) to the Network Manager's agent_id to avoid ForeignKeyViolation
         if agent_id:
             from core.database import get_db_cursor_async
             from fastapi.concurrency import run_in_threadpool
+
             async with get_db_cursor_async(commit=False) as cursor:
                 await run_in_threadpool(
                     cursor.execute,
                     "SELECT id FROM agents WHERE project_id = %s AND parent_agent_id IS NULL",
-                    (agent_id,)
+                    (agent_id,),
                 )
                 row = await run_in_threadpool(cursor.fetchone)
                 if row:
@@ -109,9 +132,22 @@ async def handle_create_chat_session(payload: dict):
             payload.get("user_id"),
             payload.get("workspace_id"),
             agent_id,
-            payload.get("title", "New chat")  # Fallback title if none provided
+            payload.get("title", "New chat"),  # Fallback title if none provided
         )
-        
+
+        # Resolve project_id for the newly created session
+        project_id = None
+        if agent_id:
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT project_id FROM agents WHERE id = %s",
+                    (agent_id,)
+                )
+                proj_row = await run_in_threadpool(cursor.fetchone)
+                if proj_row:
+                    project_id = proj_row[0]
+
         # Log successful database write
         logger.info(f"Chat session successfully created. ID: {row[0]}")
         return {
@@ -120,7 +156,8 @@ async def handle_create_chat_session(payload: dict):
             "title": row[2],
             "pinned": row[3],
             "created_at": row[4].isoformat() if row[4] else None,
-            "updated_at": row[5].isoformat() if row[5] else None
+            "updated_at": row[5].isoformat() if row[5] else None,
+            "project_id": project_id
         }
     except Exception as e:
         # Catch unexpected errors
@@ -145,26 +182,30 @@ async def handle_update_chat_session(session_id: str, payload: dict):
         HTTPException(500): Raised if SQL update transaction crashes.
     """
     # Log update attributes
-    logger.info(f"Updating chat session ID: {session_id} (Title: '{payload.get('title')}', Pinned: {payload.get('pinned')})")
+    logger.info(
+        f"Updating chat session ID: {session_id} (Title: '{payload.get('title')}', Pinned: {payload.get('pinned')})"
+    )
     try:
         # Call database repository update scripts
         logger.debug("Executing database update query in chat_history_repository...")
         updated = await chat_history_repository.update_chat_session(
-            session_id,
-            payload.get("title"),
-            payload.get("pinned")
+            session_id, payload.get("title"), payload.get("pinned")
         )
-            
+
         # Check if the database did not affect any rows (implies key mismatch or no change)
         if not updated:
-            logger.warning(f"No updates matched or no parameters changed for session ID: {session_id}")
+            logger.warning(
+                f"No updates matched or no parameters changed for session ID: {session_id}"
+            )
             return {"message": "No updates provided"}
-            
+
         # Log success and return
         logger.info(f"Chat session ID {session_id} successfully updated.")
         return {"message": "Chat session updated"}
     except Exception as e:
-        logger.error(f"Error updating chat session ID {session_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error updating chat session ID {session_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to update chat session")
 
 
@@ -186,12 +227,14 @@ async def handle_delete_chat_session(session_id: str):
         # Execute database delete script
         logger.debug("Executing database delete query in chat_history_repository...")
         await chat_history_repository.delete_chat_session(session_id)
-        
+
         # Log deletion success
         logger.info(f"Chat session ID {session_id} successfully deleted.")
         return {"message": "Chat session deleted"}
     except Exception as e:
-        logger.error(f"Error deleting chat session ID {session_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error deleting chat session ID {session_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to delete chat session")
 
 
@@ -214,7 +257,7 @@ async def handle_clear_agent_chat_history(agent_id: str):
         # Call purge methods in database repository
         logger.debug("Executing database purge query in chat_history_repository...")
         await chat_history_repository.clear_agent_chat_history(agent_id)
-        
+
         # Log scrub success
         logger.info(f"All chat history for agent ID {agent_id} successfully scrubbed.")
         return {"message": "All chat history for this agent has been scrubbed"}
@@ -247,24 +290,32 @@ async def handle_get_chat_messages(session_id: str):
         logger.debug("Executing chat messages fetch query...")
         rows = await chat_history_repository.get_chat_messages(session_id)
         logger.debug(f"Retrieved {len(rows)} message records.")
-        
+
         # Map raw database tuples to structured dictionary elements
         messages = []
         for row in rows:
-            messages.append({
-                "id": row[0],                                                # Message ID
-                "role": row[1],                                              # Role ('user' or 'assistant')
-                "content": row[2],                                           # Text body message content
-                "latency": row[3],                                           # Model processing latency in MS
-                "created_at": row[4].isoformat() if row[4] else None,        # ISO-formatted registration date
-                "steps": row[5] if row[5] else None                          # Agent execution steps trace (JSONB)
-            })
-            
+            messages.append(
+                {
+                    "id": row[0],  # Message ID
+                    "role": row[1],  # Role ('user' or 'assistant')
+                    "content": row[2],  # Text body message content
+                    "latency": row[3],  # Model processing latency in MS
+                    "created_at": (
+                        row[4].isoformat() if row[4] else None
+                    ),  # ISO-formatted registration date
+                    "steps": (
+                        row[5] if row[5] else None
+                    ),  # Agent execution steps trace (JSONB)
+                }
+            )
+
         # Log successful completion and count
         logger.info(f"Successfully processed {len(messages)} messages.")
         return messages
     except Exception as e:
-        logger.error(f"Error fetching messages for session {session_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error fetching messages for session {session_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to fetch chat messages")
 
 
@@ -286,7 +337,9 @@ async def handle_create_chat_message(payload: dict):
         HTTPException(500): Raised if database write fails.
     """
     # Log creation parameters
-    logger.info(f"Creating a new chat message entry. Session ID: {payload.get('session_id')} (Role: {payload.get('role')})")
+    logger.info(
+        f"Creating a new chat message entry. Session ID: {payload.get('session_id')} (Role: {payload.get('role')})"
+    )
     try:
         # Call repository method to insert record into the DB
         logger.debug("Executing message insertion query...")
@@ -295,9 +348,9 @@ async def handle_create_chat_message(payload: dict):
             payload.get("role"),
             payload.get("content"),
             payload.get("latency"),
-            payload.get("steps")
+            payload.get("steps"),
         )
-        
+
         # Log success and return
         logger.info(f"Chat message successfully created. ID: {row[0]}")
         return {
@@ -306,7 +359,7 @@ async def handle_create_chat_message(payload: dict):
             "content": row[2],
             "latency": row[3],
             "created_at": row[4].isoformat() if row[4] else None,
-            "steps": row[5] if row[5] else None
+            "steps": row[5] if row[5] else None,
         }
     except Exception as e:
         logger.error(f"Error creating chat message: {str(e)}", exc_info=True)

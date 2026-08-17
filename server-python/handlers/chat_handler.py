@@ -749,9 +749,15 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     await agent_connection_manager.connect(websocket, client_id)
 
     client_disconnected = False
-    steps_list = []
+    background_tasks = set()
+
+    import contextvars
+    websocket_session_id = contextvars.ContextVar("websocket_session_id", default=None)
 
     async def safe_send(msg):
+        session_id = websocket_session_id.get()
+        if session_id and isinstance(msg, dict):
+            msg["session_id"] = str(session_id)
         nonlocal client_disconnected
         if client_disconnected:
             return
@@ -767,7 +773,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory, session_id):
         import time
         start_time = time.time()
-        nonlocal steps_list
+        steps_list = []
         full_response = ""
 
         config = {
@@ -915,7 +921,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     if isinstance(output, dict):
                         routed_name = output.get("routed_agent_name")
                         routed_id = output.get("active_agent_id")
-                        if routed_name == gateway_name:
+                        if routed_name == active_gateway_name:
                             # Remove the last redundant "Deciding which agent to use..." step
                             if steps_list and steps_list[-1]["label"] == "Deciding which agent to use...":
                                 steps_list.pop()
@@ -1113,6 +1119,19 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
             except Exception as db_err:
                 logger.error(f"Failed to save assistant message to database: {db_err}", exc_info=True)
 
+    async def run_stream_safe_task(*args, **kwargs):
+        session_id = args[6] if len(args) > 6 else kwargs.get("session_id")
+        websocket_session_id.set(session_id)
+        try:
+            await run_stream(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in background run_stream task: {e}", exc_info=True)
+            await safe_send({
+                "type": "error",
+                "content": "An error occurred during execution: " + str(e)
+            })
+            await safe_send({"type": "stream_end"})
+
     try:
         while True:
             data = await websocket.receive_json()
@@ -1146,13 +1165,33 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     # Restore registry
                     registry = session_ctx.get("registry")
                     # Resume execution
-                    await run_stream(None, graph, session_ctx["gateway_name"], session_ctx["agent_id"], session_ctx["llm_factory"], session_ctx["tools_factory"], session_id)
+                    import asyncio
+                    task = asyncio.create_task(
+                        run_stream_safe_task(None, graph, session_ctx["gateway_name"], session_ctx["agent_id"], session_ctx["llm_factory"], session_ctx["tools_factory"], session_id)
+                    )
+                    background_tasks.add(task)
+                    task.add_done_callback(background_tasks.discard)
                 continue
                 
             elif data.get("type") == "chat_request":
                 registry = RequestRegistry()
                 req_data = data.get("payload", {})
                 agent_id = req_data.get("agent_id")
+
+                # Resolve project_id (if passed as agent_id) to the Network Manager's agent_id
+                if agent_id:
+                    from core.database import get_db_cursor_async
+                    from fastapi.concurrency import run_in_threadpool
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT id FROM agents WHERE project_id = %s AND parent_agent_id IS NULL",
+                            (agent_id,)
+                        )
+                        row = await run_in_threadpool(cursor.fetchone)
+                        if row:
+                            agent_id = row[0]
+
                 message = req_data.get("message")
                 history = req_data.get("history", [])
                 session_id = req_data.get("session_id")
@@ -1726,11 +1765,15 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     inputs = {"messages": msgs}
                     logger.info("Executing LangGraph multi-agent stream events...")
                     # Emit initial thinking step before graph execution begins
-                    execution_id = str(uuid.uuid4())
                     await safe_send(
                         {"type": "step", "status": "thinking", "label": "Analyzing your request..."}
                     )
-                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, session_id)
+                    import asyncio
+                    task = asyncio.create_task(
+                        run_stream_safe_task(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, session_id)
+                    )
+                    background_tasks.add(task)
+                    task.add_done_callback(background_tasks.discard)
 
                 except WebSocketDisconnect:
                     raise
@@ -1747,6 +1790,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     except Exception as ws_err:
         logger.warning(f"WebSocket client disconnected or encountered error: {ws_err}")
         agent_connection_manager.disconnect(client_id)
+    finally:
+        logger.info(f"Cleaning up WebSocket connection for Client ID: {client_id}. Cancelling {len(background_tasks)} background tasks.")
+        for task in background_tasks:
+            if not task.done():
+                task.cancel()
 
 
 async def handle_widget_chat(websocket: WebSocket, client_id: str):

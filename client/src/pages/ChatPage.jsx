@@ -33,7 +33,9 @@ export default function ChatPage() {
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
   const { data: projects = [], isLoading: isLoadingProjects } = useAgentProjects(activeWorkspaceId);
-  const [activeAgentId, setActiveAgentId] = useState("");
+  const [activeAgentId, setActiveAgentId] = useState(() => {
+    return localStorage.getItem("ragmate_active_agent_id") || "";
+  });
   const [activeSubAgentDetails, setActiveSubAgentDetails] = useState(null);
   const [chatLanguage, setChatLanguage] = useState("en");
   const [agentToEdit, setAgentToEdit] = useState(null);
@@ -48,15 +50,22 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Auto-select first project on load
+  // Auto-select project on load with localStorage persistence
   useEffect(() => {
-    if (projects.length > 0 && !activeAgentId) {
-      setActiveAgentId(projects[0].id);
-      if (projects[0]) {
-        setActiveSubAgentDetails(projects[0]);
+    if (projects.length > 0) {
+      const savedId = localStorage.getItem("ragmate_active_agent_id");
+      const isValid = projects.some(p => p.id === savedId);
+      if (isValid) {
+        setActiveAgentId(savedId);
+        const match = projects.find(p => p.id === savedId);
+        if (match) setActiveSubAgentDetails(match);
+      } else {
+        setActiveAgentId(projects[0].id);
+        localStorage.setItem("ragmate_active_agent_id", projects[0].id);
+        if (projects[0]) setActiveSubAgentDetails(projects[0]);
       }
     }
-  }, [projects, activeAgentId]);
+  }, [projects]);
 
   const selectedAgentId = activeAgentId;
 
@@ -101,6 +110,7 @@ export default function ChatPage() {
 
   const handleAgentSelect = (agent) => {
     setActiveAgentId(agent.id);
+    localStorage.setItem("ragmate_active_agent_id", agent.id);
     setActiveSubAgentDetails(agent);
     selectSession(null);
   };
@@ -128,9 +138,11 @@ export default function ChatPage() {
 
   const handleSessionSelect = (session) => {
     selectSession(session.id);
-
-    if (session.agentId) {
-      setActiveAgentId(session.agentId);
+    
+    const targetId = session.projectId || session.agentId;
+    if (targetId) {
+      setActiveAgentId(targetId);
+      localStorage.setItem("ragmate_active_agent_id", targetId);
     }
   };
 
@@ -181,6 +193,16 @@ export default function ChatPage() {
              {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
            </button>
         </div>
+
+        {/* Centered Network Header Title */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center pointer-events-none select-none bg-card/60 backdrop-blur-md border border-border px-5 py-2 rounded-full shadow-sm">
+           <div className="flex items-center gap-2">
+             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+             <span className="text-xs font-bold text-foreground">
+               {activeAgent?.name || "General Network"}
+             </span>
+           </div>
+         </div>
 
 
 

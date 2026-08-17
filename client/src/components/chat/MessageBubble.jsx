@@ -137,7 +137,7 @@ export default function MessageBubble({ id, role, content, agent, chatLanguage, 
         group
         ${
           isUser
-            ? "bg-primary text-primary-foreground"
+            ? "bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:bg-amber-400/10 dark:border-amber-400/20 dark:text-amber-300"
             : isMasterAgent
               ? "bg-purple-50/50 border border-purple-200 text-foreground dark:bg-purple-950/20 dark:border-purple-800"
               : "bg-card border border-border text-foreground"

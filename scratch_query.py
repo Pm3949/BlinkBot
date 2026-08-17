@@ -15,18 +15,19 @@ from utils.data_vault import secure_unpack
 async def main():
     async with get_db_cursor_async(commit=False) as cursor:
         cursor.execute(
-            "SELECT id, session_id, role, content, latency, created_at, steps FROM chat_messages WHERE id IN ('088edd09-76fd-475b-958b-a729cf6aa515', 'a2d6fd70-0847-4d46-b6b2-d2078daf7484')"
+            """
+            SELECT id, provider, api_key_required, base_url, is_active FROM system_ai_models WHERE id = 'openai/gpt-oss-120b'
+            """
         )
-        rows = cursor.fetchall()
-        for row in rows:
+        row = cursor.fetchone()
+        if row:
             print(f"ID: {row[0]}")
-            print(f"Session ID: {row[1]}")
-            print(f"Role: {row[2]}")
-            print(f"Content: {secure_unpack(row[3])}")
-            print(f"Latency: {row[4]}")
-            print(f"Created At: {row[5]}")
-            print(f"Steps: {secure_unpack(row[6]) if row[6] else 'None'}")
-            print("-" * 50)
+            print(f"Provider: {row[1]}")
+            print(f"Key Required: {row[2]}")
+            print(f"Base URL: {row[3]}")
+            print(f"Is Active: {row[4]}")
+        else:
+            print("Model not found")
 
 if __name__ == "__main__":
     asyncio.run(main())

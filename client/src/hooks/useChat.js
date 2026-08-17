@@ -8,7 +8,8 @@ export function useChat(agentId = null) {
   const queryClient = useQueryClient();
   const { data: dbSessions = [], isLoading: isLoadingSessions } = useChatSessions(agentId);
   const [activeSessionId, setActiveSessionId] = useState(null);
-  const [isTyping, setIsTyping] = useState(false);
+  const [generatingSessionId, setGeneratingSessionId] = useState(null);
+  const isTyping = generatingSessionId !== null && generatingSessionId === activeSessionId;
   const [optimisticSession, setOptimisticSession] = useState(null);
 
   const sessions = useMemo(() => {
@@ -38,7 +39,7 @@ export function useChat(agentId = null) {
     return `${baseWsUrl}/ws/chat/${clientId}`;
   }, [clientId]);
 
-  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, clearAgentSteps, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, clearAgentSteps, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl, activeSessionId);
 
   // Initialize activeSessionId from first session if null
   useEffect(() => {
@@ -76,10 +77,33 @@ export function useChat(agentId = null) {
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {
     const handleStreamEnd = async (e) => {
-       if (activeSessionId) {
-          setIsTyping(false); // Now set typing to false, swapping the optimistic bubble for the DB bubble
-          clearTextChunks();
-          queryClient.invalidateQueries(["chat_messages", activeSessionId]);
+       const targetSessionId = e.detail?.session_id || activeSessionId;
+       if (targetSessionId) {
+          if (targetSessionId === activeSessionId) {
+             setGeneratingSessionId(null); // Now set typing to false
+             clearTextChunks();
+          }
+          
+          const finalContent = e.detail?.content || '';
+          const finalSteps = e.detail?.steps || null;
+
+          // Directly update the local chat messages cache for the targeted session without hitting the DB
+          queryClient.setQueryData(["chat_messages", targetSessionId], (old = []) => {
+            // Avoid duplicate appends if already present
+            const exists = old.some(m => m.role === "assistant" && m.content === finalContent);
+            if (exists) return old;
+
+            return [
+              ...old,
+              {
+                id: "assistant-cache-" + Date.now(),
+                role: "assistant",
+                content: finalContent,
+                steps: finalSteps,
+                created_at: new Date().toISOString()
+              }
+            ];
+          });
        }
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
@@ -130,14 +154,15 @@ export function useChat(agentId = null) {
     // 1. Instantly update UI states (snappy, 0ms latency)
     clearTextChunks();
     clearAgentSteps();
-    setIsTyping(true);
+    
+    let currentSessionId = activeSessionId;
+    const tempId = "optimistic-session-" + Date.now();
+    setGeneratingSessionId(currentSessionId || tempId);
+
     setOptimisticUserMessage({ id: "optimistic-user-" + Date.now(), role: "user", content: message });
 
-    let currentSessionId = activeSessionId;
-    
     // 2. If no session exists, create optimistic session and save to DB in background
     if (!currentSessionId) {
-      const tempId = "optimistic-session-" + Date.now();
       setOptimisticSession({
         id: tempId,
         agentId,
@@ -153,7 +178,8 @@ export function useChat(agentId = null) {
         {
           onSuccess: (newSession) => {
             setOptimisticSession(null);
-            setActiveSessionId(newSession.id);
+          setActiveSessionId(newSession.id);
+          setGeneratingSessionId(newSession.id);
             
             // Save message and run WebSocket request on the newly created session
             addMessage.mutate(
@@ -176,7 +202,7 @@ export function useChat(agentId = null) {
           },
           onError: () => {
             toast.error("Failed to create chat session");
-            setIsTyping(false);
+            setGeneratingSessionId(null);
             setOptimisticUserMessage(null);
             setOptimisticSession(null);
             setActiveSessionId(null);
