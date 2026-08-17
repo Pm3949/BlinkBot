@@ -17,6 +17,9 @@ services:
     command: uvicorn main_control_plane:app --host 0.0.0.0 --port 8000 --workers 4
     expose:
       - "8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file:
       - server-python/dev.env
     environment:
@@ -35,6 +38,9 @@ services:
     command: uvicorn main_ai_engine:app --host 0.0.0.0 --port 8001 --workers 1
     expose:
       - "8001"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file:
       - server-python/dev.env
     environment:
@@ -43,6 +49,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+
 
   nginx:
     image: nginx:alpine

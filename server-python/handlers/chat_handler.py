@@ -1726,7 +1726,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     await safe_send(
                         {"type": "step", "status": "thinking", "label": "Analyzing your request..."}
                     )
-                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, execution_id)
+                    await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, session_id)
 
                 except WebSocketDisconnect:
                     raise

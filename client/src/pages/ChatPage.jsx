@@ -48,8 +48,17 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const selectedAgentId =
-    activeAgentId || projects[0]?.id || "";
+  // Auto-select first project on load
+  useEffect(() => {
+    if (projects.length > 0 && !activeAgentId) {
+      setActiveAgentId(projects[0].id);
+      if (projects[0]) {
+        setActiveSubAgentDetails(projects[0]);
+      }
+    }
+  }, [projects, activeAgentId]);
+
+  const selectedAgentId = activeAgentId;
 
   const {
     activeSessionId,

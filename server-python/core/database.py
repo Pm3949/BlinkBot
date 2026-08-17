@@ -136,6 +136,8 @@ async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
         # If the block executed successfully and commit is True, commit the transaction on a worker thread.
         if commit:
             await run_in_threadpool(conn.commit)
+        else:
+            await run_in_threadpool(conn.rollback)
     except Exception as e:
         # If any exception occurred, roll back on a worker thread.
         await run_in_threadpool(conn.rollback)
