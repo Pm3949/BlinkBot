@@ -268,45 +268,65 @@ async def test_single_model(payload: SingleModelTestRequest, current_user: dict 
 async def get_available_models(current_user: dict = Depends(get_current_user)):
     """
     Retrieves available system and user custom models, along with BYOK authorization status, wallet balance, and credentials state.
+    All 4 independent DB queries are fired in parallel using asyncio.gather() for maximum performance.
     """
-    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
-    
-    # Check if BYOK is allowed
+    import asyncio
     from database import get_db_cursor_async
     from fastapi.concurrency import run_in_threadpool
-    async with get_db_cursor_async(commit=False) as cursor:
-        await run_in_threadpool(
-            cursor.execute,
-            "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
-            (user_id,)
-        )
-        row = await run_in_threadpool(cursor.fetchone)
-        allow_byok = row[0] if row else False
-
     from db import billing_repository, settings_repository
-    # Retrieve wallet balance
-    credit_balance = await billing_repository.get_wallet_balance(user_id)
 
-    # Retrieve BYOK keys status
-    user_keys = await settings_repository.get_effective_user_settings(user_id)
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else str(current_user)
+
+    # ─── Helper coroutines (each is an independent DB call) ───────────────────
+
+    async def fetch_byok_flag():
+        """Fetches whether BYOK is allowed for the user's subscription plan."""
+        async with get_db_cursor_async(commit=False) as cursor:
+            await run_in_threadpool(
+                cursor.execute,
+                "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
+                (user_id,)
+            )
+            row = await run_in_threadpool(cursor.fetchone)
+            return row[0] if row else False
+
+    async def fetch_wallet_balance():
+        """Fetches the user's current credit wallet balance."""
+        return await billing_repository.get_wallet_balance(user_id)
+
+    async def fetch_byok_keys():
+        """Fetches which provider API keys the user has saved."""
+        return await settings_repository.get_effective_user_settings(user_id)
+
+    async def fetch_active_models():
+        """Fetches all active system + user custom models."""
+        return await model_handler.handle_get_active_models(user_id=user_id)
+
+    # ─── Fire all 4 queries simultaneously ────────────────────────────────────
+    allow_byok, credit_balance, user_keys, active_models = await asyncio.gather(
+        fetch_byok_flag(),
+        fetch_wallet_balance(),
+        fetch_byok_keys(),
+        fetch_active_models(),
+    )
+
+    # ─── Build BYOK provider key status map ───────────────────────────────────
     byok_status = {
-        "openai": bool(user_keys[0]) if user_keys else False,
-        "groq": bool(user_keys[1]) if user_keys else False,
-        "gemini": bool(user_keys[2]) if user_keys else False,
-        "openrouter": bool(user_keys[3]) if user_keys else False,
-        "anthropic": bool(user_keys[4]) if user_keys else False,
-        "huggingface": bool(user_keys[5]) if user_keys else False,
-        "nvidia": bool(user_keys[6]) if user_keys else False,
+        "openai":       bool(user_keys[0]) if user_keys else False,
+        "groq":         bool(user_keys[1]) if user_keys else False,
+        "gemini":       bool(user_keys[2]) if user_keys else False,
+        "openrouter":   bool(user_keys[3]) if user_keys else False,
+        "anthropic":    bool(user_keys[4]) if user_keys else False,
+        "huggingface":  bool(user_keys[5]) if user_keys else False,
+        "nvidia":       bool(user_keys[6]) if user_keys else False,
     }
 
-    active_models = await model_handler.handle_get_active_models(user_id=user_id)
     return {
-        "allow_byok": allow_byok,
+        "allow_byok":    allow_byok,
         "credit_balance": credit_balance,
-        "byok_status": byok_status,
-        "providers": active_models.get("providers", {}),
-        "models": active_models.get("models", [])
+        "byok_status":   byok_status,
+        "providers":     active_models.get("providers", {}),
+        "models":        active_models.get("models", []),
     }
-
 
 

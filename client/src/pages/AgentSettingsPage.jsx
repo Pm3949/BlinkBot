@@ -587,7 +587,7 @@ export default function AgentSettingsPage() {
     memory_enabled: agent?.memory_enabled !== false,
   });
 
-  const { data: activeModelsData } = useAvailableModels();
+  const { data: activeModelsData, isLoading: isModelsLoading } = useAvailableModels();
   const { data: userSettings } = useUserSettings();
   const updateSettingsMutation = useUpdateUserSettings();
   const [showCustomOverride, setShowCustomOverride] = useState(false);
@@ -938,28 +938,39 @@ export default function AgentSettingsPage() {
                       <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
                         1. Select AI Provider Platform
                       </label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {dynamicProviders.map((p) => {
-                          const isSelected = formData.provider === p.id;
-                          return (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => updateField("provider", p.id)}
-                              className={`p-3.5 rounded-2xl border text-center transition-all relative flex flex-col justify-center items-center h-16 ${
-                                isSelected
-                                  ? "border-primary bg-primary/10 text-primary font-bold shadow-sm ring-1 ring-primary"
-                                  : "border-border/70 hover:border-primary/40 bg-background text-muted-foreground hover:text-foreground font-semibold"
-                              }`}
-                            >
-                              <h4 className="text-xs capitalize">{p.name}</h4>
-                              {isSelected && (
-                                <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {isModelsLoading ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <div
+                              key={i}
+                              className="h-16 rounded-2xl bg-muted/50 animate-pulse border border-border/40"
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                          {dynamicProviders.map((p) => {
+                            const isSelected = formData.provider === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => updateField("provider", p.id)}
+                                className={`p-3.5 rounded-2xl border text-center transition-all relative flex flex-col justify-center items-center h-16 ${
+                                  isSelected
+                                    ? "border-primary bg-primary/10 text-primary font-bold shadow-sm ring-1 ring-primary"
+                                    : "border-border/70 hover:border-primary/40 bg-background text-muted-foreground hover:text-foreground font-semibold"
+                                }`}
+                              >
+                                <h4 className="text-xs capitalize">{p.name}</h4>
+                                {isSelected && (
+                                  <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {/* Specific Model Selection */}
@@ -968,11 +979,45 @@ export default function AgentSettingsPage() {
                         <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
                           2. Select Specific Model
                         </label>
-                        <span className="text-xs text-muted-foreground">
-                          Available: {currentModels.length} models
-                        </span>
+                        {isModelsLoading ? (
+                          <div className="h-4 w-28 rounded-full bg-muted/60 animate-pulse" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Available: {currentModels.length} models
+                          </span>
+                        )}
                       </div>
 
+                      {isModelsLoading ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {Array.from({ length: 4 }).map((_, i) => (
+                            <div
+                              key={i}
+                              className="p-5 rounded-2xl border border-border/40 bg-muted/20 animate-pulse space-y-3"
+                            >
+                              {/* Badge + Lock row */}
+                              <div className="flex items-center justify-between">
+                                <div className="h-4 w-20 rounded-full bg-muted/70" />
+                                <div className="h-4 w-14 rounded-full bg-muted/50" />
+                              </div>
+                              {/* Model name */}
+                              <div className="h-4 w-3/4 rounded-full bg-muted/70" />
+                              {/* Model ID */}
+                              <div className="h-3 w-1/2 rounded-full bg-muted/50" />
+                              {/* Description lines */}
+                              <div className="space-y-1.5 mt-1">
+                                <div className="h-3 w-full rounded-full bg-muted/40" />
+                                <div className="h-3 w-5/6 rounded-full bg-muted/40" />
+                              </div>
+                              {/* Footer divider + burn rate */}
+                              <div className="pt-3 border-t border-border/30 mt-2 space-y-2">
+                                <div className="h-3 w-2/3 rounded-full bg-muted/50" />
+                                <div className="h-3 w-1/2 rounded-full bg-muted/40" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {currentModels.map((m) => {
                           const isSelected = formData.model === m.id;
@@ -1094,6 +1139,7 @@ export default function AgentSettingsPage() {
                           );
                         })}
                       </div>
+                      )}
                     </div>
 
                     {/* API Key Status / Custom Key Input */}

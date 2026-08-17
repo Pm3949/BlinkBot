@@ -349,7 +349,7 @@ async def handle_test_single_model(payload: dict, user_id: str = None):
             async with get_db_cursor_async(commit=False) as cursor:
                 await run_in_threadpool(
                     cursor.execute,
-                    "SELECT api_key, base_url FROM ai_models WHERE model_id = %s AND (user_id IS NULL OR user_id = %s)",
+                    "SELECT api_key, base_url FROM user_ai_models WHERE model_identifier = %s AND user_id = %s AND is_active = TRUE",
                     (model_id, user_id)
                 )
                 row = await run_in_threadpool(cursor.fetchone)

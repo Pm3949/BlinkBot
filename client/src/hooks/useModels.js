@@ -182,7 +182,7 @@ export function useAvailableModels() {
       if (!response.ok) throw new Error("Failed to fetch available models");
       return response.json();
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes cache
+    staleTime: 1000 * 60 * 30, // 30 minutes — models rarely change mid-session
   });
 }
 

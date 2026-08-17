@@ -489,13 +489,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to trigger model pre-loading in background: {e}")
 
-    # Initialize the ai_models database table.
-    try:
-        from db.model_repository import init_ai_models_table
-        await init_ai_models_table()
-    except Exception as e:
-        logger.error(f"Failed to initialize ai_models table: {e}")
-        
     # Auto-resume interrupted document ingestion tasks.
     try:
         from handlers.document_processor import resume_interrupted_uploads
