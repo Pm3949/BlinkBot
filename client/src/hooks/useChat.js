@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useChatSessions, useChatMessages, useChatMutations } from "./useChatHistory";
 import { useAgentSocket } from "./useAgentSocket";
 
 export function useChat(agentId = null) {
+  const queryClient = useQueryClient();
   const { data: dbSessions = [], isLoading: isLoadingSessions } = useChatSessions(agentId);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -75,23 +77,14 @@ export function useChat(agentId = null) {
   useEffect(() => {
     const handleStreamEnd = async (e) => {
        if (activeSessionId) {
-          const finalContent = e.detail?.content || '';
-          const finalSteps = e.detail?.steps || null;
-          if (finalContent) {
-            try {
-              // Wait for the message to be saved to DB and cache invalidated first
-              await addMessage.mutateAsync({ sessionId: activeSessionId, role: "assistant", content: finalContent, latency: 0, steps: finalSteps });
-            } catch (err) {
-              console.error("Database save failed for assistant message:", err);
-            }
-          }
           setIsTyping(false); // Now set typing to false, swapping the optimistic bubble for the DB bubble
           clearTextChunks();
+          queryClient.invalidateQueries(["chat_messages", activeSessionId]);
        }
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
-  }, [activeSessionId, addMessage, clearTextChunks]);
+  }, [activeSessionId, clearTextChunks, queryClient]);
 
   // Clear optimistic user message if the session changes
   useEffect(() => {

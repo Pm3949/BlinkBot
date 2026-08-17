@@ -89,10 +89,12 @@ class AgentConnectionManager:
             except WebSocketDisconnect:
                 logger.info(f"WebSocket client {client_id} disconnected while sending message.")
                 self.disconnect(client_id)
+                raise
             except Exception as e:
                 # Catch communication failures, log details, and clean up connection entries
                 logger.error(f"Failed to send JSON message to client {client_id}: {str(e)}", exc_info=True)
                 self.disconnect(client_id)
+                raise WebSocketDisconnect(code=1000, reason=str(e))
         else:
             # Raise WebSocketDisconnect to immediately halt any active background generator tasks
             raise WebSocketDisconnect(code=1000, reason="Client disconnected")

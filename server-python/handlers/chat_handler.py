@@ -45,7 +45,7 @@ from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchRun
 
 from database import get_db_cursor_async
-from db import chat_repository
+from db import chat_repository, chat_history_repository
 from core.dependencies import rag_engine
 from core.security import decrypt_key
 from core.scrubber import scrub_pii
@@ -748,8 +748,28 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
     current_client_id_var.set(client_id)
     await agent_connection_manager.connect(websocket, client_id)
 
+    client_disconnected = False
+    steps_list = []
+
+    async def safe_send(msg):
+        nonlocal client_disconnected
+        if client_disconnected:
+            return
+        try:
+            await agent_connection_manager.send_json(msg, client_id)
+        except WebSocketDisconnect:
+            client_disconnected = True
+            logger.info(f"WebSocket client {client_id} disconnected. Continuing execution in background.")
+        except Exception as e:
+            client_disconnected = True
+            logger.info(f"Communication failure to client {client_id}: {e}. Continuing execution in background.")
 
     async def run_stream(inputs, active_graph, active_gateway_name, active_agent_id, active_llm_factory, active_tools_factory, session_id):
+        import time
+        start_time = time.time()
+        nonlocal steps_list
+        full_response = ""
+
         config = {
             "configurable": {"thread_id": session_id},
             "recursion_limit": 15
@@ -794,14 +814,15 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         
                     if chunk.content:
                         chunk_str = _get_content_string(chunk.content)
-                        await agent_connection_manager.send_json(
-                            {"type": "text_chunk", "content": chunk_str}, client_id
+                        full_response += chunk_str
+                        await safe_send(
+                            {"type": "text_chunk", "content": chunk_str}
                         )
     
                 elif kind == "on_chat_model_start":
                     if "supervisor" not in tags and node != "supervisor":
-                        await agent_connection_manager.send_json(
-                            {"type": "step", "status": "generating", "label": "Generating response..."}, client_id
+                        await safe_send(
+                            {"type": "step", "status": "generating", "label": "Generating response..."}
                         )
                         
                 elif kind == "on_chat_model_end":
@@ -843,7 +864,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 break
                     if is_webhook_tool:
                         status_msg = f"Executing custom API tool {t_name}..."
-                        await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
+                        await safe_send({"type": "status", "content": status_msg})
+                        steps_list.append({"status": "status", "label": status_msg, "done": True})
                         continue
                         
                     if t_name == "search_knowledge_base":
@@ -856,10 +878,12 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         action_name = t_name.replace("_", " ").title()
                         status_msg = f"Running action: {action_name}..."
                         tool_label = action_name
-                    await agent_connection_manager.send_json({"type": "status", "content": status_msg}, client_id)
-                    await agent_connection_manager.send_json(
-                        {"type": "step", "status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}"}, client_id
+                    await safe_send({"type": "status", "content": status_msg})
+                    await safe_send(
+                        {"type": "step", "status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}"}
                     )
+                    steps_list.append({"status": "status", "label": status_msg, "done": True})
+                    steps_list.append({"status": f"tool_call_{t_name}", "label": f"Calling: {tool_label}", "done": True})
                     
                 elif kind == "on_tool_end":
                     t_name = event["name"]
@@ -870,19 +894,21 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 is_webhook_tool = True
                                 break
                     if is_webhook_tool:
-                        await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
+                        await safe_send({"type": "status", "content": ""})
                         continue
                         
                     tool_label = t_name.replace("_", " ").title()
-                    await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-                    await agent_connection_manager.send_json(
-                        {"type": "step", "status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}"}, client_id
+                    await safe_send({"type": "status", "content": ""})
+                    await safe_send(
+                        {"type": "step", "status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}"}
                     )
+                    steps_list.append({"status": f"tool_done_{t_name}", "label": f"Got results from: {tool_label}", "done": True})
                     
                 elif kind == "on_chain_start" and event["name"] == "supervisor":
-                    await agent_connection_manager.send_json(
-                        {"type": "step", "status": "routing", "label": "Deciding which agent to use..."}, client_id
+                    await safe_send(
+                        {"type": "step", "status": "routing", "label": "Deciding which agent to use..."}
                     )
+                    steps_list.append({"status": "routing", "label": "Deciding which agent to use...", "done": True})
     
                 elif kind == "on_chain_end" and event["name"] == "supervisor":
                     output = event["data"].get("output", {})
@@ -890,14 +916,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         routed_name = output.get("routed_agent_name")
                         routed_id = output.get("active_agent_id")
                         if routed_id:
-                            await agent_connection_manager.send_json(
+                            await safe_send(
                                 {
                                     "type": "routing_decision",
                                     "agent_id": str(routed_id),
                                     "agent_name": routed_name
-                                },
-                                client_id
+                                }
                             )
+                            steps_list.append({"status": "routing", "label": f"Routed to: {routed_name}", "done": True})
             
             # Check for breakpoint interruption before tools execute
             state_snapshot = await active_graph.aget_state(config)
@@ -928,14 +954,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         continue
                         
                     logger.info(f"Graph execution paused at breakpoint before tool '{t_name}'. Requesting user approval...")
-                    await agent_connection_manager.send_json({
+                    await safe_send({
                         "type": "approval_required",
                         "payload": {
                             "tool_call_id": tool_call["id"],
                             "tool_name": tool_call["name"],
                             "arguments": tool_call["args"]
                         }
-                    }, client_id)
+                    })
                     
                     active_sessions_map[client_id] = {
                         "graph": active_graph,
@@ -1062,11 +1088,26 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     )
 
         # Emit formatting step just before stream end
-        await agent_connection_manager.send_json(
-            {"type": "step", "status": "formatting", "label": "Formatting answer..."}, client_id
+        await safe_send(
+            {"type": "step", "status": "formatting", "label": "Formatting answer..."}
         )
-        await agent_connection_manager.send_json({"type": "status", "content": ""}, client_id)
-        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+        await safe_send({"type": "status", "content": ""})
+        await safe_send({"type": "stream_end"})
+
+        # Save assistant message to the database
+        if full_response:
+            try:
+                latency = round(time.time() - start_time, 2)
+                await chat_history_repository.create_chat_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=full_response,
+                    latency=latency,
+                    steps=steps_list
+                )
+                logger.info(f"Successfully saved assistant message to database for session {session_id}.")
+            except Exception as db_err:
+                logger.error(f"Failed to save assistant message to database: {db_err}", exc_info=True)
 
     try:
         while True:
@@ -1117,14 +1158,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 
                 if not agent_id or not message:
                     logger.warning("Rejecting chat request: agent_id and message are required.")
-                    await agent_connection_manager.send_json(
+                    await safe_send(
                         {
                             "type": "error",
                             "content": "agent_id and message are required",
-                        },
-                        client_id,
+                        }
                     )
-                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                    await safe_send({"type": "stream_end"})
                     continue
 
                 message = scrub_pii(message)
@@ -1133,10 +1173,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     agent_data = await chat_repository.get_agent_for_chat(agent_id)
                     if not agent_data:
                         logger.warning(f"Agent {agent_id} not found in database.")
-                        await agent_connection_manager.send_json(
-                            {"type": "error", "content": "Agent not found"}, client_id
+                        await safe_send(
+                            {"type": "error", "content": "Agent not found"}
                         )
-                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                        await safe_send({"type": "stream_end"})
                         continue
 
                     registry.agents[str(agent_id)] = (
@@ -1180,10 +1220,10 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     
                     if not is_active:
                         logger.warning(f"Agent {agent_name} ({agent_id}) is offline.")
-                        await agent_connection_manager.send_json(
-                            {"type": "error", "content": "Agent is inactive."}, client_id
+                        await safe_send(
+                            {"type": "error", "content": "Agent is inactive."}
                         )
-                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                        await safe_send({"type": "stream_end"})
                         continue
 
                     endpoints = json.loads(endpoints_json) if isinstance(endpoints_json, str) else (endpoints_json or [])
@@ -1257,13 +1297,12 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     active_agent_id = chosen_agent[0]
                                     routed_agent_name = chosen_agent[1]
                                     logger.info(f"Routing request dynamically to: '{routed_agent_name}' ({active_agent_id})")
-                                    await agent_connection_manager.send_json(
+                                    await safe_send(
                                         {
                                             "type": "routing_decision",
                                             "agent_id": str(active_agent_id),
                                             "agent_name": routed_agent_name
-                                        },
-                                        client_id
+                                        }
                                     )
                                     sub_info = await chat_repository.get_agent_routing_info(active_agent_id)
                                     registry.agents[str(active_agent_id)] = sub_info
@@ -1288,15 +1327,16 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                     custom_api_key = decrypt_key(custom_api_key)
                                     if not is_active:
                                         logger.warning(f"Routed agent '{routed_agent_name}' is currently offline.")
-                                        await agent_connection_manager.send_json(
+                                        await safe_send(
                                             {
                                                 "type": "text_chunk",
                                                 "content": f"🔄 *[Routed to: {routed_agent_name}]*\n\n⚠️ **{routed_agent_name} is currently offline**\n\nTo chat with this assistant, please make sure it is activated in your settings.",
-                                            },
-                                            client_id,
+                                            }
                                         )
-                                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                                        await safe_send({"type": "stream_end"})
                                         continue
+                            except WebSocketDisconnect:
+                                raise
                             except Exception as re_err:
                                 logger.error(f"Dynamic routing decision failed: {re_err}", exc_info=True)
  
@@ -1305,14 +1345,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     current_msg_count, limits = await chat_repository.get_user_chat_limits(user_id)
                     if current_msg_count >= limits["agent_messages"]:
                         logger.warning(f"User {user_id} monthly agent message limits exceeded.")
-                        await agent_connection_manager.send_json(
+                        await safe_send(
                             {
                                 "type": "error",
                                 "content": "Monthly message limit exceeded. Please upgrade your plan.",
-                            },
-                            client_id,
+                            }
                         )
-                        await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                        await safe_send({"type": "stream_end"})
                         continue
 
                     # Pre-flight check on pre-paid credit wallet
@@ -1353,14 +1392,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         wallet_bal = await billing_repository.get_wallet_balance(user_id)
                         if wallet_bal <= 0:
                             logger.warning(f"Blocking chat request for user {user_id} due to insufficient wallet balance: {wallet_bal}")
-                            await agent_connection_manager.send_json(
+                            await safe_send(
                                 {
                                     "type": "error",
                                     "content": "insufficient_credits",
-                                },
-                                client_id,
+                                }
                             )
-                            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                            await safe_send({"type": "stream_end"})
                             continue
 
                     # Preprocess user query using Intent Analyzer & Query Optimizer
@@ -1377,11 +1415,14 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     logger.debug("Setting up LangGraph multi-agent orchestrator...")
                     from graph_orchestrator import build_multi_agent_graph
 
+                    request_llm_cache = {}
+                    request_tools_cache = {}
+
                     async def llm_factory(aid: str):
+                        aid_str = str(aid)
                         logger.debug(f"LLM Factory callback triggered for agent ID: {aid}")
                         
                         # Retrieve or cache agent info
-                        aid_str = str(aid)
                         if aid_str in registry.agents:
                             logger.info(f"💾 [Registry Cache Hit] Agent routing info for ID: {aid_str}")
                             agent_info = registry.agents[aid_str]
@@ -1407,6 +1448,11 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             mem_enabled,
                             use_byok_agent,
                         ) = agent_info
+
+                        cache_key = f"{aid_str}_{mod}"
+                        if cache_key in request_llm_cache:
+                            logger.debug(f"Serving LLM instance from request cache for {cache_key}")
+                            return request_llm_cache[cache_key]
                         
                         emb_model = emb_model or "text-embedding-3-small"
                         c_key = decrypt_key(c_key)
@@ -1462,9 +1508,15 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             llm_inst = await create_resilient_llm_instance(prov, mod, c_key, user_id=user_id)
                             registry.llms[llm_cache_key] = llm_inst
 
-                        return llm_inst, formatted_prompt, emb_model, web_enabled
+                        res = (llm_inst, formatted_prompt, emb_model, web_enabled)
+                        request_llm_cache[cache_key] = res
+                        return res
 
                     def tools_factory(aid: str, emb_model: str, web_enabled: bool, llm_inst):
+                        aid_str = str(aid)
+                        if aid_str in request_tools_cache:
+                            logger.info(f"💾 [Request Tools Cache Hit] Reusing compiled tools list for agent ID: {aid_str}")
+                            return request_tools_cache[aid_str]
                         logger.debug(f"Tools Factory callback triggered for agent ID: {aid}")
                         from langchain_core.tools import tool
                         
@@ -1614,6 +1666,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             n_tools = create_native_tools(user_id, agent_native)
                             t_list.extend(n_tools)
 
+                        request_tools_cache[aid_str] = t_list
                         return t_list
 
                     code_interpreter_map = {}
@@ -1670,17 +1723,19 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                     logger.info("Executing LangGraph multi-agent stream events...")
                     # Emit initial thinking step before graph execution begins
                     execution_id = str(uuid.uuid4())
-                    await agent_connection_manager.send_json(
-                        {"type": "step", "status": "thinking", "label": "Analyzing your request..."}, client_id
+                    await safe_send(
+                        {"type": "step", "status": "thinking", "label": "Analyzing your request..."}
                     )
                     await run_stream(inputs, graph, gateway_name, agent_id, llm_factory, tools_factory, execution_id)
 
+                except WebSocketDisconnect:
+                    raise
                 except Exception as exc:
                     logger.error("Chat generation failed", exc_info=True)
-                    await agent_connection_manager.send_json(
-                        {"type": "error", "content": str(exc)}, client_id
+                    await safe_send(
+                        {"type": "error", "content": str(exc)}
                     )
-                    await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                    await safe_send({"type": "stream_end"})
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket client disconnected normally. Client ID: {client_id}")
@@ -1914,6 +1969,8 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                                         {"type": "text_chunk", "content": chunk_str}, client_id
                                     )
                             await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                        except WebSocketDisconnect:
+                            logger.info(f"Widget WebSocket client {client_id} disconnected during stream generation.")
                         except Exception as exc:
                             logger.error("Streaming generation failed", exc_info=True)
                             await agent_connection_manager.send_json(
@@ -1923,6 +1980,8 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
 
                     asyncio.create_task(stream_generator())
 
+                except WebSocketDisconnect:
+                    raise
                 except Exception as e:
                     logger.error("Widget Chat endpoint failed", exc_info=True)
                     await agent_connection_manager.send_json(

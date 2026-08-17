@@ -500,7 +500,7 @@ async def handle_process_url(agent_id: str, url: str, background_tasks: Backgrou
 
         # Scrape and extract text content from the URL
         logger.debug("Executing URL scraping / content extraction...")
-        raw_text = rag_engine.extract_text_from_url(url)
+        raw_text = await asyncio.to_thread(rag_engine.extract_text_from_url, url)
         file_size = len(raw_text.encode("utf-8"))
 
         logger.debug("Retrieving user storage limits...")
@@ -678,7 +678,7 @@ async def handle_update_url(doc_id: str, url: str, background_tasks: BackgroundT
 
         # Scrape and extract text content from the new URL
         logger.debug("Extracting updated target URL content...")
-        raw_text = rag_engine.extract_text_from_url(url)
+        raw_text = await asyncio.to_thread(rag_engine.extract_text_from_url, url)
         file_size = len(raw_text.encode("utf-8"))
 
         limits = await get_user_limits_by_id(user_id)

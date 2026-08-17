@@ -538,87 +538,42 @@ class CustomRAGEngine:
         # Raise an error if both Cloudflare and Hugging Face fail
         raise RuntimeError("Cloud vectorization failed: Cloudflare and Hugging Face APIs are both unreachable or failed.")
 
-    def hybrid_search(
+    async def hybrid_search(
         self,
         query_text: str,
         query_vector: list,
-        document_texts: list,
-        document_vectors: list,
-        alpha: float = 0.5,
+        agent_id: str,
         top_k: int = 5,
     ) -> list:
         """
-        Combines Semantic Search with Lexical (Keyword) Search.
-
-        Purpose:
-            Implements hybrid retrieval. Semantic search matches concepts,
-            while lexical search matches exact keywords.
-            `alpha` controls weight: alpha=1.0 is purely semantic, alpha=0.0 is purely keyword.
-
-        Parameters:
-            query_text (str): Query string.
-            query_vector (list of float): Vector embedding of the query.
-            document_texts (list of str): Text content of documents.
-            document_vectors (list of list of float): Vector embeddings of documents.
-            alpha (float): Weights parameter (0.0 to 1.0).
-            top_k (int): Number of results to return.
-
-        Returns:
-            list of dict: Matching indices and scores sorted by relevance.
+        Executes a native PostgreSQL vector similarity match utilizing pgvector,
+        completely offloading the CPU-heavy NumPy cosine calculations to the database
+        without blocking the async event loop.
         """
-        import numpy as np
-
-        # Handle empty document list.
-        if not document_vectors:
-            return []
-
-        # --- Part 1: Semantic Scores (Cosine Similarity) ---
-        # Convert query and document vectors to numpy arrays.
-        q_vec = np.array(query_vector)
-        doc_vecs = np.array(document_vectors)
+        from database import get_db_cursor_async
+        from fastapi.concurrency import run_in_threadpool
         
-        # Calculate magnitudes (norms).
-        q_norm = np.linalg.norm(q_vec)
-        doc_norms = np.linalg.norm(doc_vecs, axis=1)
-
-        # Avoid division by zero: replace 0 norms with a tiny float.
-        doc_norms[doc_norms == 0] = 1e-10
-        q_norm = q_norm if q_norm != 0 else 1e-10
-
-        # Calculate dot products.
-        dot_products = np.dot(doc_vecs, q_vec)
-        # Cosine similarity formula: (A . B) / (||A|| * ||B||).
-        semantic_scores = dot_products / (doc_norms * q_norm)
-
-        # --- Part 2: Keyword Scores (Term Frequency) ---
-        # Extract keywords from the query.
-        query_words = set(re.findall(r"\w+", query_text.lower()))
-        keyword_scores = []
-        # Count matching query words in each document chunk.
-        for doc in document_texts:
-            doc_lower = doc.lower()
-            score = sum(1 for w in query_words if w in doc_lower)
-            keyword_scores.append(score)
-
-        keyword_scores = np.array(keyword_scores)
-        max_kw = np.max(keyword_scores)
-        # Normalize keyword scores to scale between 0.0 and 1.0.
-        if max_kw > 0:
-            keyword_scores = keyword_scores / max_kw
-
-        # --- Part 3: Combine Scores ---
-        # Weighted sum of semantic and keyword scores.
-        final_scores = (alpha * semantic_scores) + ((1 - alpha) * keyword_scores)
-
-        # --- Part 4: Sort and Return Top K ---
-        # Get indices sorted by score in descending order.
-        top_indices = np.argsort(final_scores)[::-1][:top_k]
-
-        # Build and return results list.
         results = []
-        for idx in top_indices:
-            results.append({"chunk_index": int(idx), "score": float(final_scores[idx])})
-
+        try:
+            async with get_db_cursor_async(commit=False) as cursor:
+                await run_in_threadpool(
+                    cursor.execute,
+                    """
+                    SELECT e.content, (1 - (e.embedding <=> %s::vector)) AS similarity
+                    FROM document_embeddings e
+                    JOIN documents d ON e.document_id = d.id
+                    WHERE d.agent_id = %s
+                    ORDER BY e.embedding <=> %s::vector ASC
+                    LIMIT %s;
+                    """,
+                    (str(query_vector), agent_id, str(query_vector), top_k),
+                )
+                rows = await run_in_threadpool(cursor.fetchall)
+                for idx, (content, score) in enumerate(rows):
+                    results.append({"chunk_index": idx, "content": content, "score": float(score)})
+        except Exception as e:
+            logger.error(f"PostgreSQL pgvector hybrid search failed: {e}")
+            
         return results
 
     def rerank_documents(self, query: str, documents: list, top_k: int = 5, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list:
