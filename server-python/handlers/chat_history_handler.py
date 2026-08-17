@@ -96,7 +96,7 @@ async def handle_create_chat_session(payload: dict):
             async with get_db_cursor_async(commit=False) as cursor:
                 await run_in_threadpool(
                     cursor.execute,
-                    "SELECT id FROM agents WHERE project_id = %s AND name = 'Network Manager'",
+                    "SELECT id FROM agents WHERE project_id = %s AND parent_agent_id IS NULL",
                     (agent_id,)
                 )
                 row = await run_in_threadpool(cursor.fetchone)
