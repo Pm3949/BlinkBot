@@ -1025,59 +1025,60 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             )
                             steps_list.append({"status": "routing", "label": f"Routed to: {routed_name}", "done": True})
             
-            # Check for breakpoint interruption before tools execute
-            state_snapshot = await active_graph.aget_state(config)
-            if state_snapshot.next and "tools" in state_snapshot.next:
-                last_message = state_snapshot.values["messages"][-1]
-                if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-                    tool_call = last_message.tool_calls[0]
-                    t_name = tool_call["name"]
-                    
-                    # Fetch attached tools for the active agent to check requires_approval flag from registry
-                    agent_tools = registry.tools.get(str(active_agent_id), [])
-                    
-                    # Find tool in attached list (by name or normalized matching)
-                    matching_tool = next((t for t in agent_tools if t["name"] == t_name or t["name"].replace(" ", "_").lower() == t_name.lower()), None)
-                    
-                    requires_app = False
-                    if matching_tool:
-                        config_dict = matching_tool.get("configuration") or {}
-                        requires_app = config_dict.get("requires_approval") or matching_tool.get("requires_approval") or False
-                    
-                    # System search tools never require approval
-                    if t_name in ["search_knowledge_base", "search_web"]:
+            # Check for breakpoint interruption before tools execute (only if checkpointer is set)
+            if getattr(active_graph, "checkpointer", None):
+                state_snapshot = await active_graph.aget_state(config)
+                if state_snapshot.next and "tools" in state_snapshot.next:
+                    last_message = state_snapshot.values["messages"][-1]
+                    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                        tool_call = last_message.tool_calls[0]
+                        t_name = tool_call["name"]
+                        
+                        # Fetch attached tools for the active agent to check requires_approval flag from registry
+                        agent_tools = registry.tools.get(str(active_agent_id), [])
+                        
+                        # Find tool in attached list (by name or normalized matching)
+                        matching_tool = next((t for t in agent_tools if t["name"] == t_name or t["name"].replace(" ", "_").lower() == t_name.lower()), None)
+                        
                         requires_app = False
+                        if matching_tool:
+                            config_dict = matching_tool.get("configuration") or {}
+                            requires_app = config_dict.get("requires_approval") or matching_tool.get("requires_approval") or False
                         
-                    if not requires_app:
-                        logger.info(f"Auto-approving tool: '{t_name}' (requires_approval is False)")
-                        current_inputs = None
-                        continue
+                        # System search tools never require approval
+                        if t_name in ["search_knowledge_base", "search_web"]:
+                            requires_app = False
+                            
+                        if not requires_app:
+                            logger.info(f"Auto-approving tool: '{t_name}' (requires_approval is False)")
+                            current_inputs = None
+                            continue
+                            
+                        logger.info(f"Graph execution paused at breakpoint before tool '{t_name}'. Requesting user approval...")
+                        await safe_send({
+                            "type": "approval_required",
+                            "payload": {
+                                "tool_call_id": tool_call["id"],
+                                "tool_name": tool_call["name"],
+                                "arguments": tool_call["args"]
+                            }
+                        })
                         
-                    logger.info(f"Graph execution paused at breakpoint before tool '{t_name}'. Requesting user approval...")
-                    await safe_send({
-                        "type": "approval_required",
-                        "payload": {
-                            "tool_call_id": tool_call["id"],
+                        active_sessions_map[client_id] = {
+                            "graph": active_graph,
+                            "gateway_name": active_gateway_name,
+                            "agent_id": active_agent_id,
+                            "llm_factory": active_llm_factory,
+                            "tools_factory": active_tools_factory,
+                            "session_id": session_id,
                             "tool_name": tool_call["name"],
-                            "arguments": tool_call["args"]
+                            "registry": registry,
+                            "turn_prompt_tokens": turn_prompt_tokens,
+                            "turn_completion_tokens": turn_completion_tokens,
+                            "models_used": list(models_used),
+                            "model_token_tracker": {m_id: dict(counts) for m_id, counts in model_token_tracker.items()}
                         }
-                    })
-                    
-                    active_sessions_map[client_id] = {
-                        "graph": active_graph,
-                        "gateway_name": active_gateway_name,
-                        "agent_id": active_agent_id,
-                        "llm_factory": active_llm_factory,
-                        "tools_factory": active_tools_factory,
-                        "session_id": session_id,
-                        "tool_name": tool_call["name"],
-                        "registry": registry,
-                        "turn_prompt_tokens": turn_prompt_tokens,
-                        "turn_completion_tokens": turn_completion_tokens,
-                        "models_used": list(models_used),
-                        "model_token_tracker": {m_id: dict(counts) for m_id, counts in model_token_tracker.items()}
-                    }
-                    return
+                        return
             break
             
         # Single atomic deduction & logs update at the end of the stream
@@ -1177,15 +1178,6 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 if credits_to_deduct > 0.0:
                     logger.info(f"Deducting {credits_to_deduct} credits from user {user_id} wallet...")
                     await billing_repository.deduct_wallet_balance_atomic(user_id, credits_to_deduct)
-                    await billing_repository.create_credit_transaction(
-                        user_id=user_id,
-                        agent_id=active_agent_id,
-                        amount_credits=-credits_to_deduct,
-                        transaction_type="usage_deduction",
-                        model_used=", ".join(system_models_run),
-                        prompt_tokens=turn_prompt_tokens,
-                        completion_tokens=turn_completion_tokens
-                    )
 
         # Emit formatting step just before stream end
         await safe_send(
@@ -1394,8 +1386,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                             )
                             try:
                                 logger.info("Sending routing prompt to supervisor/router LLM...")
-                                router_llm_json = router_llm.bind(response_format={"type": "json_object"})
-                                routing_response = await router_llm_json.ainvoke(routing_prompt)
+                                routing_response = await router_llm.ainvoke(routing_prompt)
                                 content = routing_response.content
                                 if isinstance(content, list):
                                     parts = []
@@ -1856,7 +1847,8 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                         sub_agents=sub_agents if (project_id and not parent_agent_id) else [],
                         router_llm=router_llm if (project_id and not parent_agent_id) else None,
                         llm_factory=llm_factory,
-                        tools_factory=tools_factory
+                        tools_factory=tools_factory,
+                        memory_enabled=bool(memory_enabled is not False)
                     )
 
                     # Build memory context using the last 6 messages

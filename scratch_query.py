@@ -11,23 +11,19 @@ load_dotenv("/home/mp3949/Documents/RAGMate/server-python/dev.env")
 
 from core.database import get_db_cursor_async
 from utils.data_vault import secure_unpack
+from fastapi.concurrency import run_in_threadpool
 
 async def main():
     async with get_db_cursor_async(commit=False) as cursor:
-        cursor.execute(
+        await run_in_threadpool(
+            cursor.execute,
             """
-            SELECT id, provider, api_key_required, base_url, is_active FROM system_ai_models WHERE id = 'openai/gpt-oss-120b'
+            SELECT id, name, system_prompt FROM agents
             """
         )
-        row = cursor.fetchone()
-        if row:
-            print(f"ID: {row[0]}")
-            print(f"Provider: {row[1]}")
-            print(f"Key Required: {row[2]}")
-            print(f"Base URL: {row[3]}")
-            print(f"Is Active: {row[4]}")
-        else:
-            print("Model not found")
+        rows = await run_in_threadpool(cursor.fetchall)
+        for r in rows:
+            print(f"ID: {r[0]} | Name: {r[1]}")
 
 if __name__ == "__main__":
     asyncio.run(main())

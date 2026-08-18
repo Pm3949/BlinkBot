@@ -223,7 +223,6 @@ async def clear_agent_chat_history(agent_id: str):
             "DELETE FROM langgraph_writes WHERE thread_id IN (SELECT id::text FROM chat_sessions WHERE agent_id = %s);",
             (agent_id,)
         )
-        await run_in_threadpool(cursor.execute, "DELETE FROM chat_sessions WHERE agent_id = %s", (agent_id,))
 
 
 async def get_chat_messages(session_id: str):

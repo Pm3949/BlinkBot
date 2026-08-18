@@ -720,7 +720,7 @@ export default function BillingPage() {
         });
 
         const walletRows = (walletData?.history || [])
-          .filter(tx => tx.transaction_type !== "topup")
+          .filter(tx => tx.transaction_type !== "topup" && tx.transaction_type !== "usage_deduction")
           .map(tx => ({
             _type: "wallet",
             _sortKey: new Date(tx.created_at).getTime(),

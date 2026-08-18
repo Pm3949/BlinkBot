@@ -550,23 +550,8 @@ async def generate_tool_description(
     from langchain_core.messages import SystemMessage, HumanMessage
     import json
 
-    system_instruction = (
-        "You are an expert AI system architect. Your task is to write a highly optimized JSON description "
-        "containing instructions for an LLM agent to know exactly when and how to call this API tool, "
-        "and clear instructions for each of its parameters/path variables.\n\n"
-        "You MUST return a JSON object with the following format:\n"
-        "{\n"
-        '  "description": "Concise summary of the tool\'s primary purpose and when to call it (2-3 sentences max).",\n'
-        '  "path_variables": {\n'
-        '    "var_name": "Clear, concise instruction of what this path variable represents."\n'
-        "  },\n"
-        '  "query_parameters": {\n'
-        '    "param_name": "Clear, concise instruction of what this query/body parameter represents."\n'
-        "  }\n"
-        "}\n\n"
-        "Ensure all keys in the input's Path Variables and Query/Body Parameters are mapped in the JSON response. "
-        "Output ONLY the raw JSON structure without markdown formatting or code blocks."
-    )
+    from prompts.optimizer_prompts import TOOL_DESCRIPTION_OPTIMIZER_INSTRUCTION
+    system_instruction = TOOL_DESCRIPTION_OPTIMIZER_INSTRUCTION
 
     try:
         llm = await create_resilient_llm_instance(

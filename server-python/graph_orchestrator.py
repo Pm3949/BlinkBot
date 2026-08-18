@@ -76,6 +76,7 @@ def build_multi_agent_graph(
     router_llm: BaseChatModel,
     llm_factory: Callable[[str], BaseChatModel],
     tools_factory: Callable[[str, str, bool, BaseChatModel], List[Callable]],
+    memory_enabled: bool = True,
 ):
     """
     Compiles a LangGraph state machine.
@@ -155,14 +156,27 @@ def build_multi_agent_graph(
         )
 
         try:
-            # Bind JSON object configuration to the router LLM.
-            router_llm_json = router_llm.bind(response_format={"type": "json_object"})
+            # Filter and clean message history to only include Human and AI messages (removing tool messages & tool call metadata)
+            # to prevent API sequence validation issues on Gemini/OpenAI.
+            clean_history = []
+            for m in state["messages"]:
+                if isinstance(m, HumanMessage) or getattr(m, "type", None) == "human":
+                    clean_history.append(HumanMessage(content=m.content))
+                elif isinstance(m, AIMessage) or getattr(m, "type", None) == "ai":
+                    # Strip tool_calls to avoid missing ToolMessage errors in LangChain
+                    clean_history.append(AIMessage(content=m.content))
+
             # Assemble messages, placing instructions first.
-            messages = [SystemMessage(content=supervisor_prompt)] + list(
-                state["messages"]
-            )
+            messages = [SystemMessage(content=supervisor_prompt)] + clean_history
             # Invoke the model.
-            routing_response = await router_llm_json.ainvoke(messages)
+            routing_response = await router_llm.ainvoke(messages)
+            print("FINISH REASON:", routing_response.response_metadata.get("finish_reason"))
+            print("SAFETY RATINGS:", routing_response.response_metadata.get("safety_ratings"))
+            # --- ADD THIS DEBUG LINE ---
+            logger.debug(f"LLM Metadata: {routing_response.response_metadata}")
+            logger.debug(f"Tool Calls (if any): {getattr(routing_response, 'tool_calls', 'None')}")
+
+
             content = routing_response.content
             if isinstance(content, list):
                 parts = []
@@ -379,7 +393,13 @@ def build_multi_agent_graph(
         if result and "messages" in result:
             for msg in result["messages"]:
                 if isinstance(msg, ToolMessage):
-                    logger.info(f"Tool {msg.name} (ID: {msg.tool_call_id}) completed in {_tool_elapsed:.2f}s")
+                    is_error = getattr(msg, "status", None) == "error" or "error" in str(msg.content).lower() or "fail" in str(msg.content).lower()
+                    content_str = str(msg.content)
+                    truncated_content = content_str[:400] + ("..." if len(content_str) > 400 else "")
+                    if is_error:
+                        logger.error(f"❌ Tool '{msg.name}' (ID: {msg.tool_call_id}) failed: {truncated_content}")
+                    else:
+                        logger.info(f"✅ Tool '{msg.name}' (ID: {msg.tool_call_id}) succeeded in {_tool_elapsed:.2f}s: {truncated_content}")
                 else:
                     logger.info(f"Tool execution returned message type: {type(msg).__name__} in {_tool_elapsed:.2f}s")
 
@@ -423,9 +443,12 @@ def build_multi_agent_graph(
     )
     workflow.add_edge("tools", "agent")
 
-    from utils.postgres_saver import PostgresCheckpointSaver
-    memory = PostgresCheckpointSaver()
-    
-    # Compile the workflow with checkpointer and HITL interruption before tools execution.
-    logger.info(f"Compiling LangGraph state machine for gateway '{gateway_name}' with HITL interrupt_before=['tools']")
-    return workflow.compile(checkpointer=memory, interrupt_before=["tools"])
+    if memory_enabled:
+        from utils.postgres_saver import PostgresCheckpointSaver
+        memory = PostgresCheckpointSaver()
+        # Compile the workflow with checkpointer and HITL interruption before tools execution.
+        logger.info(f"Compiling LangGraph state machine for gateway '{gateway_name}' with checkpointer and HITL interrupt_before=['tools']")
+        return workflow.compile(checkpointer=memory, interrupt_before=["tools"])
+    else:
+        logger.info(f"Compiling LangGraph state machine for gateway '{gateway_name}' WITHOUT checkpointer (memory disabled)")
+        return workflow.compile()
