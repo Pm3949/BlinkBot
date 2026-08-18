@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePageSeo } from './hooks/usePageSeo';
+import JsonLd from './components/JsonLd';
 
 const API_URL = 'https://api.blinkbot.in';
 
@@ -312,6 +313,8 @@ function Logo() {
         src="/logo1.png" 
         alt="BlinkBot Logo" 
         className="h-13 w-auto object-contain rounded-xl" 
+        fetchpriority="high"
+        loading="eager"
       />
       <div>
         <div className="font-bold text-foreground text-left leading-none">
@@ -328,6 +331,19 @@ function Logo() {
 export default function LandingPage() {
   usePageSeo();
   const [darkMode, setDarkMode] = useState(true);
+
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": FAQS.map(faq => ({
+      "@type": "Question",
+      "name": faq.q,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": faq.a
+      }
+    }))
+  };
 
   useEffect(() => {
     // Sync dark mode class on html tag
@@ -572,16 +588,17 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/20 overflow-x-hidden transition-colors duration-300">
+      <JsonLd schema={faqSchema} />
 
       {/* ═══════════════════════════════════════════════════════════════════
           NAVIGATION
       ═══════════════════════════════════════════════════════════════════ */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         scrolled
           ? 'bg-background/95 backdrop-blur-xl border-b border-border shadow-sm'
           : 'bg-transparent'
       }`}>
-        <div className="flex items-center justify-between px-6 md:px-10 py-4 max-w-7xl mx-auto">
+        <nav className="flex items-center justify-between px-6 md:px-10 py-4 max-w-7xl mx-auto" aria-label="Main Navigation">
           <Logo />
 
           <div className="hidden md:flex items-center gap-7">
@@ -629,13 +646,14 @@ export default function LandingPage() {
               <Zap size={14} /> Get Started Free
             </a>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </header>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          HERO SECTION
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section className="relative pt-32 md:pt-40 pb-20 md:pb-28 px-6 overflow-hidden bg-background">
+      <main>
+        {/* ═══════════════════════════════════════════════════════════════════
+            HERO SECTION
+        ═══════════════════════════════════════════════════════════════════ */}
+        <section className="relative pt-32 md:pt-40 pb-20 md:pb-28 px-6 overflow-hidden bg-background">
         {/* Animated background orbs */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div
@@ -1601,6 +1619,7 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      </main>
 
       {/* ═══════════════════════════════════════════════════════════════════
           FOOTER
