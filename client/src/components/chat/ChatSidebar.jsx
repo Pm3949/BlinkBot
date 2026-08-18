@@ -8,6 +8,7 @@ import {
   Bookmark,
   Pin,
   Network,
+  Search,
 } from "lucide-react";
 
 import Logo from "../shared/Logo";
@@ -27,11 +28,30 @@ export default function ChatSidebar({
   isLoadingSessions = false,
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("all"); // "all" | "pinned" | "recent"
+
   const sortedSessions = [...sessions].sort(
     (first, second) =>
       Number(Boolean(second.pinned)) - Number(Boolean(first.pinned)) ||
       new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime(),
   );
+
+  const filteredSessions = sortedSessions.filter((session) => {
+    // 1. Tab filter
+    if (activeTab === "pinned" && !session.pinned) return false;
+    if (activeTab === "recent") {
+      const hours = (Date.now() - new Date(session.updatedAt).getTime()) / 3600000;
+      if (hours > 24) return false;
+    }
+
+    // 2. Search query filter
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    const titleMatch = session.title?.toLowerCase().includes(query);
+    const dateMatch = new Date(session.updatedAt).toLocaleDateString().toLowerCase().includes(query);
+    return titleMatch || dateMatch;
+  });
 
   const handleRename = (session) => {
     const title = window.prompt("Rename chat", session.title);
@@ -123,10 +143,56 @@ export default function ChatSidebar({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto border-t border-border px-3 py-4">
+      <div className="flex-1 overflow-y-auto border-t border-border px-3 py-4 flex flex-col">
         <div className="mb-3 px-3 text-xs uppercase text-muted-foreground">
           Chat History
         </div>
+
+        {/* Search Input */}
+        {activeAgentId && sessions.length > 0 && (
+          <div className="px-3 mb-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by title or date..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-muted/50 hover:bg-muted/80 focus:bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/45 transition-all text-foreground font-medium"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Filter Tabs */}
+        {activeAgentId && sessions.length > 0 && (
+          <div className="flex bg-muted/40 rounded-xl p-0.5 mb-3 mx-3 text-xs">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`flex-1 py-1.5 rounded-lg text-center font-semibold transition ${
+                activeTab === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setActiveTab("pinned")}
+              className={`flex-1 py-1.5 rounded-lg text-center font-semibold transition ${
+                activeTab === "pinned" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Pinned
+            </button>
+            <button
+              onClick={() => setActiveTab("recent")}
+              className={`flex-1 py-1.5 rounded-lg text-center font-semibold transition ${
+                activeTab === "recent" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Recent
+            </button>
+          </div>
+        )}
 
         {isLoadingSessions ? (
           <div className="px-3 py-2 space-y-2">
@@ -142,9 +208,13 @@ export default function ChatSidebar({
           <div className="px-3 py-3 text-sm text-muted-foreground">
             No chat history for this agent.
           </div>
+        ) : filteredSessions.length === 0 ? (
+          <div className="px-3 py-3 text-sm text-muted-foreground">
+            No matching chat sessions found.
+          </div>
         ) : (
           <div className="space-y-1">
-            {sortedSessions.map((session) => (
+            {filteredSessions.map((session) => (
               <div key={session.id} className="relative">
                 <button
                   type="button"

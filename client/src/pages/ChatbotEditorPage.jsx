@@ -40,6 +40,9 @@ export default function ChatbotEditorPage() {
   const [copiedCurl, setCopiedCurl] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewMessages, setPreviewMessages] = useState([]);
+  const [previewInput, setPreviewInput] = useState("");
+  const [previewTyping, setPreviewTyping] = useState(false);
 
   const DATA_API_URL = "https://api.blinkbot.in";
 
@@ -150,7 +153,10 @@ export default function ChatbotWidget() {
     if (isUrl(avatarStr)) {
       return <img src={getImageUrl(avatarStr)} className={`${sizeClass} rounded-full object-cover`} alt="Avatar" />;
     }
-    return <span>{avatarStr || "🤖"}</span>;
+    if (!avatarStr || avatarStr === "🤖") {
+      return <img src="https://blinkbot.in/iconq.png" className={`${sizeClass} rounded-full object-cover`} alt="Avatar" />;
+    }
+    return <span className="text-lg">{avatarStr}</span>;
   };
 
   const copyToClipboard = (text, setter) => {
@@ -602,18 +608,19 @@ export default function ChatbotWidget() {
 
                   {/* Messages */}
                   <div className="flex-1 p-4 bg-gray-55 flex flex-col gap-3 overflow-y-auto">
-                    <div className={`bg-white border border-gray-100 p-3 shadow-sm text-sm text-gray-800 self-start max-w-[85%] ${
+                    <div className={`p-3 shadow-sm text-sm self-start max-w-[85%] ${
                       settings.borderRadius === 'square' ? 'rounded-none' : 'rounded-2xl rounded-tl-sm'
-                    }`}>
+                    }`} style={{ backgroundColor: "#f1f5f9", color: "#1e293b" }}>
                       {settings.welcomeMessage || "Hi there! How can I help you today?"}
                     </div>
-
+ 
                     {/* Predefined Questions Preview */}
-                    {settings.predefinedQuestions && settings.predefinedQuestions.filter(q => q && q.trim() !== "").length > 0 && (
+                    {previewMessages.length === 0 && settings.predefinedQuestions && settings.predefinedQuestions.filter(q => q && q.trim() !== "").length > 0 && (
                       <div className="flex flex-col gap-1.5 mt-2 max-w-[85%] self-start">
                         {settings.predefinedQuestions.filter(q => q && q.trim() !== "").map((q, idx) => (
                           <div
                             key={idx}
+                            onClick={() => handleSendPreview(q)}
                             className="text-xs px-3 py-2 bg-white border border-gray-200 hover:border-primary hover:text-primary transition cursor-pointer text-gray-700 shadow-sm font-medium"
                             style={{
                               borderRadius: settings.borderRadius === 'square' ? '0' : settings.borderRadius === 'pill' ? '9999px' : '10px'
@@ -624,30 +631,67 @@ export default function ChatbotWidget() {
                         ))}
                       </div>
                     )}
+
+                    {/* Messages list */}
+                    {previewMessages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 text-sm max-w-[85%] shadow-sm ${
+                          msg.role === "user"
+                            ? "text-white self-end"
+                            : "self-start"
+                        } ${
+                          settings.borderRadius === 'square' ? 'rounded-none' :
+                          msg.role === "user" ? 'rounded-2xl rounded-tr-sm' : 'rounded-2xl rounded-tl-sm'
+                        }`}
+                        style={msg.role === "user" ? { backgroundColor: settings.themeColor, color: "#ffffff" } : { backgroundColor: "#f1f5f9", color: "#1e293b" }}
+                      >
+                        {msg.content}
+                      </div>
+                    ))}
+
+                    {/* Typing Indicator */}
+                    {previewTyping && (
+                      <div className={`p-3 shadow-sm text-sm self-start max-w-[85%] flex items-center gap-1 ${
+                        settings.borderRadius === 'square' ? 'rounded-none' : 'rounded-2xl rounded-tl-sm'
+                      }`} style={{ backgroundColor: "#f1f5f9", color: "#94a3b8" }}>
+                        <span className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                        <span className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
+                        <span className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Input */}
                   <div className="p-3 border-t border-gray-100 bg-white">
-                    <div className="relative">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSendPreview();
+                      }}
+                      className="relative"
+                    >
                       <input
                         type="text"
                         placeholder="Type your message..."
-                        className={`w-full bg-gray-50 border border-gray-200 px-4 py-2.5 text-sm focus:outline-none ${
+                        value={previewInput}
+                        onChange={(e) => setPreviewInput(e.target.value)}
+                        className={`w-full bg-gray-50 border border-gray-200 px-4 pr-12 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${
                           settings.borderRadius === 'square' ? 'rounded-none' : 
                           settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-xl'
                         }`}
-                        disabled
                       />
-                      <div
-                        className={`absolute right-1.5 top-1.5 h-7 w-7 flex items-center justify-center text-white ${
+                      <button
+                        type="submit"
+                        className={`absolute right-1.5 top-1.5 h-7 w-7 flex items-center justify-center text-white hover:opacity-90 active:scale-95 transition ${
                           settings.borderRadius === 'square' ? 'rounded-none' : 
                           settings.borderRadius === 'pill' ? 'rounded-full' : 'rounded-lg'
                         }`}
                         style={{ backgroundColor: settings.themeColor || '#3B82F6' }}
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                      </div>
-                    </div>
+                      </button>
+                    </form>
                     <div className="text-center mt-2">
                       <span className="text-[10px] text-gray-400 font-medium">Powered by BlinkBot</span>
                     </div>
