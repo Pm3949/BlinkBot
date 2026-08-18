@@ -1,133 +1,101 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BlinkBot | Visual AI Orchestration & RAG Platform</title>
-    <meta name="description" content="Build, test, and deploy intelligent AI agents with BlinkBot's visual graph orchestrator. Design advanced RAG pipelines with ease.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Plus+Jakarta+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <!-- Navbar -->
-    <header class="navbar">
-        <div class="nav-container">
-            <a href="#" class="logo">
-                <span class="logo-dot"></span> BlinkBot
-            </a>
-            <nav class="nav-links">
-                <a href="#features">Features</a>
-                <a href="#orchestrator">Orchestrator</a>
-                <a href="#pricing">Pricing</a>
-            </nav>
-            <div class="nav-actions">
-                <a href="https://app.blinkbot.in/login" class="btn-text">Sign In</a>
-                <a href="https://app.blinkbot.in/signup" class="btn-primary">Launch App</a>
-            </div>
-        </div>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Hero Section -->
-    <section class="hero">
-        <div class="hero-glow"></div>
-        <div class="container">
-            <span class="badge">Introducing BlinkBot 1.0</span>
-            <h1 class="hero-title">
-                Orchestrate Intelligent <br>
-                <span class="text-gradient">AI Agents Visually</span>
-            </h1>
-            <p class="hero-subtitle">
-                Design, debug, and scale advanced AI workflows with a powerful node-based graph orchestrator. Built-in RAG pipelines, instant API connections, and real-time state tracking.
-            </p>
-            <div class="hero-cta">
-                <a href="https://app.blinkbot.in/signup" class="btn-primary btn-large">Get Started Free</a>
-                <a href="#orchestrator" class="btn-secondary btn-large">How It Works</a>
-            </div>
-            
-            <!-- Hero Mockup/Preview -->
-            <div class="hero-preview">
-                <div class="preview-header">
-                    <span class="dot red"></span>
-                    <span class="dot yellow"></span>
-                    <span class="dot green"></span>
-                    <span class="preview-title">BlinkBot Graph Orchestrator</span>
-                </div>
-                <div class="preview-body">
-                    <!-- Flow diagram placeholder simulator -->
-                    <div class="node node-start">
-                        <div class="node-badge">Input</div>
-                        <div class="node-text">User Query Trigger</div>
-                    </div>
-                    <div class="node-arrow"></div>
-                    <div class="node node-rag">
-                        <div class="node-badge">RAG</div>
-                        <div class="node-text">Vector Knowledge Retrieval</div>
-                    </div>
-                    <div class="node-arrow"></div>
-                    <div class="node node-llm">
-                        <div class="node-badge">LLM</div>
-                        <div class="node-text">Gemini 3.5 Orchestrator</div>
-                    </div>
-                    <div class="node-arrow"></div>
-                    <div class="node node-response">
-                        <div class="node-badge">Output</div>
-                        <div class="node-text">Stream Response</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
+    <!-- ═══ Primary SEO ═══ -->
+    <title>BlinkBot - Build Custom AI Agents in Minutes</title>
+    <meta name="description" content="Empower your business to build custom AI agents in minutes. Zero coding required. Deploy them as a chatbot on your website instantly, connect tools, and automate workflows safely." />
+    <meta name="keywords" content="AI agent builder, custom AI agents, multi-agent workflows, zero-code AI, connect tools, WhatsApp automation, BlinkBot" />
+    <meta name="author" content="BlinkBot" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://blinkbot.in/" />
 
-    <!-- Features Section -->
-    <section id="features" class="features">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">Designed for building autonomous AI systems</h2>
-                <p class="section-subtitle">Everything you need to move from prompt engineering to fully integrated multi-agent workflows.</p>
-            </div>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Visual Graph Editor</h3>
-                    <p>Connect LLMs, memory, vector databases, and custom python functions in an intuitive visual interface.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📚</div>
-                    <h3>Built-in RAG</h3>
-                    <p>Upload documents (PDFs, TXT) and retrieve relevant context instantly using high-performance vector search.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🔄</div>
-                    <h3>State Orchestration</h3>
-                    <p>Manage execution flow, branch logically based on conditions, and track variables across conversational history.</p>
-                </div>
-            </div>
-        </div>
-    </section>
+    <!-- ═══ Open Graph (Facebook, LinkedIn, WhatsApp) ═══ -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://blinkbot.in/" />
+    <meta property="og:title" content="BlinkBot - Build Custom AI Agents in Minutes" />
+    <meta property="og:description" content="Empower your business to build custom AI agents in minutes. Zero coding required. Deploy them as a chatbot on your website instantly, connect tools, and automate workflows safely." />
+    <meta property="og:image" content="https://blinkbot.in/icon.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="BlinkBot AI Agent Platform" />
+    <meta property="og:site_name" content="BlinkBot" />
+    <meta property="og:locale" content="en_US" />
 
-    <!-- CTA Footer Banner -->
-    <section class="cta-banner">
-        <div class="container">
-            <div class="cta-content">
-                <h2>Build your first AI Agent in minutes.</h2>
-                <p>No credit card required. Start building for free today.</p>
-                <a href="https://app.blinkbot.in/signup" class="btn-primary btn-large">Launch BlinkBot Console</a>
-            </div>
-        </div>
-    </section>
+    <!-- ═══ Twitter / X Card ═══ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://blinkbot.in/" />
+    <meta name="twitter:title" content="BlinkBot - Build Custom AI Agents in Minutes" />
+    <meta name="twitter:description" content="Empower your business to build custom AI agents in minutes. Zero coding required. Deploy them as a chatbot on your website instantly, connect tools, and automate workflows safely." />
+    <meta name="twitter:image" content="https://blinkbot.in/icon.png" />
+    <meta name="twitter:image:alt" content="BlinkBot AI Agent Platform" />
 
-    <!-- Footer -->
-    <footer>
-        <div class="container footer-container">
-            <p>&copy; 2026 BlinkBot. All rights reserved.</p>
-            <div class="footer-links">
-                <a href="#">Privacy Policy</a>
-                <a href="#">Terms of Service</a>
-                <a href="https://app.blinkbot.in">App Dashboard</a>
-            </div>
-        </div>
-    </footer>
-</body>
+    <!-- ═══ Favicon & App Icons ═══ -->
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon.png" />
+    <meta name="theme-color" content="#7c3aed" />
+
+    <!-- ═══ Fonts ═══ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- ═══ JSON-LD Structured Data ═══ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "name": "BlinkBot",
+          "alternateName": ["Blink Bot"],
+          "url": "https://blinkbot.in/"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "BlinkBot",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web",
+          "url": "https://blinkbot.in/",
+          "description": "BlinkBot lets you create custom AI chatbots powered by your own documents and data. Upload PDFs, configure with any LLM, and embed a chat widget on your website — no code required.",
+          "offers": [
+            {
+              "@type": "Offer",
+              "name": "Starter",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            {
+              "@type": "Offer",
+              "name": "Pro",
+              "price": "24",
+              "priceCurrency": "USD"
+            },
+            {
+              "@type": "Offer",
+              "name": "Enterprise",
+              "price": "120",
+              "priceCurrency": "USD"
+            }
+          ],
+          "creator": {
+            "@type": "Organization",
+            "name": "BlinkBot",
+            "url": "https://blinkbot.in/"
+          }
+        }
+      ]
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script defer src="https://blinkbot.in/widget.js"
+      data-chatbot-id="19802bcc-68a2-46c2-86fc-7e17049cfaa3"
+      data-api-url="https://api.blinkbot.in">
+    </script>
+  </body>
 </html>
