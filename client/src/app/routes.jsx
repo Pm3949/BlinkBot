@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import AppShell from "./AppShell";
 import ProtectedRoute from "../ProtectedRoute";
@@ -21,7 +21,6 @@ import SettingsPage from "../pages/SettingsPage";
 import ModelsPage from "../pages/ModelsPage";
 import TeamPage from "../pages/TeamPage";
 import BillingPage from "../pages/BillingPage";
-import LandingPage from "../pages/LandingPage";
 import WorkspaceToolsPage from "../pages/WorkspaceToolsPage";
 import CreateToolPage from "../pages/CreateToolPage";
 import UserGuidePage from "../pages/UserGuidePage";
@@ -37,11 +36,7 @@ export const router = createBrowserRouter([
   // ── Public routes ───────────────────────────────────────────────
   {
     path: "/",
-    element: (
-      <PublicRoute>
-        <LandingPage />
-      </PublicRoute>
-    ),
+    element: <Navigate to="/login" replace />,
   },
   {
     path: "/login",
