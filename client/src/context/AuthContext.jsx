@@ -20,6 +20,18 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const getCookieDomain = () => {
+    return window.location.hostname.endsWith("blinkbot.in") ? "domain=.blinkbot.in;" : "";
+  };
+
+  const setLoginCookie = () => {
+    document.cookie = `logged_in=true; ${getCookieDomain()} path=/; max-age=604800; SameSite=Lax`;
+  };
+
+  const clearLoginCookie = () => {
+    document.cookie = `logged_in=; ${getCookieDomain()} path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("invite") === "true") {
@@ -34,10 +46,12 @@ export function AuthProvider({ children }) {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
         claimPendingInvites(parsedUser);
+        setLoginCookie();
       } catch (e) {
         console.error("Failed to parse user data", e);
         localStorage.removeItem("access_token");
         localStorage.removeItem("user");
+        clearLoginCookie();
       }
     }
 
@@ -49,12 +63,14 @@ export function AuthProvider({ children }) {
     localStorage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     claimPendingInvites(userData);
+    setLoginCookie();
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("user");
     setUser(null);
+    clearLoginCookie();
   }, []);
 
   const updateUser = useCallback((newUserData) => {

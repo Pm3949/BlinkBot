@@ -331,6 +331,17 @@ function Logo() {
 export default function LandingPage() {
   usePageSeo();
   const [darkMode, setDarkMode] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkLogin = () => {
+      const loggedInCookie = document.cookie
+        .split(';')
+        .some((item) => item.trim().startsWith('logged_in=true'));
+      setIsLoggedIn(loggedInCookie);
+    };
+    checkLogin();
+  }, []);
 
   const faqSchema = {
     "@context": "https://schema.org",
@@ -635,16 +646,27 @@ export default function LandingPage() {
               {darkMode ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} />}
             </button>
 
-            <a href="https://app.blinkbot.in/login" className="text-sm font-semibold hover:text-primary transition-colors hidden sm:inline px-3 py-2">
-              Log in
-            </a>
+            {isLoggedIn ? (
+              <a
+                href="https://app.blinkbot.in/dashboard"
+                className="btn-primary px-5 py-2.5 rounded-full text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-1.5"
+              >
+                Dashboard
+              </a>
+            ) : (
+              <>
+                <a href="https://app.blinkbot.in/login" className="text-sm font-semibold hover:text-primary transition-colors hidden sm:inline px-3 py-2">
+                  Log in
+                </a>
 
-            <a
-              href="https://app.blinkbot.in/login"
-              className="btn-primary px-5 py-2.5 rounded-full text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-1.5"
-            >
-              <Zap size={14} /> Get Started Free
-            </a>
+                <a
+                  href="https://app.blinkbot.in/login"
+                  className="btn-primary px-5 py-2.5 rounded-full text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-1.5"
+                >
+                  <Zap size={14} /> Get Started Free
+                </a>
+              </>
+            )}
           </div>
         </nav>
       </header>
@@ -701,10 +723,10 @@ export default function LandingPage() {
             {/* CTAs */}
             <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
               <a
-                href="https://app.blinkbot.in/login"
+                href={isLoggedIn ? "https://app.blinkbot.in/dashboard" : "https://app.blinkbot.in/login"}
                 className="w-full sm:w-auto btn-primary px-8 py-3.5 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
               >
-                Start Building for Free
+                {isLoggedIn ? "Go to Dashboard" : "Start Building for Free"}
                 <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
               </a>
               <a
