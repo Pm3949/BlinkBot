@@ -124,7 +124,7 @@ export default function BillingPage() {
       }
 
       await checkoutMutation.mutateAsync({
-        planTier: planTier.startsWith("TopUp") ? "Credit Top-Up" : planTier,
+        planTier: planTier,
         billingCycle: annualBilling ? 'annually' : 'monthly',
         limits: finalLimits
       });
@@ -661,14 +661,14 @@ export default function BillingPage() {
             <div className="grid sm:grid-cols-2 gap-6">
               <div className="p-5 rounded-2xl border border-border bg-card flex items-center justify-between gap-4">
                 <div>
-                  <div className="font-bold text-base text-foreground">+5,000 AI Messages</div>
+                  <div className="font-bold text-base text-foreground">+1,000 AI Messages</div>
                   <div className="text-xs text-muted-foreground mt-0.5">Instant credit top-up</div>
-                  <div className="text-lg font-extrabold text-amber-500 mt-2">₹299 <span className="text-xs font-semibold text-muted-foreground">($4)</span></div>
+                  <div className="text-lg font-extrabold text-amber-500 mt-2">₹10 <span className="text-xs font-semibold text-muted-foreground">($0.12)</span></div>
                 </div>
                 <Button
                   size="sm"
                   disabled={checkoutMutation.isPending}
-                  onClick={() => handleCheckout("TopUp5k")}
+                  onClick={() => handleCheckout("TopUp1k")}
                   className="btn-primary rounded-xl text-xs font-semibold shrink-0"
                 >
                   Add Credits
@@ -681,7 +681,7 @@ export default function BillingPage() {
                     +20,000 AI Messages <span className="bg-amber-500/20 text-amber-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Best Value</span>
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">High volume message credit pack</div>
-                  <div className="text-lg font-extrabold text-amber-500 mt-2">₹899 <span className="text-xs font-semibold text-muted-foreground">($11)</span></div>
+                  <div className="text-lg font-extrabold text-amber-500 mt-2">₹199 <span className="text-xs font-semibold text-muted-foreground">($2.40)</span></div>
                 </div>
                 <Button
                   size="sm"

@@ -134,6 +134,13 @@ def calculate_subscription_price(
             if billing_cycle == "annually"
             else monthly_total
         )
+    elif plan_tier in ("TopUp1k", "TopUp5k", "TopUp20k", "Credit Top-Up"):
+        if plan_tier == "TopUp1k" or plan_tier == "Credit Top-Up":
+            final_amount = 10.0
+        elif plan_tier == "TopUp5k":
+            final_amount = 49.0
+        else:
+            final_amount = 199.0
     else:
         # Starter is free, fallback to 0
         final_amount = 0.0
@@ -262,22 +269,73 @@ async def handle_verify_razorpay_payment(
         logger.info("Razorpay payment signature successfully verified.")
 
         try:
-            # Format numerical limits into a JSON string structure
-            limits_json = json.dumps(
-                {
+            # Check if this is a top-up
+            if plan_tier.startswith("TopUp") or plan_tier == "Credit Top-Up":
+                current_sub = await billing_repository.get_user_subscription(user_id)
+                if current_sub:
+                    active_tier = current_sub[0]
+                    active_cycle = current_sub[1]
+                    try:
+                        current_limits = current_sub[3] if isinstance(current_sub[3], dict) else json.loads(current_sub[3] or "{}")
+                    except Exception:
+                        current_limits = {}
+                else:
+                    active_tier = "Starter"
+                    active_cycle = "monthly"
+                    current_limits = {
+                        "workspaces": 1,
+                        "agents": 1,
+                        "agent_messages": 500,
+                        "storage_mb": 5,
+                        "chatbots": 1,
+                        "chatbot_messages": 500
+                    }
+
+                # Determine extra messages to add
+                extra_messages = 1000
+                if plan_tier == "TopUp20k":
+                    extra_messages = 20000
+                elif plan_tier == "TopUp5k":
+                    extra_messages = 5000
+
+                current_limits["agent_messages"] = current_limits.get("agent_messages", 0) + extra_messages
+                current_limits["chatbot_messages"] = current_limits.get("chatbot_messages", 0) + extra_messages
+                
+                limits_json = json.dumps(current_limits)
+                
+                # Keep active plan tier, only update limits in DB
+                await billing_repository.upsert_user_subscription(user_id, active_tier, active_cycle, limits_json)
+                logger.info(f"Top-Up ({extra_messages} messages) applied successfully to user ID: {user_id}. Plan remained: {active_tier}")
+                
+                desc_tier = active_tier
+                limits_to_log = current_limits
+            else:
+                # Format numerical limits into a JSON string structure
+                limits_json = json.dumps(
+                    {
+                        "workspaces": workspaces_limit,
+                        "agents": agents_limit,
+                        "agent_messages": agent_messages_limit,
+                        "storage_mb": storage_mb_limit,
+                        "chatbots": chatbots_limit,
+                        "chatbot_messages": chatbot_messages_limit,
+                    }
+                )
+
+                # Update subscription details inside the DB
+                logger.debug(f"Saving updated user subscription plan parameters to database for user {user_id}...")
+                await billing_repository.upsert_user_subscription(user_id, plan_tier, billing_cycle, limits_json)
+                logger.info(f"Subscription plan updated successfully in database for user ID: {user_id}")
+                
+                desc_tier = plan_tier
+                limits_to_log = {
                     "workspaces": workspaces_limit,
                     "agents": agents_limit,
                     "agent_messages": agent_messages_limit,
                     "storage_mb": storage_mb_limit,
                     "chatbots": chatbots_limit,
-                    "chatbot_messages": chatbot_messages_limit,
+                    "chatbot_messages": chatbot_messages_limit
                 }
-            )
-
-            # Update subscription details inside the DB
-            logger.debug(f"Saving updated user subscription plan parameters to database for user {user_id}...")
-            await billing_repository.upsert_user_subscription(user_id, plan_tier, billing_cycle, limits_json)
-            logger.info(f"Subscription plan updated successfully in database for user ID: {user_id}")
 
             # Generate invoice records in database
             final_amount = calculate_subscription_price(
@@ -287,25 +345,20 @@ async def handle_verify_razorpay_payment(
             import time
             import random
             inv_num = f"INV-SUB-{int(time.time())}-{random.randint(100, 999)}"
+            
+            description_text = f"AI Messages Top-Up ({plan_tier})" if plan_tier.startswith("TopUp") or plan_tier == "Credit Top-Up" else f"{plan_tier} Plan Subscription ({billing_cycle.capitalize()})"
             invoice = await billing_repository.create_invoice(
                 user_id=user_id,
                 invoice_number=inv_num,
                 amount_inr=final_amount,
-                description=f"{plan_tier} Plan Subscription ({billing_cycle.capitalize()})",
+                description=description_text,
                 invoice_metadata={
-                    "item": f"{plan_tier} Plan Subscription",
+                    "item": f"AI Messages Top-Up" if plan_tier.startswith("TopUp") or plan_tier == "Credit Top-Up" else f"{plan_tier} Plan Subscription",
                     "billing_cycle": billing_cycle,
                     "razorpay_order_id": razorpay_order_id,
                     "razorpay_payment_id": razorpay_payment_id,
                     "razorpay_signature": razorpay_signature,
-                    "limits": {
-                        "workspaces": workspaces_limit,
-                        "agents": agents_limit,
-                        "agent_messages": agent_messages_limit,
-                        "storage_mb": storage_mb_limit,
-                        "chatbots": chatbots_limit,
-                        "chatbot_messages": chatbot_messages_limit
-                    }
+                    "limits": limits_to_log
                 }
             )
         except Exception as e:
