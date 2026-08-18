@@ -98,7 +98,7 @@ export default function ChatbotEditorPage() {
 
   // Dynamically use the current frontend's domain for the widget.js script URL
   const embedCode = `<!-- BlinkBot Chatbot Widget -->\n
-<script defer src="https://blinkbot.in/widget.js"
+<script defer src="https://app.blinkbot.in/widget.js"
   data-chatbot-id="${chatbotId}"
   data-api-url="${DATA_API_URL}">
 </script>`;
@@ -108,7 +108,7 @@ export default function ChatbotEditorPage() {
 export default function ChatbotWidget() {
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = "https://blinkbot.in/widget.js";
+    script.src = "https://app.blinkbot.in/widget.js";
     script.defer = true;
     script.setAttribute('data-chatbot-id', "${chatbotId}");
     script.setAttribute('data-api-url', "${DATA_API_URL}");

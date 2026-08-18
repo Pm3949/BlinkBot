@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X, ArrowLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X, ArrowLeft, Sun, Moon } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import TracePanel from "../components/chat/TracePanel";
@@ -19,6 +19,8 @@ export default function ChatPage() {
   const { user } = useAuth();
   const activeWorkspaceId = useUIStore((state) => state.activeWorkspaceId);
   const setActiveWorkspaceId = useUIStore((state) => state.setActiveWorkspaceId);
+  const darkMode = useUIStore((state) => state.darkMode);
+  const toggleDarkMode = useUIStore((state) => state.toggleDarkMode);
   const { data: workspaces = [] } = useUserWorkspaces();
 
   useEffect(() => {
@@ -29,6 +31,22 @@ export default function ChatPage() {
       }
     }
   }, [workspaces, activeWorkspaceId, setActiveWorkspaceId]);
+
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.id = "hide-widget-style";
+    style.innerHTML = `
+      #blinkbot-bubble, #blinkbot-window, #blinkbot-popup {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      const styleEl = document.getElementById("hide-widget-style");
+      if (styleEl) styleEl.remove();
+    };
+  }, []);
 
   const { data: workspace } = usePrimaryWorkspace();
   const hasAgentsPermission = workspace?.memberPermissions?.agents === true;
@@ -191,6 +209,13 @@ export default function ChatPage() {
              title="Toggle Chat History"
            >
              {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+           </button>
+           <button 
+             onClick={toggleDarkMode} 
+             className="p-2 bg-card/80 backdrop-blur border border-border shadow-sm rounded-xl hover:bg-muted text-muted-foreground transition-all"
+             title="Toggle Theme"
+           >
+             {darkMode ? <Sun size={18} className="text-amber-500 animate-spin-slow" /> : <Moon size={18} className="text-indigo-400" />}
            </button>
         </div>
 
