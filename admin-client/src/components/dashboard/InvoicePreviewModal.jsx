@@ -8,20 +8,42 @@ export default function InvoicePreviewModal({ isOpen, onClose, invoice, onDownlo
 
   const handlePrint = () => {
     const printContent = printRef.current.innerHTML;
-    const originalContent = document.body.innerHTML;
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(`
+      <html>
+        <head>
+          <title>Invoice</title>
+          <style>
+            body { background: white !important; color: black !important; padding: 20px; }
+          </style>
+        </head>
+        <body>
+          <div>${printContent}</div>
+        </body>
+      </html>
+    `);
     
-    document.body.innerHTML = `
-      <style>
-        @media print {
-          body { background: white !important; color: black !important; padding: 20px; }
-          .no-print { display: none !important; }
-        }
-      </style>
-      <div>${printContent}</div>
-    `;
-    window.print();
-    document.body.innerHTML = originalContent;
-    window.location.reload(); 
+    // Copy stylesheets from the parent page to retain Tailwind classes
+    const styles = document.querySelectorAll('link[rel="stylesheet"], style');
+    styles.forEach(style => {
+      iframeDoc.head.appendChild(style.cloneNode(true));
+    });
+    
+    iframeDoc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      document.body.removeChild(iframe);
+    }, 300);
   };
 
   const meta = invoice.invoice_metadata || invoice.metadata || {};

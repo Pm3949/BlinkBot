@@ -45,8 +45,12 @@ from fastapi.concurrency import run_in_threadpool
 from typing import Optional, List, Dict
 from utils.logger import get_db_logger
 import uuid
+import time
 
 logger = get_db_logger("chat_repository")
+
+_agent_cache = {}
+_CACHE_TTL = 300 # 5 minutes TTL
 
 async def fetch_temporary_memory_patch(agent_id: str) -> str:
     """
@@ -60,7 +64,14 @@ async def get_agent_for_chat(agent_id: str):
     """
     Retrieves the full configuration profile of an agent.
     If the agent_id corresponds to a project_id, resolves to its Network Manager agent first.
+    Uses a 5-minute TTL cache to minimize database hits.
     """
+    now = time.time()
+    if agent_id in _agent_cache:
+        cached_time, cached_data = _agent_cache[agent_id]
+        if now - cached_time < _CACHE_TTL:
+            return cached_data
+
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
@@ -75,7 +86,11 @@ async def get_agent_for_chat(agent_id: str):
             "SELECT user_id, name, system_prompt, output_format, llm_provider, llm_model, api_key, embedding_model, web_search_enabled, project_id, parent_agent_id, is_active, endpoints, code_interpreter_enabled, databases, native_integrations, memory_enabled, use_byok FROM agents WHERE id = %s",
             (target_id,),
         )
-        return await run_in_threadpool(cursor.fetchone)
+        result = await run_in_threadpool(cursor.fetchone)
+        
+        if result:
+            _agent_cache[agent_id] = (now, result)
+        return result
 
 
 async def get_sub_agents_for_project(project_id: str):
@@ -177,6 +192,8 @@ async def get_user_chat_limits(user_id: str):
         return current_msg_count, limits
 
 
+_hybrid_search_supported = None
+
 async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, limit: int = 5):
     """
     Queries vector-indexed knowledge resources using hybrid search or cosine distance matching.
@@ -202,23 +219,27 @@ async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, l
     Errors / Exceptions:
         - Catches general exceptions during hybrid matches to gracefully fall back on pgvector.
     """
-    try:
-        async with get_db_cursor_async(commit=False) as cursor:
-            # Attempt dynamic hybrid search (lexical + vector).
-            # match_documents_hybrid is a custom SQL function expected in the PostgreSQL schema.
-            # We explicitly cast parameters to matching database types (like `%s::vector` for pgvector).
-            await run_in_threadpool(
-                cursor.execute,
-                "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, %s, 0.05)",
-                (message, query_vector, agent_id, limit),
-            )
-            results = await run_in_threadpool(cursor.fetchall)
-            if results and len(results) > 0:
-                return results
-    except Exception:
-        # Fall back to standard vector cosine similarity query if hybrid query fails.
-        logger.debug("Hybrid search function unavailable, falling back to pgvector cosine distance query")
-        pass
+    global _hybrid_search_supported
+    if _hybrid_search_supported is not False:
+        try:
+            async with get_db_cursor_async(commit=False) as cursor:
+                # Attempt dynamic hybrid search (lexical + vector).
+                # match_documents_hybrid is a custom SQL function expected in the PostgreSQL schema.
+                # We explicitly cast parameters to matching database types (like `%s::vector` for pgvector).
+                await run_in_threadpool(
+                    cursor.execute,
+                    "SELECT content, similarity FROM match_documents_hybrid(%s, %s::vector, %s, %s, 0.05)",
+                    (message, query_vector, agent_id, limit),
+                )
+                results = await run_in_threadpool(cursor.fetchall)
+                _hybrid_search_supported = True
+                if results and len(results) > 0:
+                    return results
+        except Exception:
+            # Fall back to standard vector cosine similarity query if hybrid query fails.
+            _hybrid_search_supported = False
+            logger.debug("Hybrid search function unavailable, falling back to pgvector cosine distance query")
+            pass
 
     # Robust pgvector direct query fallback.
     # Start a fresh transaction block to avoid InFailedSqlTransaction aborts from the previous exception.
@@ -454,16 +475,18 @@ async def get_session_history(session_id: str, limit: int = 10):
         - May raise database-related errors.
     """
     async with get_db_cursor_async(commit=False) as cursor:
+        # Fetch the most recent messages (ORDER BY created_at DESC) up to the limit
         await run_in_threadpool(
             cursor.execute,
-            "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC LIMIT %s",
+            "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY created_at DESC LIMIT %s",
             (session_id, limit)
         )
         rows = await run_in_threadpool(cursor.fetchall)
         
         from utils.data_vault import secure_unpack
         unpacked_rows = []
-        for role, content in rows:
+        # Reverse the rows to restore chronological order (oldest to newest)
+        for role, content in reversed(rows):
             unpacked_rows.append((role, secure_unpack(content)))
             
         return unpacked_rows
@@ -566,6 +589,11 @@ async def delete_agent(agent_id: str):
         placeholders = ','.join(['%s'] * len(ids_tuple))
         await run_in_threadpool(cursor.execute, f"DELETE FROM agents WHERE id IN ({placeholders})", ids_tuple)
         
+        # Clear from global memory cache
+        for aid in agent_ids_to_delete:
+            if aid in _agent_cache:
+                del _agent_cache[aid]
+
         logger.info(f"Agent cascade deletion completed: {len(agent_ids_to_delete)} agents removed from agent_id={agent_id}")
         # Return the count of agents that were deleted.
         return len(agent_ids_to_delete)

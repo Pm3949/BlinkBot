@@ -225,15 +225,18 @@ async def clear_agent_chat_history(agent_id: str):
         )
 
 
-async def get_chat_messages(session_id: str):
+async def get_chat_messages(session_id: str, limit: int = None, before: str = None):
     """
-    Retrieves all messages for a specific chat session.
+    Retrieves messages for a specific chat session, with optional pagination.
 
     Purpose:
-        Fetches the complete message thread history for a session to render inside the chat window.
+        Fetches the message thread history for a session to render inside the chat window.
+        Supports cursor-based pagination using the 'before' timestamp.
 
     Parameters:
         session_id (str): Unique database session identifier.
+        limit (int, optional): The number of recent messages to return.
+        before (str, optional): ISO timestamp cursor. Fetches messages created before this timestamp.
 
     Returns:
         list of tuples: A list of messages in the session, sorted by creation date (oldest first).
@@ -246,22 +249,37 @@ async def get_chat_messages(session_id: str):
     """
     # Open database connection in a read-only transaction (commit=False).
     async with get_db_cursor_async(commit=False) as cursor:
-        # Execute SELECT query in a thread pool. Sorted by created_at ASC to show chat timeline.
-        await run_in_threadpool(
-            cursor.execute,
-            """
+        query = """
             SELECT id, role, content, latency, created_at, steps
             FROM chat_messages
             WHERE session_id = %s
-            ORDER BY created_at ASC
-            """,
-            (session_id,)
+        """
+        params = [session_id]
+        if before:
+            query += " AND created_at < %s"
+            params.append(before)
+        
+        if limit:
+            # Fetch latest first to apply limit correctly, then we reverse in memory
+            query += " ORDER BY created_at DESC LIMIT %s"
+            params.append(limit)
+        else:
+            query += " ORDER BY created_at ASC"
+
+        await run_in_threadpool(
+            cursor.execute,
+            query,
+            tuple(params)
         )
         rows = await run_in_threadpool(cursor.fetchall)
         
         from utils.data_vault import secure_unpack
         import json as _json
         
+        # If we limited the query, rows are in DESC order. Reverse them to ASC (chronological).
+        if limit:
+            rows = reversed(rows)
+            
         unpacked_rows = []
         for row in rows:
             row_id, role, content, latency, created_at, steps = row

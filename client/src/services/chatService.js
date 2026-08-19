@@ -56,8 +56,12 @@ export async function deleteChatSession(sessionId) {
   return response.json();
 }
 
-export async function getChatMessages(sessionId) {
-  const response = await fetch(`${API_BASE_URL}/api/chat_messages/${sessionId}`, {
+export async function getChatMessages(sessionId, limit = 20, before = null) {
+  let url = `${API_BASE_URL}/api/chat_messages/${sessionId}?limit=${limit}`;
+  if (before) {
+    url += `&before=${encodeURIComponent(before)}`;
+  }
+  const response = await fetch(url, {
     headers: getAuthHeaders()
   });
   if (!response.ok) throw new Error("Failed to fetch chat messages");

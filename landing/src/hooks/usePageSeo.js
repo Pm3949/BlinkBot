@@ -46,8 +46,11 @@ export function usePageSeo(titleOrObj, description, canonical, ogImage, ogUrl) {
     // Canonical link
     const fullCanon = canon || DEFAULT_CANONICAL;
     setLink('canonical', fullCanon);
-    setMeta('property', 'og:url', fullCanon);
-    setMeta('name', 'twitter:url', fullCanon);
+    
+    // OG and Twitter URL
+    const fullUrl = url || fullCanon;
+    setMeta('property', 'og:url', fullUrl);
+    setMeta('name', 'twitter:url', fullUrl);
 
     // Images
     const fullImg = img || DEFAULT_IMAGE;

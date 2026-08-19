@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import {
   getChatSessions,
   createChatSession,
@@ -37,19 +37,32 @@ export function useChatSessions(agentId = null) {
 }
 
 export function useChatMessages(sessionId) {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: ["chat_messages", sessionId],
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       if (!sessionId || sessionId.startsWith("optimistic-session")) return [];
-      const msgs = await getChatMessages(sessionId);
-      // Map steps from DB (already parsed JSON from JSONB column) onto each message
+      const msgs = await getChatMessages(sessionId, 20, pageParam);
       return msgs.map(msg => ({
         ...msg,
         steps: msg.steps || null
       }));
     },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage || lastPage.length < 20) return undefined;
+      // Get the oldest message's timestamp to fetch older pages of messages (scroll up)
+      return lastPage[0]?.created_at;
+    },
     enabled: !!sessionId && !sessionId.startsWith("optimistic-session"),
   });
+
+  const messages = query.data ? query.data.pages.flat() : [];
+
+  return {
+    ...query,
+    data: messages,
+    rawMessages: query.data,
+  };
 }
 
 export function useChatMutations() {

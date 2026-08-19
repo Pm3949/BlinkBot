@@ -198,15 +198,22 @@ async def clear_agent_chat_history(agent_id: str, current_user: dict = Depends(g
 
 
 @router.get("/api/chat_messages/{session_id}")
-async def get_chat_messages(session_id: str, current_user: dict = Depends(get_current_user)):
+async def get_chat_messages(
+    session_id: str,
+    limit: Optional[int] = 20,
+    before: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
     """
-    Retrieves all messages for a specific chat session.
+    Retrieves messages for a specific chat session, supporting optional pagination.
 
     Purpose:
         Loads the chat message history to render the active conversation thread.
 
     Parameters:
         session_id (str): UUID of the target session.
+        limit (int, optional): Number of recent messages to return.
+        before (str, optional): ISO timestamp cursor.
         current_user (dict): JWT details.
 
     Returns:
@@ -220,7 +227,7 @@ async def get_chat_messages(session_id: str, current_user: dict = Depends(get_cu
         - Raises 404 if the session does not exist.
     """
     # Fetch messages using the handler.
-    return await handle_get_chat_messages(session_id)
+    return await handle_get_chat_messages(session_id, limit, before)
 
 
 @router.post("/api/chat_messages")

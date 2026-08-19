@@ -266,12 +266,14 @@ async def handle_clear_agent_chat_history(agent_id: str):
         raise HTTPException(status_code=500, detail="Failed to clear chat history")
 
 
-async def handle_get_chat_messages(session_id: str):
+async def handle_get_chat_messages(session_id: str, limit: int = None, before: str = None):
     """
-    Retrieves all messages associated with a chat session.
+    Retrieves messages associated with a chat session, supporting optional pagination.
 
     Parameters:
         session_id (str): The unique database UUID identifying the session.
+        limit (int, optional): The number of recent messages to return.
+        before (str, optional): ISO timestamp cursor to fetch messages created before.
 
     Returns:
         list: A list of messages dictionaries sorted chronologically, containing:
@@ -284,11 +286,11 @@ async def handle_get_chat_messages(session_id: str):
     Exceptions Raised:
         HTTPException(500): Raised if SQL database queries fail.
     """
-    logger.info(f"Retrieving messages list for chat session: {session_id}")
+    logger.info(f"Retrieving messages list for chat session: {session_id} (limit: {limit}, before: {before})")
     try:
         # Pull raw rows
         logger.debug("Executing chat messages fetch query...")
-        rows = await chat_history_repository.get_chat_messages(session_id)
+        rows = await chat_history_repository.get_chat_messages(session_id, limit, before)
         logger.debug(f"Retrieved {len(rows)} message records.")
 
         # Map raw database tuples to structured dictionary elements
