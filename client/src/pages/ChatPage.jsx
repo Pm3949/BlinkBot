@@ -12,6 +12,7 @@ import { useAgents, useAgentProjects } from "../hooks/useAgents";
 import { useChat } from "../hooks/useChat";
 import LoadingSkeleton from "../components/shared/LoadingSkeleton";
 import { useUIStore } from "../store/useUIStore";
+import PageLoader from "../components/ui/PageLoader";
 
 
 export default function ChatPage() {
@@ -22,6 +23,7 @@ export default function ChatPage() {
   const darkMode = useUIStore((state) => state.darkMode);
   const toggleDarkMode = useUIStore((state) => state.toggleDarkMode);
   const { data: workspaces = [] } = useUserWorkspaces();
+  const [hasLoadedInitially, setHasLoadedInitially] = useState(false);
 
   useEffect(() => {
     if (workspaces.length > 0) {
@@ -132,7 +134,14 @@ export default function ChatPage() {
     hasNextPage,
     isFetchingNextPage,
     isLoadingSessions,
+    isLoadingMessages,
   } = useChat(selectedAgentId);
+
+  useEffect(() => {
+    if (!isLoadingProjects && !isLoadingSessions) {
+      setHasLoadedInitially(true);
+    }
+  }, [isLoadingProjects, isLoadingSessions]);
 
   // activeAgent resolves to the currently selected network project
   const activeAgent = useMemo(
@@ -227,7 +236,9 @@ export default function ChatPage() {
     });
   };
 
-
+  if (!hasLoadedInitially && (isLoadingProjects || isLoadingSessions)) {
+    return <PageLoader text="Loading Chat..." />;
+  }
 
   return (
     <div className="flex h-dvh w-screen overflow-hidden bg-background">
@@ -303,48 +314,56 @@ export default function ChatPage() {
           <div className="max-w-6xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingProjects && <LoadingSkeleton count={2} className="h-24" />}
 
-            {!isLoadingProjects && projects.length === 0 && (
-              <div className="text-sm text-muted-foreground">
-                Create a network before starting a chat.
+            {isLoadingMessages ? (
+              <div className="space-y-4">
+                <LoadingSkeleton count={3} className="h-24" />
               </div>
+            ) : (
+              <>
+                {!isLoadingProjects && projects.length === 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    Create a network before starting a chat.
+                  </div>
+                )}
+
+                {!isLoadingProjects &&
+                  projects.length > 0 &&
+                  visibleMessages.length === 0 && (
+                    activeSessionId?.startsWith("optimistic-session") ? (
+                      <div className="flex flex-col items-center justify-center flex-1 py-12">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                        <p className="mt-4 text-sm text-muted-foreground animate-pulse">Creating new chat session...</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center mt-8">
+                        <h3 className="font-semibold text-foreground">
+                          {activeAgent ? activeAgent.name : "Start a chat"}
+                        </h3>
+
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Select a chat from history or start a new chat with this network.
+                        </p>
+                      </div>
+                    )
+                  )
+                }
+
+                {visibleMessages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    id={message.id}
+                    role={message.role}
+                    agent={activeAgent}
+                    chatLanguage={chatLanguage}
+                    latency={message.latency}
+                    content={message.content}
+                    sources={message.sources}
+                    steps={message.steps}
+                    status={message.status || (message.role === "assistant" && !message.content ? "Thinking..." : null)}
+                  />
+                ))}
+              </>
             )}
-
-            {!isLoadingProjects &&
-              projects.length > 0 &&
-              visibleMessages.length === 0 && (
-                activeSessionId?.startsWith("optimistic-session") ? (
-                  <div className="flex flex-col items-center justify-center flex-1 py-12">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-                    <p className="mt-4 text-sm text-muted-foreground animate-pulse">Creating new chat session...</p>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center mt-8">
-                    <h3 className="font-semibold text-foreground">
-                      {activeAgent ? activeAgent.name : "Start a chat"}
-                    </h3>
-
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Select a chat from history or start a new chat with this network.
-                    </p>
-                  </div>
-                )
-              )
-            }
-
-            {visibleMessages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                id={message.id}
-                role={message.role}
-                agent={activeAgent}
-                chatLanguage={chatLanguage}
-                latency={message.latency}
-                content={message.content}
-                sources={message.sources}
-                steps={message.steps}
-                status={message.status || (message.role === "assistant" && !message.content ? "Thinking..." : null)}
-              />
-            ))}
 
                         {/* {loading && (
               <div className="flex items-center gap-3 px-6 py-4 bg-card/50 border border-border w-fit rounded-2xl shadow-sm">

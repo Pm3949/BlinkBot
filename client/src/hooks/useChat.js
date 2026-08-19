@@ -56,7 +56,8 @@ export function useChat(agentId = null) {
     data: dbMessages = [],
     fetchNextPage,
     hasNextPage,
-    isFetchingNextPage
+    isFetchingNextPage,
+    isLoading: isLoadingMessages
   } = useChatMessages(activeSessionId);
   const { createSession, renameSession: renameDb, togglePinSession: pinDb, deleteSession: delDb, addMessage } = useChatMutations();
 
@@ -316,5 +317,6 @@ export function useChat(agentId = null) {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isLoadingMessages,
   };
 }
