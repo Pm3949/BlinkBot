@@ -120,8 +120,6 @@ export function useChat(agentId = null) {
             const updatedPages = [...old.pages];
             const firstPage = updatedPages[0] || [];
              
-            if (firstPage.some(m => m.role === "assistant" && m.content === finalContent)) return old;
-
             updatedPages[0] = [...firstPage, newMsg];
 
             return {
