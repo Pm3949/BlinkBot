@@ -10,23 +10,23 @@ def get_logo_path() -> str:
     if env_logo and os.path.exists(env_logo):
         return env_logo
 
-    # 2. Local/Git structure check: ../client/public/icon.png
+    # 2. Local/Git structure check: ../client/public/logo1.png
     # __file__ is in server-python/utils/
     utils_dir = os.path.dirname(os.path.abspath(__file__))
     server_dir = os.path.dirname(utils_dir) # server-python/
     project_root = os.path.dirname(server_dir) # RAGMate/
     
-    local_path = os.path.join(project_root, "client", "public", "icon.png")
+    local_path = os.path.join(project_root, "client", "public", "logo1.png")
     if os.path.exists(local_path):
         return local_path
 
     # 3. Production directory fallback: check server static files directory
-    prod_static_path = os.path.join(server_dir, "static", "icon.png")
+    prod_static_path = os.path.join(server_dir, "static", "logo1.png")
     if os.path.exists(prod_static_path):
         return prod_static_path
 
     # 4. Same directory fallback (e.g. if everything is zipped together)
-    fallback_path = os.path.join(server_dir, "icon.png")
+    fallback_path = os.path.join(server_dir, "logo1.png")
     if os.path.exists(fallback_path):
         return fallback_path
 

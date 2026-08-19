@@ -66,10 +66,10 @@ export default function InvoicePreviewModal({ isOpen, onClose, invoice, onDownlo
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3">
                   <img 
-                    src="/icon.png" 
+                    src="/logo1.png" 
                     alt="BlinkBot Logo" 
                     className="w-10 h-10 rounded-lg shadow-sm border !border-slate-100"
-                    onError={(e) => { e.target.src = "https://www.blinkbot.in/icon.png" }}
+                    onError={(e) => { e.target.src = "https://www.blinkbot.in/logo.png" }}
                   />
                   <div>
                     <h2 className="text-xl font-bold tracking-tight !text-slate-900">BlinkBot</h2>

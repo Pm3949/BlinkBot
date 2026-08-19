@@ -4,7 +4,7 @@ const DEFAULT_TITLE = 'BlinkBot - Build Custom AI Agents in Minutes';
 const DEFAULT_DESCRIPTION =
   'Empower your business to build custom AI agents in minutes. Zero coding required. Deploy them as a chatbot on your website instantly, connect tools, and automate workflows safely.';
 const DEFAULT_CANONICAL = 'https://blinkbot.in/';
-const DEFAULT_IMAGE = 'https://blinkbot.in/icon.png';
+const DEFAULT_IMAGE = 'https://blinkbot.in/logo1.png';
 
 /**
  * Sets document <title>, meta description, canonical link, and social sharing tags on every route.

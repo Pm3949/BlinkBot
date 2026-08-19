@@ -80,6 +80,10 @@ async def create_demo_requests_table():
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_time TEXT")
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS meeting_link TEXT")
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS website TEXT")
+        
+        # Optimize lead tracking pipeline queries using indices
+        await run_in_threadpool(cursor.execute, "CREATE INDEX IF NOT EXISTS idx_demo_requests_created_at ON demo_requests (created_at DESC)")
+        await run_in_threadpool(cursor.execute, "CREATE INDEX IF NOT EXISTS idx_demo_requests_scheduled_date ON demo_requests (scheduled_date ASC)")
 
 
 async def submit_demo_request(name: str, email: str, company: str, website: str, message: str):

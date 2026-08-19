@@ -63,7 +63,7 @@ export default function InvoicePreviewModal({ isOpen, onClose, invoice, onDownlo
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-3 text-left">
                   <img 
-                    src="https://www.blinkbot.in/icon.png" 
+                    src="https://www.blinkbot.in/logo1.png" 
                     alt="BlinkBot Logo" 
                     className="w-10 h-10 rounded-lg shadow-sm border !border-slate-100"
                   />

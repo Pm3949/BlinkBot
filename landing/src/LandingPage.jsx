@@ -318,9 +318,10 @@ function Logo() {
       />
       <div>
         <div className="font-bold text-foreground text-left leading-none">
-          BlinkBot
+          <span className="text-primary">Blink</span>
+          <span className="text-blue-500">Bot</span>
         </div>
-        <div className="text-xs text-slate-500 text-left mt-1">
+        <div className="text-xs text-muted-foreground">
           No-Code Chatbots
         </div>
       </div>
