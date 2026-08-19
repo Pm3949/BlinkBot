@@ -367,7 +367,7 @@ export default function LandingPage() {
   const [annualBilling, setAnnualBilling] = useState(false);
 
   // Demo form state
-  const [demoForm, setDemoForm] = useState({ name: '', email: '', company: '', message: '' });
+  const [demoForm, setDemoForm] = useState({ name: '', email: '', company: '', website: '', message: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Interactive Sandbox state
@@ -567,7 +567,7 @@ export default function LandingPage() {
       });
       if (!res.ok) throw new Error('Failed');
       toast.success("Demo request sent! We'll reach out within 24 hours.");
-      setDemoForm({ name: '', email: '', company: '', message: '' });
+      setDemoForm({ name: '', email: '', company: '', website: '', message: '' });
     } catch {
       toast.error("Couldn't submit right now. Please try again or email us directly.");
     } finally {
@@ -1561,15 +1561,29 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-sm font-semibold block mb-2 text-foreground">Company / Organization</label>
-              <input
-                type="text"
-                value={demoForm.company}
-                onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
-                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                placeholder="Acme Corp"
-              />
+            <div className="grid sm:grid-cols-2 gap-5">
+              <div>
+                <label className="text-sm font-semibold block mb-2 text-foreground">Company / Organization</label>
+                <input
+                  type="text"
+                  value={demoForm.company}
+                  onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
+                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                  placeholder="Acme Corp"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold block mb-2 text-foreground font-semibold">
+                  Website Link <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={demoForm.website}
+                  onChange={(e) => setDemoForm({ ...demoForm, website: e.target.value })}
+                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                  placeholder="https://example.com"
+                />
+              </div>
             </div>
 
             <div>
