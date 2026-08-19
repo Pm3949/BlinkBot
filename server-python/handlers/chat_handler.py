@@ -1178,6 +1178,37 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 if credits_to_deduct > 0.0:
                     logger.info(f"Deducting {credits_to_deduct} credits from user {user_id} wallet...")
                     await billing_repository.deduct_wallet_balance_atomic(user_id, credits_to_deduct)
+                    
+                    # Log the transaction(s) for the analytics page metrics
+                    for m_id, usage in model_token_tracker.items():
+                        pricing = cost_map.get(m_id)
+                        if pricing:
+                            in_cost = pricing["input_cost_per_1m"]
+                            out_cost = pricing["output_cost_per_1m"]
+                            base_credits = pricing["credits_per_1k_tokens"]
+                            cost_sum = in_cost + out_cost
+                            if cost_sum > 0.0:
+                                input_coeff = (in_cost / cost_sum) * 2.0 * base_credits
+                                output_coeff = (out_cost / cost_sum) * 2.0 * base_credits
+                            else:
+                                input_coeff = base_credits
+                                output_coeff = base_credits
+                            m_prompt = usage["prompt"]
+                            m_completion = usage["completion"]
+                            m_credits = ((m_prompt / 1000.0) * input_coeff) + ((m_completion / 1000.0) * output_coeff)
+                            if m_credits > 0.0:
+                                try:
+                                    await billing_repository.create_credit_transaction(
+                                        user_id=user_id,
+                                        agent_id=active_agent_id,
+                                        amount_credits=-m_credits,
+                                        transaction_type="usage_deduction",
+                                        model_used=m_id,
+                                        prompt_tokens=m_prompt,
+                                        completion_tokens=m_completion
+                                    )
+                                except Exception as tx_err:
+                                    logger.error(f"Failed to log credit transaction: {tx_err}")
 
         # Emit formatting step just before stream end
         await safe_send(
@@ -2007,7 +2038,11 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         web_search_enabled,
                         is_active,
                         endpoints_json,
-                        *_,
+                        code_interpreter_enabled,
+                        databases_encrypted,
+                        native_integrations_encrypted,
+                        memory_enabled,
+                        use_byok,
                     ) = agent_data
                     embed_model = embed_model or "text-embedding-3-small"
                     custom_api_key = decrypt_key(custom_api_key)
@@ -2023,6 +2058,54 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                         )
                         await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
                         continue
+
+                    # Pre-flight check on pre-paid credit wallet
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT credits_per_1k_tokens FROM system_ai_models WHERE id = %s AND is_active = TRUE",
+                            (model,)
+                        )
+                        sys_model_row = await run_in_threadpool(cursor.fetchone)
+                        
+                    is_system_model = sys_model_row is not None
+                    
+                    # Resolve BYOK status
+                    async with get_db_cursor_async(commit=False) as cursor:
+                        await run_in_threadpool(
+                            cursor.execute,
+                            "SELECT allow_byok FROM user_subscriptions WHERE user_id = %s",
+                            (user_id,)
+                        )
+                        sub_row = await run_in_threadpool(cursor.fetchone)
+                        allow_byok_tier = sub_row[0] if sub_row else False
+                    
+                    is_byok_run = False
+                    if use_byok and allow_byok_tier:
+                        from db import settings_repository
+                        user_keys = await settings_repository.get_effective_user_settings(user_id)
+                        if user_keys:
+                            provider_index_map = {
+                                "openai": 0, "groq": 1, "gemini": 2, "openrouter": 3, "anthropic": 4, "huggingface": 5, "nvidia": 6
+                            }
+                            idx = provider_index_map.get(provider.lower())
+                            if idx is not None and user_keys[idx]:
+                                is_byok_run = True
+
+                    if is_system_model and not is_byok_run:
+                        from db import billing_repository
+                        wallet_bal = await billing_repository.get_wallet_balance(user_id)
+                        if wallet_bal <= 0:
+                            logger.warning(f"Blocking widget chat request for user {user_id} due to insufficient wallet balance: {wallet_bal}")
+                            await agent_connection_manager.send_json(
+                                {
+                                    "type": "error",
+                                    "content": "insufficient_credits",
+                                },
+                                client_id,
+                            )
+                            await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+                            continue
 
                     logger.debug("Creating resilient LLM instance...")
                     llm = await create_resilient_llm_instance(provider, model, custom_api_key, user_id=user_id)
@@ -2114,6 +2197,8 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                     # Stream model chunks back to widget WebSocket
                     async def stream_generator():
                         full_response = ""
+                        prompt_tokens = 0
+                        completion_tokens = 0
                         try:
                             logger.info("Streaming model response...")
                             async for chunk in llm.astream(prompt):
@@ -2123,7 +2208,84 @@ async def handle_widget_chat(websocket: WebSocket, client_id: str):
                                     await agent_connection_manager.send_json(
                                         {"type": "text_chunk", "content": chunk_str}, client_id
                                     )
+                                # Track token usage from chunk if available
+                                usage = getattr(chunk, "usage_metadata", None)
+                                if usage:
+                                    prompt_tokens = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0) or prompt_tokens
+                                    completion_tokens = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0) or completion_tokens
+
                             await agent_connection_manager.send_json({"type": "stream_end"}, client_id)
+
+                            # If usage_metadata is missing, use character fallback (approx 4 chars per token)
+                            if prompt_tokens == 0:
+                                prompt_tokens = len(prompt) // 4
+                            if completion_tokens == 0:
+                                completion_tokens = len(full_response) // 4
+
+                            total_tokens = prompt_tokens + completion_tokens
+                            if total_tokens > 0 and is_system_model and not is_byok_run:
+                                # 1. Log overall token usage to token_usages
+                                cost = (prompt_tokens * 0.0000006) + (completion_tokens * 0.0000018)
+                                try:
+                                    async with get_db_cursor_async(commit=True) as cursor:
+                                        await run_in_threadpool(
+                                            cursor.execute,
+                                            "SELECT 1 FROM auth.users WHERE id = %s",
+                                            (user_id,)
+                                        )
+                                        user_exists = await run_in_threadpool(cursor.fetchone)
+                                        if user_exists:
+                                            await run_in_threadpool(
+                                                cursor.execute,
+                                                """
+                                                INSERT INTO token_usages (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, estimated_cost)
+                                                VALUES (%s, %s, %s, %s, %s, %s)
+                                                """,
+                                                (user_id, agent_id, prompt_tokens, completion_tokens, total_tokens, cost)
+                                            )
+                                except Exception as db_err:
+                                    logger.error(f"Failed to log token usage for widget: {db_err}")
+
+                                # 2. Fetch system model cost and deduct credits
+                                async with get_db_cursor_async(commit=False) as cursor:
+                                    await run_in_threadpool(
+                                        cursor.execute,
+                                        "SELECT input_cost_per_1m, output_cost_per_1m, credits_per_1k_tokens FROM system_ai_models WHERE id = %s AND is_active = TRUE",
+                                        (model,)
+                                    )
+                                    pricing_row = await run_in_threadpool(cursor.fetchone)
+
+                                if pricing_row:
+                                    in_cost = float(pricing_row[0])
+                                    out_cost = float(pricing_row[1])
+                                    base_credits = float(pricing_row[2])
+
+                                    cost_sum = in_cost + out_cost
+                                    if cost_sum > 0.0:
+                                        input_coeff = (in_cost / cost_sum) * 2.0 * base_credits
+                                        output_coeff = (out_cost / cost_sum) * 2.0 * base_credits
+                                    else:
+                                        input_coeff = base_credits
+                                        output_coeff = base_credits
+
+                                    credits_to_deduct = ((prompt_tokens / 1000.0) * input_coeff) + ((completion_tokens / 1000.0) * output_coeff)
+                                    if credits_to_deduct > 0.0:
+                                        logger.info(f"Deducting {credits_to_deduct} credits from user {user_id} wallet for widget chat...")
+                                        from db import billing_repository
+                                        await billing_repository.deduct_wallet_balance_atomic(user_id, credits_to_deduct)
+                                        try:
+                                            await billing_repository.create_credit_transaction(
+                                                user_id=user_id,
+                                                agent_id=agent_id,
+                                                amount_credits=-credits_to_deduct,
+                                                transaction_type="usage_deduction",
+                                                model_used=model,
+                                                prompt_tokens=prompt_tokens,
+                                                completion_tokens=completion_tokens
+                                            )
+                                        except Exception as tx_err:
+                                            logger.error(f"Failed to log credit transaction for widget: {tx_err}")
+
                         except WebSocketDisconnect:
                             logger.info(f"Widget WebSocket client {client_id} disconnected during stream generation.")
                         except Exception as exc:

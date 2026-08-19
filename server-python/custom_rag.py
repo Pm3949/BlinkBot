@@ -4,31 +4,31 @@ CUSTOM RETRIEVAL-AUGMENTED GENERATION (RAG) PIPELINE CORE (custom_rag.py)
 ================================================================================
 
 OVERVIEW & ARCHITECTURE:
-This module contains the primary engine logic that enables Retrieval-Augmented 
-Generation (RAG) capabilities in the RAGMate application without requiring external 
+This module contains the primary engine logic that enables Retrieval-Augmented
+Generation (RAG) capabilities in the RAGMate application without requiring external
 large framework orchestrators (like LangChain). It handles the end-to-end processing:
 1. File & Data Ingestion:
    - Parses document files (PDF, DOCX, CSV, TXT) and web page URLs.
    - Implements optical character recognition (OCR) fallback routines for scanned PDFs or images.
 2. Context Segmentation (Chunking):
-   - Implements naive chunk splitting, sentence-based semantic chunk boundary segmentations, 
+   - Implements naive chunk splitting, sentence-based semantic chunk boundary segmentations,
      and paragraph layout grouping.
 3. Dense Vectorization & Embeddings:
    - Manages and caches SentenceTransformer models to convert text chunks into float arrays.
 4. Advanced Retrieval Systems:
-   - Hybrid Search: Combines cosine vector similarity (dense retrieval) with basic lexical 
+   - Hybrid Search: Combines cosine vector similarity (dense retrieval) with basic lexical
      matching term frequencies (sparse retrieval).
-   - HyDE (Hypothetical Document Embeddings): Expands query keywords by using LLM completions 
+   - HyDE (Hypothetical Document Embeddings): Expands query keywords by using LLM completions
      to generate a hypothetical answer, then vectorize it.
    - Cross-Encoder Reranking: Reranks documents against query contexts.
    - MMR (Maximal Marginal Relevance): Deduplicates search contexts to return diverse result sets.
 
 BEGINNER ALGORITHM BREAKDOWN:
-- Vector Embeddings: An AI model converts text words into a list of numbers (e.g. 384 dimensions). 
+- Vector Embeddings: An AI model converts text words into a list of numbers (e.g. 384 dimensions).
   This acts as coordinates in semantic space. The closeness of two vectors implies conceptual similarity.
-- Cosine Similarity: Calculated as `(A . B) / (||A|| * ||B||)`. It measures the angle between 
+- Cosine Similarity: Calculated as `(A . B) / (||A|| * ||B||)`. It measures the angle between
   two vectors. If the angle is 0, they are semantically identical.
-- MMR: Selects items that are relevant to the query but are mathematically distinct from 
+- MMR: Selects items that are relevant to the query but are mathematically distinct from
   each other to ensure we don't present the same information repeatedly to the LLM.
 """
 
@@ -87,10 +87,13 @@ class CustomRAGEngine:
         """
         # If the model is not in the cache, load it.
         if model_name not in self.models_cache:
-            logger.info("📥 Downloading/Loading embedding model locally: %s...", model_name)
+            logger.info(
+                "📥 Downloading/Loading embedding model locally: %s...", model_name
+            )
             try:
                 # Load SentenceTransformer dynamically to avoid importing it if using cloud APIs.
                 from sentence_transformers import SentenceTransformer
+
                 # Load the model.
                 self.models_cache[model_name] = SentenceTransformer(model_name)
             except ImportError as imp_err:
@@ -105,7 +108,9 @@ class CustomRAGEngine:
         # Return the cached model.
         return self.models_cache[model_name]
 
-    def _get_reranker_model(self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def _get_reranker_model(
+        self, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    ):
         """
         Retrieves or downloads a CrossEncoder reranker model.
 
@@ -124,13 +129,18 @@ class CustomRAGEngine:
         """
         # If the model is not in the cache, load it.
         if model_name not in self.reranker_cache:
-            if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("CLOUD_MODE", "").lower() == "true":
+            if (
+                os.getenv("HUGGINGFACE_API_KEY")
+                or os.getenv("HF_TOKEN")
+                or os.getenv("CLOUD_MODE", "").lower() == "true"
+            ):
                 logger.info("☁️ Cloud mode active. Skipping local reranker execution.")
                 return None
             logger.info("📥 Downloading/Loading reranker model: %s...", model_name)
             try:
                 # Import CrossEncoder inside the method to reduce startup import overhead.
                 from sentence_transformers import CrossEncoder
+
                 self.reranker_cache[model_name] = CrossEncoder(model_name)
             except Exception as exc:
                 logger.error(f"Failed to load reranker model '{model_name}': {exc}")
@@ -175,7 +185,7 @@ class CustomRAGEngine:
             for page in doc:
                 # Extract text using PyMuPDF's built-in parser.
                 text = page.get_text("text").strip()
-                
+
                 # Scanned Page Fallback: If build-in extraction returns very little text (< 50 chars),
                 # assume it is a scanned image page and run OCR.
                 if len(text) < 50:
@@ -286,6 +296,7 @@ class CustomRAGEngine:
 
             elif ext in ["xlsx", "xls"]:
                 import pandas as pd
+
                 excel_file = pd.ExcelFile(file_path)
                 sheet_texts = []
                 for sheet in excel_file.sheet_names:
@@ -477,7 +488,7 @@ class CustomRAGEngine:
             list of list of float: Embeddings list.
         """
         logger.info("Generating vectors for %s chunks...", len(chunks))
-        
+
         # 1. Try Cloudflare Workers AI if credentials are set
         cf_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
         cf_api_token = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
@@ -488,55 +499,72 @@ class CustomRAGEngine:
                 cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model}"
                 cf_headers = {"Authorization": f"Bearer {cf_api_token}"}
                 response = requests.post(
-                    cf_url,
-                    headers=cf_headers,
-                    json={"text": chunks},
-                    timeout=30
+                    cf_url, headers=cf_headers, json={"text": chunks}, timeout=30
                 )
                 if response.status_code == 200:
                     res_json = response.json()
                     if res_json.get("success") and "result" in res_json:
                         embeddings = res_json["result"]["data"]
                         # Ensure it is a 2D list of floats
-                        if len(chunks) == 1 and embeddings and not isinstance(embeddings[0], list):
+                        if (
+                            len(chunks) == 1
+                            and embeddings
+                            and not isinstance(embeddings[0], list)
+                        ):
                             return [embeddings]
                         return embeddings
-                logger.warning(f"Cloudflare Workers AI failed with status {response.status_code}: {response.text}. Falling back to Hugging Face / Local.")
+                logger.warning(
+                    f"Cloudflare Workers AI failed with status {response.status_code}: {response.text}. Falling back to Hugging Face / Local."
+                )
             except Exception as e:
-                logger.error(f"Error querying Cloudflare Workers AI API: {str(e)}. Falling back to Hugging Face / Local.")
+                logger.error(
+                    f"Error querying Cloudflare Workers AI API: {str(e)}. Falling back to Hugging Face / Local."
+                )
 
         # 2. Fallback to Hugging Face Serverless Inference API
         # Standardize model name for Hugging Face
         hf_model = model_name
         if hf_model == "all-MiniLM-L6-v2":
             hf_model = "sentence-transformers/all-MiniLM-L6-v2"
-            
+
         api_url = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{hf_model}"
-        hf_token = (os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or "").strip()
+        hf_token = (
+            os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or ""
+        ).strip()
         headers = {}
         if hf_token:
             headers["Authorization"] = f"Bearer {hf_token}"
-            
+
         try:
             response = requests.post(
                 api_url,
                 headers=headers,
                 json={"inputs": chunks, "options": {"wait_for_model": True}},
-                timeout=30
+                timeout=30,
             )
             if response.status_code == 200:
                 embeddings = response.json()
                 # Ensure it is a list of lists of floats (sometimes Hugging Face returns a 1D list if only 1 input is sent)
-                if len(chunks) == 1 and embeddings and not isinstance(embeddings[0], list):
+                if (
+                    len(chunks) == 1
+                    and embeddings
+                    and not isinstance(embeddings[0], list)
+                ):
                     return [embeddings]
                 return embeddings
             else:
-                logger.warning(f"Hugging Face cloud inference failed with status {response.status_code}: {response.text}. Falling back to local SentenceTransformer.")
+                logger.warning(
+                    f"Hugging Face cloud inference failed with status {response.status_code}: {response.text}. Falling back to local SentenceTransformer."
+                )
         except Exception as e:
-            logger.error(f"Error querying Hugging Face cloud embedding API: {str(e)}. Falling back to local SentenceTransformer.")
-            
+            logger.error(
+                f"Error querying Hugging Face cloud embedding API: {str(e)}. Falling back to local SentenceTransformer."
+            )
+
         # Raise an error if both Cloudflare and Hugging Face fail
-        raise RuntimeError("Cloud vectorization failed: Cloudflare and Hugging Face APIs are both unreachable or failed.")
+        raise RuntimeError(
+            "Cloud vectorization failed: Cloudflare and Hugging Face APIs are both unreachable or failed."
+        )
 
     async def hybrid_search(
         self,
@@ -552,7 +580,7 @@ class CustomRAGEngine:
         """
         from core.database import get_db_cursor_async
         from fastapi.concurrency import run_in_threadpool
-        
+
         results = []
         try:
             async with get_db_cursor_async(commit=False) as cursor:
@@ -570,13 +598,21 @@ class CustomRAGEngine:
                 )
                 rows = await run_in_threadpool(cursor.fetchall)
                 for idx, (content, score) in enumerate(rows):
-                    results.append({"chunk_index": idx, "content": content, "score": float(score)})
+                    results.append(
+                        {"chunk_index": idx, "content": content, "score": float(score)}
+                    )
         except Exception as e:
             logger.error(f"PostgreSQL pgvector hybrid search failed: {e}")
-            
+
         return results
 
-    def rerank_documents(self, query: str, documents: list, top_k: int = 5, model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> list:
+    def rerank_documents(
+        self,
+        query: str,
+        documents: list,
+        top_k: int = 5,
+        model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    ) -> list:
         """
         Reranks document chunks against a query using Cloudflare Workers AI or local CrossEncoder.
 
@@ -604,56 +640,90 @@ class CustomRAGEngine:
                 cf_model = "@cf/baai/bge-reranker-base"
                 cf_url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account_id}/ai/run/{cf_model}"
                 cf_headers = {"Authorization": f"Bearer {cf_api_token}"}
-                
-                decrypted_docs = [decrypt_key(doc[0]) or doc[0] for doc in documents]
+
+                query_str = str(query or "").strip()
+                decrypted_docs = []
+                for doc in documents:
+                    if doc and len(doc) > 0:
+                        val = decrypt_key(doc[0]) or doc[0] or ""
+                        val = str(val).strip()
+                        if val:
+                            decrypted_docs.append(val)
+
+                if not query_str or not decrypted_docs:
+                    logger.warning("Query or documents are empty, skipping Cloudflare reranking.")
+                    return documents[:top_k]
+
+                cf_contexts = [{"text": doc} for doc in decrypted_docs]
                 response = requests.post(
                     cf_url,
                     headers=cf_headers,
-                    json={"query": query, "documents": decrypted_docs},
+                    json={"query": query_str, "contexts": cf_contexts},
                     timeout=30
                 )
                 if response.status_code == 200:
                     res_json = response.json()
+                    logger.info(f"Cloudflare Workers AI Reranker response: {res_json}")
                     if res_json.get("success") and "result" in res_json:
                         results = res_json["result"]
-                        # Cloudflare returns: [{"index": idx, "score": score}, ...]
-                        doc_scores = []
-                        for item in results:
-                            idx = item["index"]
-                            score = item["score"]
-                            doc_scores.append((documents[idx], score))
+                        if isinstance(results, dict):
+                            if "response" in results:
+                                results = results["response"]
+                            elif "data" in results:
+                                results = results["data"]
+                            elif "results" in results:
+                                results = results["results"]
                         
-                        doc_scores.sort(key=lambda x: x[1], reverse=True)
-                        return [doc for doc, score in doc_scores[:top_k]]
-                logger.warning(f"Cloudflare Workers AI reranking failed with status {response.status_code}: {response.text}. Falling back to local/original order.")
+                        if isinstance(results, list):
+                            doc_scores = []
+                            for item in results:
+                                if isinstance(item, dict):
+                                    idx = item.get("index") if item.get("index") is not None else item.get("id")
+                                    score = item.get("score")
+                                    if idx is not None and score is not None:
+                                        doc_scores.append((documents[idx], score))
+                                elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                                    idx = item[0]
+                                    score = item[1]
+                                    doc_scores.append((documents[idx], score))
+
+                            doc_scores.sort(key=lambda x: x[1], reverse=True)
+                            return [doc for doc, score in doc_scores[:top_k]]
+                logger.warning(
+                    f"Cloudflare Workers AI reranking failed with status {response.status_code}: {response.text}. Falling back to local/original order."
+                )
             except Exception as e:
-                logger.error(f"Error querying Cloudflare Workers AI Reranker API: {str(e)}. Falling back to local/original order.")
+                logger.error(
+                    f"Error querying Cloudflare Workers AI Reranker API: {str(e)}. Falling back to local/original order."
+                )
 
         # 2. Fallback to local CrossEncoder model
         # Retrieve the CrossEncoder model.
         reranker = self._get_reranker_model(model_name)
         # Fallback if the model fails to load.
         if not reranker:
-            logger.warning("Reranker failed to load, falling back to original search order.")
+            logger.warning(
+                "Reranker failed to load, falling back to original search order."
+            )
             return documents[:top_k]
-            
+
         logger.info(f"Reranking {len(documents)} chunks...")
-        
+
         pairs = []
         # Prepare inputs for the CrossEncoder: [query, doc_text] pairs.
         for doc in documents:
             decrypted_text = decrypt_key(doc[0]) or doc[0]
             pairs.append([query, decrypted_text])
-            
+
         # Generate relevance scores.
         scores = reranker.predict(pairs)
-        
+
         # Pair documents with their scores.
         doc_scores = list(zip(documents, scores))
-        
+
         # Sort documents by score in descending order.
         doc_scores.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Return the sorted documents list.
         return [doc for doc, score in doc_scores[:top_k]]
 
@@ -767,7 +837,9 @@ Answer:"""
         while len(selected_indices) < top_k and unselected_indices:
             if not selected_indices:
                 # The first document selected is the one most relevant to the query.
-                best_idx = unselected_indices[np.argmax(sim_to_query[unselected_indices])]
+                best_idx = unselected_indices[
+                    np.argmax(sim_to_query[unselected_indices])
+                ]
             else:
                 best_idx = None
                 max_mmr_score = -float("inf")
@@ -776,13 +848,13 @@ Answer:"""
                 for idx in unselected_indices:
                     # Relevance value.
                     relevance = sim_to_query[idx]
-                    
+
                     # Redundancy value (max similarity to any already selected document).
                     redundancy = np.max(sim_matrix[idx, selected_indices])
-                    
+
                     # MMR Formula: lambda * relevance - (1 - lambda) * redundancy.
                     mmr_score = lambda_mult * relevance - (1 - lambda_mult) * redundancy
-                    
+
                     if mmr_score > max_mmr_score:
                         max_mmr_score = mmr_score
                         best_idx = idx
@@ -793,6 +865,3 @@ Answer:"""
 
         # Return documents at selected indices.
         return [documents[i] for i in selected_indices]
-
-
-

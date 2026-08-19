@@ -202,8 +202,8 @@ async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, l
     Errors / Exceptions:
         - Catches general exceptions during hybrid matches to gracefully fall back on pgvector.
     """
-    async with get_db_cursor_async(commit=False) as cursor:
-        try:
+    try:
+        async with get_db_cursor_async(commit=False) as cursor:
             # Attempt dynamic hybrid search (lexical + vector).
             # match_documents_hybrid is a custom SQL function expected in the PostgreSQL schema.
             # We explicitly cast parameters to matching database types (like `%s::vector` for pgvector).
@@ -215,19 +215,14 @@ async def get_documents_hybrid(message: str, query_vector: str, agent_id: str, l
             results = await run_in_threadpool(cursor.fetchall)
             if results and len(results) > 0:
                 return results
-        except Exception:
-            # Fall back to standard vector cosine similarity query if hybrid query fails.
-            logger.debug("Hybrid search function unavailable, falling back to pgvector cosine distance query")
-            pass
+    except Exception:
+        # Fall back to standard vector cosine similarity query if hybrid query fails.
+        logger.debug("Hybrid search function unavailable, falling back to pgvector cosine distance query")
+        pass
 
-        # Robust pgvector direct query fallback.
-        # `<=>` is the pgvector Cosine Distance operator. Cosine Similarity is: `1 - cosine_distance`.
-        # Cosine similarity evaluates how close two vector directions are, returning values closer to 1.
-        # This fallback query checks for documents linked to:
-        # 1. The target agent (`a.id = agent_id`).
-        # 2. Sibling sub-agents within the same project.
-        # 3. The parent agent if this is a sub-agent.
-        # Ordered ASC by cosine distance (smallest distance first), up to the limit.
+    # Robust pgvector direct query fallback.
+    # Start a fresh transaction block to avoid InFailedSqlTransaction aborts from the previous exception.
+    async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
             """
