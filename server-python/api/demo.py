@@ -50,6 +50,7 @@ class DemoRequest(BaseModel):
     name: str # Full name of the lead contact
     email: str # Email address
     company: str = "" # Optional organization name
+    website: str = "" # Optional website URL
     message: str = "" # Optional details or questions
 
 

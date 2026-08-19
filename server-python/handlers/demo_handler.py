@@ -68,7 +68,7 @@ def _send_demo_email(req: dict, request_id: int, created_at):
     # Build the multipart container to hold HTML layouts
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"🚀 New Demo Request from {req.get('name')} — BlinkBot"
-    msg["From"] = f"BlinkBot <{sender_email}>"
+    msg["From"] = f"BlinkBot Demo <{sender_email}>"
     msg["To"] = notify_email
 
     # HTML body template for the notification email
@@ -92,6 +92,10 @@ def _send_demo_email(req: dict, request_id: int, created_at):
                 <tr>
                     <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-weight: 600; color: #374151;">Company</td>
                     <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; color: #6b7280;">{req.get('company') or 'Not specified'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-weight: 600; color: #374151;">Website</td>
+                    <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6; color: #6b7280;">{f"<a href='{req.get('website')}' style='color: #6366f1;'>{req.get('website')}</a>" if req.get('website') else 'Not specified'}</td>
                 </tr>
                 <tr>
                     <td style="padding: 12px 0; font-weight: 600; color: #374151; vertical-align: top;">Message</td>
@@ -148,7 +152,7 @@ def _send_meeting_invite_email(name: str, email: str, date: str, time: str, link
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "🚀 BlinkBot Demo - Meeting Scheduled"
-    msg["From"] = f"BlinkBot <{sender_email}>"
+    msg["From"] = f"BlinkBot Demo <{sender_email}>"
     msg["To"] = email
 
     html = f"""
@@ -206,7 +210,7 @@ def _send_feedback_email(name: str, email: str):
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "How was your BlinkBot demo?"
-    msg["From"] = f"BlinkBot <{sender_email}>"
+    msg["From"] = f"BlinkBot Demo <{sender_email}>"
     msg["To"] = email
 
     html = f"""
@@ -256,7 +260,7 @@ async def handle_submit_demo_request(req: dict):
         # Call repository method to insert demo request in database
         logger.debug("Executing demo request database insert query...")
         row = await demo_repository.submit_demo_request(
-            req.get('name'), req.get('email'), req.get('company'), req.get('message')
+            req.get('name'), req.get('email'), req.get('company'), req.get('website') or '', req.get('message')
         )
         logger.info(f"Demo request recorded in database. ID: {row[0]}")
         
@@ -305,12 +309,13 @@ async def handle_get_admin_demo_requests(user_id: str):
                 "name": r[1],
                 "email": r[2],
                 "company": r[3],
-                "message": r[4],
-                "status": r[5],
-                "created_at": r[6].isoformat() if r[6] else None,
-                "scheduled_date": r[7],
-                "scheduled_time": r[8],
-                "meeting_link": r[9],
+                "website": r[4],
+                "message": r[5],
+                "status": r[6],
+                "created_at": r[7].isoformat() if r[7] else None,
+                "scheduled_date": r[8],
+                "scheduled_time": r[9],
+                "meeting_link": r[10],
             })
         logger.info(f"Successfully processed {len(requests)} demo requests.")
         return {"requests": requests}

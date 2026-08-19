@@ -79,9 +79,10 @@ async def create_demo_requests_table():
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_date TEXT")
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS scheduled_time TEXT")
         await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS meeting_link TEXT")
+        await run_in_threadpool(cursor.execute, "ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS website TEXT")
 
 
-async def submit_demo_request(name: str, email: str, company: str, message: str):
+async def submit_demo_request(name: str, email: str, company: str, website: str, message: str):
     """
     Submits a new demo inquiry from the customer landing page.
 
@@ -92,6 +93,7 @@ async def submit_demo_request(name: str, email: str, company: str, message: str)
         name (str): The customer's name.
         email (str): The customer's email address.
         company (str): The company name.
+        website (str): The website URL.
         message (str): A custom description message detailing customer goals.
 
     Returns:
@@ -112,11 +114,11 @@ async def submit_demo_request(name: str, email: str, company: str, message: str)
         await run_in_threadpool(
             cursor.execute,
             """
-            INSERT INTO demo_requests (name, email, company, message)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO demo_requests (name, email, company, website, message)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id, created_at
             """,
-            (name, email, company, message)
+            (name, email, company, website, message)
         )
         return await run_in_threadpool(cursor.fetchone)
 
@@ -144,7 +146,7 @@ async def get_admin_demo_requests():
         await run_in_threadpool(
             cursor.execute,
             """
-            SELECT id, name, email, company, message, status, created_at, scheduled_date, scheduled_time, meeting_link
+            SELECT id, name, email, company, website, message, status, created_at, scheduled_date, scheduled_time, meeting_link
             FROM demo_requests
             ORDER BY created_at DESC
             """
