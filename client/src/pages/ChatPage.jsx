@@ -63,9 +63,36 @@ export default function ChatPage() {
   const [isTraceOpen, setIsTraceOpen] = useState(false);
   
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const lastMessageIdRef = useRef(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const lastScrollTopRef = useRef(0);
+
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    
+    const { scrollTop } = scrollContainerRef.current;
+    
+    // Detect if the user is scrolling up (scrollTop is decreasing)
+    const isScrollingUp = scrollTop < lastScrollTopRef.current;
+    lastScrollTopRef.current = scrollTop;
+    
+    // If scrolled to the top, scrolling up, and older messages exist, fetch them
+    if (scrollTop < 5 && isScrollingUp && hasNextPage && !isFetchingNextPage) {
+      const previousScrollHeight = scrollContainerRef.current.scrollHeight;
+      
+      fetchNextPage().then(() => {
+        if (scrollContainerRef.current) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          scrollContainerRef.current.scrollTop = newScrollHeight - previousScrollHeight;
+          lastScrollTopRef.current = scrollContainerRef.current.scrollTop;
+        }
+      });
+    }
   };
 
   // Auto-select project on load with localStorage persistence
@@ -101,6 +128,9 @@ export default function ChatPage() {
     deleteSession,
     pendingApproval,
     sendApprovalResponse,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
     isLoadingSessions,
   } = useChat(selectedAgentId);
 
@@ -122,8 +152,32 @@ export default function ChatPage() {
   const isActiveSessionForSelectedAgent = true;
   const visibleMessages = messages;
 
+  const wasFetchingNextPageRef = useRef(false);
+
+  // Track if we are currently loading older pages
   useEffect(() => {
-    scrollToBottom();
+    if (isFetchingNextPage) {
+      wasFetchingNextPageRef.current = true;
+    }
+  }, [isFetchingNextPage]);
+
+  // Only scroll to bottom if a new message was sent/received at the end of the chat
+  useEffect(() => {
+    if (visibleMessages.length === 0) return;
+
+    if (wasFetchingNextPageRef.current) {
+      wasFetchingNextPageRef.current = false;
+      const lastMsg = visibleMessages[visibleMessages.length - 1];
+      if (lastMsg) lastMessageIdRef.current = lastMsg.id;
+      return;
+    }
+
+    const lastMsg = visibleMessages[visibleMessages.length - 1];
+    
+    if (lastMsg && (lastMsg.id !== lastMessageIdRef.current || loading || pendingApproval)) {
+      lastMessageIdRef.current = lastMsg.id;
+      scrollToBottom();
+    }
   }, [visibleMessages, loading, pendingApproval]);
 
   const handleAgentSelect = (agent) => {
@@ -245,7 +299,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto pt-16 flex flex-col">
+        <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto pt-16 flex flex-col">
           <div className="max-w-6xl mx-auto px-8 pb-10 space-y-8 w-full flex-1">
             {isLoadingProjects && <LoadingSkeleton count={2} className="h-24" />}
 

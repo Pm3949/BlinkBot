@@ -17,7 +17,7 @@ export function useSandboxChat() {
     return `${baseWsUrl}/ws/chat/${clientId}`;
   }, [clientId]);
 
-  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl);
+  const { isConnected, agentTextChunks, agentStatus, agentSteps, sendChatRequest, clearTextChunks, pendingApproval, sendApprovalResponse } = useAgentSocket(wsUrl, sandboxSessionId);
 
   const messages = useMemo(() => {
     if (!isTyping) return localMessages;
@@ -33,6 +33,11 @@ export function useSandboxChat() {
   // Listen for custom stream_end event from useAgentSocket
   useEffect(() => {
     const handleStreamEnd = (e) => {
+       const targetSessionId = e.detail?.session_id;
+       // Only process end event if it belongs to this specific sandbox session
+       if (targetSessionId !== sandboxSessionId) {
+         return;
+       }
        setIsTyping(false);
        const finalContent = e.detail?.content || '';
        const finalSteps = e.detail?.steps || null;
@@ -46,7 +51,7 @@ export function useSandboxChat() {
     };
     window.addEventListener('agent_stream_end', handleStreamEnd);
     return () => window.removeEventListener('agent_stream_end', handleStreamEnd);
-  }, [clearTextChunks]);
+  }, [clearTextChunks, sandboxSessionId]);
 
   const sendMessage = useCallback(({ agentId, agentName, content, language }) => {
     const message = content.trim();

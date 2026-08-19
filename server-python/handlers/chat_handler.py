@@ -1210,14 +1210,7 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                                 except Exception as tx_err:
                                     logger.error(f"Failed to log credit transaction: {tx_err}")
 
-        # Emit formatting step just before stream end
-        await safe_send(
-            {"type": "step", "status": "formatting", "label": "Formatting answer..."}
-        )
-        await safe_send({"type": "status", "content": ""})
-        await safe_send({"type": "stream_end"})
-
-        # Save assistant message to the database
+        # Save assistant message to the database first
         if full_response:
             try:
                 latency = round(time.time() - start_time, 2)
@@ -1231,6 +1224,13 @@ async def handle_chat_with_agent(websocket: WebSocket, client_id: str):
                 logger.info(f"Successfully saved assistant message to database for session {session_id}.")
             except Exception as db_err:
                 logger.error(f"Failed to save assistant message to database: {db_err}", exc_info=True)
+
+        # Emit formatting step just before stream end
+        await safe_send(
+            {"type": "step", "status": "formatting", "label": "Formatting answer..."}
+        )
+        await safe_send({"type": "status", "content": ""})
+        await safe_send({"type": "stream_end"})
 
     async def run_stream_safe_task(*args, **kwargs):
         session_id = args[6] if len(args) > 6 else kwargs.get("session_id")

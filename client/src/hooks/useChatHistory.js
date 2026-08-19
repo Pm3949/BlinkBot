@@ -56,7 +56,7 @@ export function useChatMessages(sessionId) {
     enabled: !!sessionId && !sessionId.startsWith("optimistic-session"),
   });
 
-  const messages = query.data ? query.data.pages.flat() : [];
+  const messages = query.data ? [...query.data.pages].reverse().flat() : [];
 
   return {
     ...query,
@@ -164,14 +164,31 @@ export function useChatMutations() {
     onSuccess: (newData, variables) => {
       const activeWorkspaceId = useUIStore.getState().activeWorkspaceId;
 
-      // 1. Direct update to the messages cache for this session
-      queryClient.setQueryData(["chat_messages", variables.sessionId], (old = []) => {
+      // 1. Direct update to the messages cache for this session (supporting Infinite Query structure)
+      queryClient.setQueryData(["chat_messages", variables.sessionId], (old) => {
         const formatted = {
           ...newData,
           steps: newData.steps || null
         };
-        if (old.some(m => m.id === formatted.id)) return old;
-        return [...old, formatted];
+
+        if (!old || !old.pages) {
+          return {
+            pages: [[formatted]],
+            pageParams: [undefined]
+          };
+        }
+
+        const updatedPages = [...old.pages];
+        const firstPage = updatedPages[0] || [];
+        
+        if (firstPage.some(m => m.id === formatted.id)) return old;
+        
+        updatedPages[0] = [...firstPage, formatted];
+
+        return {
+          ...old,
+          pages: updatedPages
+        };
       });
 
       // 2. Direct update to the sessions cache to bump the updatedAt timestamp
