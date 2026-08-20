@@ -20,23 +20,23 @@ function formatMarkdown(text) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  
+
   // Headers
   clean = clean.replace(/^#### (.*?)\r?$/gm, '<h4 class="font-bold text-[11px] uppercase tracking-wider text-muted-foreground mt-3 mb-1">$1</h4>');
   clean = clean.replace(/^### (.*?)\r?$/gm, '<h3 class="font-bold text-sm mt-3 mb-1">$1</h3>');
   clean = clean.replace(/^## (.*?)\r?$/gm, '<h2 class="font-bold text-base mt-4 mb-1.5">$1</h2>');
   clean = clean.replace(/^# (.*?)\r?$/gm, '<h1 class="font-extrabold text-lg mt-5 mb-2">$1</h1>');
-  
+
   // Bold
   clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  
+
   // Inline Code
   clean = clean.replace(/`(.*?)`/g, '<code class="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">$1</code>');
-  
+
   // Bullets
   clean = clean.replace(/^\* (.*?)\r?$/gm, '• $1');
   clean = clean.replace(/^- (.*?)\r?$/gm, '• $1');
-  
+
   // Line Breaks
   return clean.split('\n').join('<br />');
 }
@@ -309,10 +309,10 @@ const STATS = [
 function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <img 
-        src="/logo1.png" 
-        alt="BlinkBot Logo" 
-        className="h-13 w-auto object-contain rounded-xl" 
+      <img
+        src="/logo1.png"
+        alt="BlinkBot Logo"
+        className="h-13 w-auto object-contain rounded-xl"
         fetchpriority="high"
         loading="eager"
       />
@@ -478,7 +478,7 @@ export default function LandingPage() {
 
     let socketOpened = false;
     let streamedResponse = '';
-    
+
     // Attempt real WebSocket connection to live chatbot
     const clientId = Math.random().toString(36).substring(7);
     const wsUrl = `wss://api.blinkbot.in/ws/widget/chat/${clientId}`;
@@ -487,7 +487,7 @@ export default function LandingPage() {
     // Timeout fallback if connection doesn't open in 2.5 seconds
     const fallbackTimeout = setTimeout(() => {
       if (!socketOpened) {
-        try { ws.close(); } catch (e) {}
+        try { ws.close(); } catch (e) { }
         triggerMockFallback();
       }
     }, 2500);
@@ -546,7 +546,7 @@ export default function LandingPage() {
     ws.onerror = (err) => {
       console.warn("WS connection error:", err);
       clearTimeout(fallbackTimeout);
-      try { ws.close(); } catch (e) {}
+      try { ws.close(); } catch (e) { }
       if (!socketOpened) {
         triggerMockFallback();
       }
@@ -605,11 +605,10 @@ export default function LandingPage() {
       {/* ═══════════════════════════════════════════════════════════════════
           NAVIGATION
       ═══════════════════════════════════════════════════════════════════ */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
           ? 'bg-background/95 backdrop-blur-xl border-b border-border shadow-sm'
           : 'bg-transparent'
-      }`}>
+        }`}>
         <nav className="flex items-center justify-between px-6 md:px-10 py-4 max-w-7xl mx-auto" aria-label="Main Navigation">
           <Logo />
 
@@ -677,985 +676,978 @@ export default function LandingPage() {
             HERO SECTION
         ═══════════════════════════════════════════════════════════════════ */}
         <section className="relative pt-32 md:pt-40 pb-20 md:pb-28 px-6 overflow-hidden bg-background">
-        {/* Animated background orbs */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div
-            className="absolute top-[-10%] left-[10%] w-[600px] h-[600px] rounded-full opacity-[0.07] dark:opacity-[0.05] blur-[100px] animate-pulse"
-            style={{ background: 'radial-gradient(circle, #FF4D00, transparent)' }}
-          />
-          <div
-            className="absolute top-[20%] right-[-5%] w-[500px] h-[500px] rounded-full opacity-[0.05] dark:opacity-[0.04] blur-[120px] animate-pulse"
-            style={{ background: 'radial-gradient(circle, #7C3AED, transparent)', animationDelay: '1s' }}
-          />
-          <div
-            className="absolute bottom-[0%] left-[30%] w-[400px] h-[400px] rounded-full opacity-[0.04] dark:opacity-[0.03] blur-[100px]"
-            style={{ background: 'radial-gradient(circle, #2563EB, transparent)' }}
-          />
-        </div>
+          {/* Animated background orbs */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div
+              className="absolute top-[-10%] left-[10%] w-[600px] h-[600px] rounded-full opacity-[0.07] dark:opacity-[0.05] blur-[100px] animate-pulse"
+              style={{ background: 'radial-gradient(circle, #FF4D00, transparent)' }}
+            />
+            <div
+              className="absolute top-[20%] right-[-5%] w-[500px] h-[500px] rounded-full opacity-[0.05] dark:opacity-[0.04] blur-[120px] animate-pulse"
+              style={{ background: 'radial-gradient(circle, #7C3AED, transparent)', animationDelay: '1s' }}
+            />
+            <div
+              className="absolute bottom-[0%] left-[30%] w-[400px] h-[400px] rounded-full opacity-[0.04] dark:opacity-[0.03] blur-[100px]"
+              style={{ background: 'radial-gradient(circle, #2563EB, transparent)' }}
+            />
+          </div>
 
-        <div className="grid lg:grid-cols-12 gap-12 items-center max-w-7xl mx-auto w-full relative z-10 text-left">
-          {/* Left Column: Text & CTAs */}
-          <div className="lg:col-span-7 flex flex-col items-start">
-            <span className="badge">Introducing BlinkBot 1.0</span>
+          <div className="grid lg:grid-cols-12 gap-12 items-center max-w-7xl mx-auto w-full relative z-10 text-left">
+            {/* Left Column: Text & CTAs */}
+            <div className="lg:col-span-7 flex flex-col items-start">
+              <span className="badge">Introducing BlinkBot 1.0</span>
 
-            {/* Headline */}
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-foreground">
-              Empowering businesses to build{' '}
-              <span className="relative inline-block">
-                <span
-                  className="bg-clip-text text-transparent animate-pulse"
-                  style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
-                >
-                  custom AI agents
+              {/* Headline */}
+              <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] text-foreground">
+                Empowering businesses to build{' '}
+                <span className="relative inline-block">
+                  <span
+                    className="bg-clip-text text-transparent animate-pulse"
+                    style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
+                  >
+                    custom AI agents
+                  </span>
+                </span>{' '}
+                in minutes.
+                <br />
+                <span className="text-foreground/75 font-medium text-2xl sm:text-3xl md:text-4xl mt-3 block">
+                  <span className="text-[#FF4D00] font-extrabold">Zero coding required.</span> Deploy them as a chatbot on your website instantly.
                 </span>
-              </span>{' '}
-              in minutes.
-              <br />
-              <span className="text-foreground/75 font-semibold text-2xl sm:text-3xl md:text-4xl mt-3 block">
-                Zero coding required. Deploy them as a chatbot on your website instantly.
-              </span>
-            </h1>
+              </h1>
 
-            {/* Sub-headline */}
-            <p className="mt-6 text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
-              Connect any tools you want to automate your work. With just one plain-English prompt, deploy a secure agent team to handle your tasks, complete with manual approvals.
-            </p>
+              {/* Sub-headline */}
+              <p className="mt-6 text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+                Connect your tools to automate tasks. With just one plain-English prompt, deploy a collaborative agent team to handle your workflows, complete with secure manual approvals.
+              </p>
 
-            {/* CTAs */}
-            <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-              <a
-                href={isLoggedIn ? "https://app.blinkbot.in/dashboard" : "https://app.blinkbot.in/login"}
-                className="w-full sm:w-auto btn-primary px-8 py-3.5 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
-              >
-                {isLoggedIn ? "Go to Dashboard" : "Start Building for Free"}
-                <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
-              </a>
-              <a
-                href="#sandbox"
-                className="w-full sm:w-auto px-8 py-3.5 rounded-full text-base font-semibold border border-border bg-card hover:bg-muted transition-all flex items-center justify-center gap-2 shadow-xs"
-              >
-                <Play size={15} className="text-primary fill-primary" /> See It Live
-              </a>
-            </div>
-
-            {/* Trust badges */}
-            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-muted-foreground font-medium">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                Free Starter Plan
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                No Credit Card Required
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                Omnichannel Tools
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Premium Interactive Chat Widget Mockup */}
-          <div className="lg:col-span-5 relative w-full flex justify-center">
-            <div className="w-full max-w-md bg-card/75 backdrop-blur-md border border-border/80 rounded-3xl p-5 shadow-xl relative overflow-hidden flex flex-col gap-3 min-h-[380px]">
-              {/* Window Header */}
-              <div className="flex items-center justify-between border-b border-border/40 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-primary">
-                    <Bot size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-foreground">BlinkBot Assistant</div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-[10px] text-muted-foreground font-medium">Online</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-[10px] font-mono text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border/30">
-                  Demo Chat
-                </div>
-              </div>
-
-              {/* Chat Messages Area */}
-              <div ref={heroChatScrollRef} className="flex-1 overflow-y-auto max-h-[200px] flex flex-col gap-2.5 pr-1" style={{ scrollbarWidth: 'none' }}>
-                {heroChat.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`text-xs rounded-2xl px-3.5 py-2 max-w-[80%] leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-primary text-white rounded-br-xs'
-                          : 'bg-muted/75 text-foreground rounded-bl-xs'
-                      }`}
-                    >
-                      {msg.role === 'bot' ? (
-                        <div dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.text) }} />
-                      ) : (
-                        msg.text
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Typing Indicator */}
-                {heroIsTyping && (
-                  <div className="flex justify-start">
-                    <div className="bg-muted/75 text-muted-foreground text-xs rounded-2xl rounded-bl-xs px-3.5 py-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"></span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.2s]"></span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.4s]"></span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Suggested Questions */}
-              <div className="flex flex-wrap gap-1.5 pt-2">
-                {[
-                  "How to deploy?",
-                  "Do you support WhatsApp?",
-                  "Is it secure?"
-                ].map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => handleHeroChatSend(q)}
-                    className="text-[10px] font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border/80 px-2.5 py-1 rounded-full transition-all cursor-pointer"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-
-              {/* Input Footer */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleHeroChatSend(heroInput);
-                }}
-                className="flex items-center gap-1.5 border-t border-border/40 pt-3"
-              >
-                <input
-                  type="text"
-                  value={heroInput}
-                  onChange={(e) => setHeroInput(e.target.value)}
-                  placeholder="Type a question..."
-                  className="flex-1 bg-muted/50 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/60"
-                />
-                <button
-                  type="submit"
-                  disabled={!heroInput.trim() || heroIsTyping}
-                  className="h-8 w-8 rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center justify-center transition-all disabled:opacity-50 cursor-pointer"
+              {/* CTAs */}
+              <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                <a
+                  href={isLoggedIn ? "https://app.blinkbot.in/dashboard" : "https://app.blinkbot.in/login"}
+                  className="w-full sm:w-auto btn-primary px-8 py-3.5 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
                 >
-                  <Send size={12} />
-                </button>
-              </form>
+                  {isLoggedIn ? "Go to Dashboard" : "Start Building for Free"}
+                  <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                </a>
+                <a
+                  href="#sandbox"
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-full text-base font-semibold border border-border bg-card hover:bg-muted transition-all flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <Play size={15} className="text-primary fill-primary" /> See It Live
+                </a>
+              </div>
+
+              {/* Trust badges */}
+              <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-muted-foreground font-medium">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  Free Starter Plan
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  No Credit Card Required
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  Omnichannel Tools
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Premium Interactive Chat Widget Mockup */}
+            <div className="lg:col-span-5 relative w-full flex justify-center">
+              <div className="w-full max-w-md bg-card/75 backdrop-blur-md border border-border/80 rounded-3xl p-5 shadow-xl relative overflow-hidden flex flex-col gap-3 min-h-[380px]">
+                {/* Window Header */}
+                <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 text-primary">
+                      <Bot size={18} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-foreground">BlinkBot Assistant</div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span className="text-[10px] text-muted-foreground font-medium">Online</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] font-mono text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border/30">
+                    Demo Chat
+                  </div>
+                </div>
+
+                {/* Chat Messages Area */}
+                <div ref={heroChatScrollRef} className="flex-1 overflow-y-auto max-h-[200px] flex flex-col gap-2.5 pr-1" style={{ scrollbarWidth: 'none' }}>
+                  {heroChat.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`text-xs rounded-2xl px-3.5 py-2 max-w-[80%] leading-relaxed ${msg.role === 'user'
+                            ? 'bg-primary text-white rounded-br-xs'
+                            : 'bg-muted/75 text-foreground rounded-bl-xs'
+                          }`}
+                      >
+                        {msg.role === 'bot' ? (
+                          <div dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.text) }} />
+                        ) : (
+                          msg.text
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Typing Indicator */}
+                  {heroIsTyping && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted/75 text-muted-foreground text-xs rounded-2xl rounded-bl-xs px-3.5 py-2 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.2s]"></span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0.4s]"></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Suggested Questions */}
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {[
+                    "How to deploy?",
+                    "Do you support WhatsApp?",
+                    "Is it secure?"
+                  ].map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => handleHeroChatSend(q)}
+                      className="text-[10px] font-semibold bg-muted hover:bg-muted/80 text-foreground border border-border/80 px-2.5 py-1 rounded-full transition-all cursor-pointer"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input Footer */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleHeroChatSend(heroInput);
+                  }}
+                  className="flex items-center gap-1.5 border-t border-border/40 pt-3"
+                >
+                  <input
+                    type="text"
+                    value={heroInput}
+                    onChange={(e) => setHeroInput(e.target.value)}
+                    placeholder="Type a question..."
+                    className="flex-1 bg-muted/50 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/60"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!heroInput.trim() || heroIsTyping}
+                    className="h-8 w-8 rounded-xl bg-primary hover:bg-primary/90 text-white flex items-center justify-center transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <Send size={12} />
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           STATS STRIP
       ═══════════════════════════════════════════════════════════════════ */}
-      <section ref={statsRef} className="py-14 border-y border-border bg-card">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
-          {STATS.map(({ value, label, icon: Icon }) => (
-            <div key={label} className="flex flex-col items-center text-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <Icon size={22} className="text-primary" />
-              </div>
-              <div
-                className={`text-3xl md:text-4xl font-black text-foreground transition-all duration-700 ${
-                  statsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
-                }`}
-              >
-                {value}
-              </div>
-              <div className="text-xs text-muted-foreground font-medium leading-snug">{label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          WHY BLINKBOT — PAIN POINTS
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section className="py-20 md:py-28 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-rose-500/10 text-rose-500 text-xs font-bold uppercase tracking-wider mb-4">
-              <AlertCircle size={13} /> Sound Familiar?
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              We've all been there.
-            </h2>
-            <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
-              These are the real problems teams face before they discover BlinkBot.
-            </p>
-          </div>
-
-          <div className="space-y-5">
-            {PAIN_POINTS.map(({ pain, solve, icon: Icon }, i) => (
-              <div
-                key={i}
-                className="bg-card border border-border rounded-2xl p-6 md:p-8 grid md:grid-cols-2 gap-6 items-center hover:border-primary/20 transition-colors group"
-              >
-                <div className="flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon size={18} className="text-rose-500" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wider text-rose-500 mb-1.5">The Problem</div>
-                    <p className="text-sm text-foreground leading-relaxed font-medium">{pain}</p>
-                  </div>
+        <section ref={statsRef} className="py-14 border-y border-border bg-card">
+          <div className="max-w-5xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
+            {STATS.map(({ value, label, icon: Icon }) => (
+              <div key={label} className="flex flex-col items-center text-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <Icon size={22} className="text-primary" />
                 </div>
-                <div className="flex gap-4 items-start">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <CheckCircle2 size={18} className="text-emerald-500" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wider text-emerald-500 mb-1.5">BlinkBot Fixes It</div>
-                    <p className="text-sm text-foreground leading-relaxed font-medium">{solve}</p>
-                  </div>
+                <div
+                  className={`text-3xl md:text-4xl font-black text-foreground transition-all duration-700 ${statsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
+                    }`}
+                >
+                  {value}
                 </div>
+                <div className="text-xs text-muted-foreground font-medium leading-snug">{label}</div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
+          WHY BLINKBOT — PAIN POINTS
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section className="py-20 md:py-28 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-rose-500/10 text-rose-500 text-xs font-bold uppercase tracking-wider mb-4">
+                <AlertCircle size={13} /> Sound Familiar?
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                We've all been there.
+              </h2>
+              <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
+                These are the real problems teams face before they discover BlinkBot.
+              </p>
+            </div>
+
+            <div className="space-y-5">
+              {PAIN_POINTS.map(({ pain, solve, icon: Icon }, i) => (
+                <div
+                  key={i}
+                  className="bg-card border border-border rounded-2xl p-6 md:p-8 grid md:grid-cols-2 gap-6 items-center hover:border-primary/20 transition-colors group"
+                >
+                  <div className="flex gap-4 items-start">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <Icon size={18} className="text-rose-500" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-rose-500 mb-1.5">The Problem</div>
+                      <p className="text-sm text-foreground leading-relaxed font-medium">{pain}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4 items-start">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <CheckCircle2 size={18} className="text-emerald-500" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-emerald-500 mb-1.5">BlinkBot Fixes It</div>
+                      <p className="text-sm text-foreground leading-relaxed font-medium">{solve}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
           HOW IT WORKS
       ═══════════════════════════════════════════════════════════════════ */}
-      <section id="how-it-works" className="py-20 md:py-28 bg-card border-y border-border px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
-              <Rocket size={13} /> How It Works
+        <section id="how-it-works" className="py-20 md:py-28 bg-card border-y border-border px-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
+                <Rocket size={13} /> How It Works
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                From zero to live AI assistant
+                <br />
+                <span className="text-primary">in under 10 minutes.</span>
+              </h2>
             </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              From zero to live AI assistant
-              <br />
-              <span className="text-primary">in under 10 minutes.</span>
-            </h2>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {HOW_IT_WORKS.map(({ step, icon: Icon, title, desc, accent, iconColor, iconBg }, i) => (
+                <div key={step} className="relative">
+                  {/* Connector line */}
+                  {i < HOW_IT_WORKS.length - 1 && (
+                    <div className="hidden md:block absolute top-10 left-[calc(100%_-_16px)] w-8 h-px border-t-2 border-dashed border-border z-10" />
+                  )}
+
+                  <div className={`bg-gradient-to-br ${accent} border border-border rounded-[24px] p-7 h-full transition-all hover:-translate-y-1 hover:shadow-lg`}>
+                    <div className="flex items-center gap-4 mb-5">
+                      <div className={`w-14 h-14 rounded-2xl ${iconBg} flex items-center justify-center`}>
+                        <Icon size={26} className={iconColor} />
+                      </div>
+                      <span className="text-5xl font-black text-foreground/10 font-mono leading-none">{step}</span>
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground mb-3">{title}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-12 text-center">
+              <a
+                href="https://app.blinkbot.in/login"
+                className="inline-flex items-center gap-2 btn-primary px-8 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
+              >
+                Try It Right Now for Free <ArrowRight size={18} />
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          FEATURE CARDS CAROUSEL
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section id="features" className="py-20 md:py-28 px-6 max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-12 gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3">
+                <Layers size={13} /> Everything You Need
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Platform Features
+              </h2>
+              <p className="mt-3 text-muted-foreground text-base max-w-md">
+                A complete toolkit for building, deploying, and managing AI assistants at any scale.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => scrollFeatures('left')}
+                className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs cursor-pointer"
+                aria-label="Previous"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                onClick={() => scrollFeatures('right')}
+                className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs cursor-pointer"
+                aria-label="Next"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            {HOW_IT_WORKS.map(({ step, icon: Icon, title, desc, accent, iconColor, iconBg }, i) => (
-              <div key={step} className="relative">
-                {/* Connector line */}
-                {i < HOW_IT_WORKS.length - 1 && (
-                  <div className="hidden md:block absolute top-10 left-[calc(100%_-_16px)] w-8 h-px border-t-2 border-dashed border-border z-10" />
-                )}
-
-                <div className={`bg-gradient-to-br ${accent} border border-border rounded-[24px] p-7 h-full transition-all hover:-translate-y-1 hover:shadow-lg`}>
-                  <div className="flex items-center gap-4 mb-5">
-                    <div className={`w-14 h-14 rounded-2xl ${iconBg} flex items-center justify-center`}>
-                      <Icon size={26} className={iconColor} />
-                    </div>
-                    <span className="text-5xl font-black text-foreground/10 font-mono leading-none">{step}</span>
+          <div
+            ref={featureScrollRef}
+            className="flex gap-5 overflow-x-auto py-4 px-1"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollSnapType: 'x mandatory' }}
+          >
+            {FEATURE_CARDS.map(({ icon: Icon, title, badge, desc, gradient, borderHover, iconBg, iconColor }) => (
+              <div
+                key={title}
+                style={{ scrollSnapAlign: 'start' }}
+                className={`w-[300px] sm:w-[340px] shrink-0 bg-gradient-to-br ${gradient} border border-border rounded-[24px] p-7 ${borderHover} hover:shadow-lg transition-all duration-300 flex flex-col gap-5`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`w-12 h-12 rounded-2xl ${iconBg} flex items-center justify-center`}>
+                    <Icon size={23} className={iconColor} />
                   </div>
-                  <h3 className="text-xl font-bold text-foreground mb-3">{title}</h3>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-card text-muted-foreground border border-border">
+                    {badge}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold mb-2 text-foreground">{title}</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
                 </div>
               </div>
             ))}
           </div>
+        </section>
 
-          <div className="mt-12 text-center">
-            <a
-              href="https://app.blinkbot.in/login"
-              className="inline-flex items-center gap-2 btn-primary px-8 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all"
-            >
-              Try It Right Now for Free <ArrowRight size={18} />
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          FEATURE CARDS CAROUSEL
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section id="features" className="py-20 md:py-28 px-6 max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-12 gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-3">
-              <Layers size={13} /> Everything You Need
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Platform Features
-            </h2>
-            <p className="mt-3 text-muted-foreground text-base max-w-md">
-              A complete toolkit for building, deploying, and managing AI assistants at any scale.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => scrollFeatures('left')}
-              className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs cursor-pointer"
-              aria-label="Previous"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <button
-              onClick={() => scrollFeatures('right')}
-              className="h-11 w-11 rounded-2xl bg-card border border-border flex items-center justify-center text-foreground hover:bg-primary hover:text-white hover:border-primary transition-all shadow-xs cursor-pointer"
-              aria-label="Next"
-            >
-              <ChevronRight size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div
-          ref={featureScrollRef}
-          className="flex gap-5 overflow-x-auto py-4 px-1"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', scrollSnapType: 'x mandatory' }}
-        >
-          {FEATURE_CARDS.map(({ icon: Icon, title, badge, desc, gradient, borderHover, iconBg, iconColor }) => (
-            <div
-              key={title}
-              style={{ scrollSnapAlign: 'start' }}
-              className={`w-[300px] sm:w-[340px] shrink-0 bg-gradient-to-br ${gradient} border border-border rounded-[24px] p-7 ${borderHover} hover:shadow-lg transition-all duration-300 flex flex-col gap-5`}
-            >
-              <div className="flex items-center justify-between">
-                <div className={`w-12 h-12 rounded-2xl ${iconBg} flex items-center justify-center`}>
-                  <Icon size={23} className={iconColor} />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-card text-muted-foreground border border-border">
-                  {badge}
-                </span>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold mb-2 text-foreground">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
+        {/* ═══════════════════════════════════════════════════════════════════
           SUPPORTED LLM PROVIDERS STRIP
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="py-16 border-y border-border bg-card px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-10">
-            <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
-              Supported LLM Providers & Embedding Engines
-            </div>
-            <p className="text-sm text-muted-foreground">Bring your own key. Switch models anytime. No lock-in.</p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-             {LLM_PROVIDERS.map((provider, i) => (
-              <div
-                key={i}
-                className="p-5 rounded-2xl bg-background border border-border text-center transition-all hover:-translate-y-1 hover:shadow-md hover:border-primary/30 cursor-default"
-              >
-                <div className="font-bold text-sm text-foreground mb-1">{provider.name}</div>
-                <div className="text-[11px] font-semibold text-primary mb-1.5">{provider.badge}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">{provider.desc}</div>
+        <section className="py-16 border-y border-border bg-card px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-10">
+              <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                Supported LLM Providers & Embedding Engines
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          INTERACTIVE SANDBOX
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section id="sandbox" className="py-20 md:py-28 px-6">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
-              <Terminal size={13} /> Interactive Live Sandbox
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Test-drive the agent teams.
-              <br />
-              See how they respond.
-            </h2>
-            <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
-              These are live demo agents designed to showcase how specialized teams retrieve knowledge and handle tasks in real-time. Try asking them a question below.
-            </p>
-          </div>
-
-          {/* Persona Switcher */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
-            {DEMO_PERSONAS.map((persona) => (
-              <button
-                key={persona.id}
-                onClick={() => setActivePersona(persona)}
-                className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold transition-all cursor-pointer ${
-                  activePersona.id === persona.id
-                    ? 'bg-primary text-white shadow-md scale-105'
-                    : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
-                }`}
-              >
-                <persona.icon size={16} />
-                {persona.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Simulator Box */}
-          <div className="bg-background border border-border rounded-[28px] shadow-xl overflow-hidden">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-border bg-muted/30 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl ${activePersona.avatarBg} flex items-center justify-center text-white shadow-xs`}>
-                  <activePersona.icon size={20} />
-                </div>
-                <div>
-                  <div className="font-bold text-sm flex items-center gap-2 text-foreground">
-                    {activePersona.name}
-                    <span className="text-[10px] bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">
-                      {activePersona.badge}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">{activePersona.docsCount}</div>
-                </div>
-              </div>
+              <p className="text-sm text-muted-foreground">Bring your own key. Switch models anytime. No lock-in.</p>
             </div>
 
-            {/* Chat Messages */}
-            <div ref={sandboxScrollRef} className="p-6 md:p-8 space-y-4 min-h-[300px] max-h-[400px] overflow-y-auto bg-card">
-              {simChatHistory.map((msg, idx) => (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {LLM_PROVIDERS.map((provider, i) => (
                 <div
-                  key={idx}
-                  className={`flex gap-3 items-start animate-message ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  key={i}
+                  className="p-5 rounded-2xl bg-background border border-border text-center transition-all hover:-translate-y-1 hover:shadow-md hover:border-primary/30 cursor-default"
                 >
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${
-                    msg.role === 'user' ? 'bg-blue-600 text-white' : `${activePersona.avatarBg} text-white`
-                  }`}>
-                    {msg.role === 'user' ? 'You' : <Bot size={15} />}
-                  </div>
-
-                  <div className={`p-4 rounded-2xl max-w-[80%] text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600/10 border border-blue-500/20 text-foreground rounded-tr-xs'
-                      : 'bg-background border border-border text-foreground shadow-xs rounded-tl-xs'
-                  }`}>
-                    <p>{msg.text}</p>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-border flex flex-wrap gap-1.5 items-center">
-                        <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                          <FileText size={11} className="text-primary" /> Cited Sources:
-                        </span>
-                        {msg.sources.map((src, sIdx) => (
-                          <span key={sIdx} className="text-[10px] font-semibold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-primary/20">
-                            {src}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <div className="font-bold text-sm text-foreground mb-1">{provider.name}</div>
+                  <div className="text-[11px] font-semibold text-primary mb-1.5">{provider.badge}</div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">{provider.desc}</div>
                 </div>
               ))}
-
-              {isSimTyping && (
-                <div className="flex gap-3 items-center text-xs text-muted-foreground bg-muted/40 p-3 rounded-2xl max-w-[200px]">
-                  <Loader2 size={15} className="animate-spin text-primary" />
-                  Querying vectors...
-                </div>
-              )}
-            </div>
-
-            {/* Prompt Suggestions */}
-            <div className="p-4 border-t border-border bg-muted/20">
-              <div className="text-xs font-semibold text-muted-foreground mb-2.5 flex items-center gap-1.5">
-                <Lightbulb size={13} className="text-amber-500" />
-                Try a sample question:
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {activePersona.questions.map((q, qIdx) => (
-                  <button
-                    key={qIdx}
-                    onClick={() => handleQuestionClick(q)}
-                    disabled={isSimTyping}
-                    className="text-xs bg-card hover:bg-muted border border-border text-foreground px-3.5 py-2 rounded-xl transition-all text-left flex items-center gap-1.5 shadow-xs disabled:opacity-50 hover:border-primary/30 cursor-pointer"
-                  >
-                    "{q}" <ChevronRight size={12} className="text-muted-foreground" />
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          WIDGET CONFIGURATOR
+        {/* ═══════════════════════════════════════════════════════════════════
+          INTERACTIVE SANDBOX
       ═══════════════════════════════════════════════════════════════════ */}
-      <section id="widget" className="py-20 md:py-28 bg-card border-y border-border px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold uppercase tracking-wider mb-4">
-              <Sliders size={13} /> Widget Configurator
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Your brand. Your bot.
-            </h2>
-            <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
-              Customize the accent color, header title, and screen position. The script snippet updates instantly, just copy and paste.
-            </p>
-          </div>
-
-          <div className="grid lg:grid-cols-12 gap-8 items-stretch">
-            {/* Controls Panel */}
-            <div className="lg:col-span-5 bg-background border border-border rounded-[24px] p-7 space-y-7 shadow-lg">
-              <div>
-                <label className="text-sm font-semibold block mb-2.5 text-foreground">Widget Header Title</label>
-                <input
-                  type="text"
-                  value={customWidgetTitle}
-                  onChange={(e) => setCustomWidgetTitle(e.target.value)}
-                  className="w-full border border-border bg-card rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                  placeholder="BlinkBot Assistant"
-                />
+        <section id="sandbox" className="py-20 md:py-28 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
+                <Terminal size={13} /> Interactive Live Sandbox
               </div>
-
-              <div>
-                <label className="text-sm font-semibold block mb-3 text-foreground">Brand Accent Color</label>
-                <div className="flex items-center gap-2.5">
-                  {WIDGET_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setCustomWidgetColor(color)}
-                      style={{ backgroundColor: color }}
-                      className={`w-9 h-9 rounded-full border-2 transition-all cursor-pointer ${
-                        customWidgetColor === color ? 'scale-125 border-foreground shadow-md' : 'border-transparent hover:scale-110'
-                      }`}
-                    />
-                  ))}
-                  <input
-                    type="color"
-                    value={customWidgetColor}
-                    onChange={(e) => setCustomWidgetColor(e.target.value)}
-                    className="w-9 h-9 rounded-full border border-border cursor-pointer bg-transparent"
-                    title="Custom color"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-semibold block mb-3 text-foreground">Screen Position</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {['right', 'left'].map((pos) => (
-                    <button
-                      key={pos}
-                      onClick={() => setCustomWidgetPosition(pos)}
-                      className={`py-3 px-4 rounded-xl text-xs font-semibold border transition-all capitalize cursor-pointer ${
-                        customWidgetPosition === pos
-                          ? 'bg-primary text-white border-primary shadow-sm'
-                          : 'bg-card border-border hover:bg-muted text-foreground'
-                      }`}
-                    >
-                      Bottom {pos}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Script Snippet */}
-              <div>
-                <div className="flex items-center justify-between text-xs font-semibold mb-2.5">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <Code size={13} /> Generated HTML Snippet
-                  </span>
-                  <button
-                    onClick={copyWidgetScript}
-                    className="text-primary hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                  >
-                    {copiedSnippet ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                    {copiedSnippet ? 'Copied!' : 'Copy Code'}
-                  </button>
-                </div>
-                <div className="bg-slate-950 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-x-auto leading-loose border border-slate-800">
-                  <code>
-                    <span className="text-slate-500">{'<'}script</span><br />
-                    <span className="pl-4">src=<span className="text-amber-400">"https://blinkbot.in/widget.js"</span></span><br />
-                    <span className="pl-4">data-chatbot-id=<span className="text-amber-400">"bot_demo_9823"</span></span><br />
-                    <span className="pl-4">data-color=<span className="text-amber-400">"{customWidgetColor}"</span></span><br />
-                    <span className="pl-4">data-position=<span className="text-amber-400">"{customWidgetPosition}"</span> async{'>'}</span><br />
-                    <span className="text-slate-500">{'<'}/script{'>'}</span>
-                  </code>
-                </div>
-              </div>
-            </div>
-
-            {/* Live Widget Preview */}
-            <div className="lg:col-span-7 flex flex-col items-center justify-center relative min-h-[480px] bg-background border border-border rounded-[28px] p-8 shadow-xl">
-              {/* Mock browser bg */}
-              <div className="absolute inset-0 rounded-[28px] overflow-hidden opacity-30 dark:opacity-10">
-                <div className="absolute inset-0" style={{
-                  backgroundImage: `radial-gradient(circle at 20px 20px, var(--border) 1px, transparent 0)`,
-                  backgroundSize: '32px 32px'
-                }} />
-              </div>
-
-              <div className="text-xs text-muted-foreground font-semibold mb-6 flex items-center gap-1.5 relative z-10">
-                <Eye size={13} className="text-primary" /> Live Widget Preview
-              </div>
-
-              <div className="relative z-10 w-full max-w-xs">
-                {/* Chat widget */}
-                <div className="bg-background border border-border rounded-2xl shadow-2xl overflow-hidden transition-all duration-300">
-                  <div style={{ backgroundColor: customWidgetColor }} className="p-4 text-white flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
-                        <Bot size={18} className="text-white" />
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">{customWidgetTitle || 'BlinkBot'}</div>
-                        <div className="text-[11px] opacity-80">Online · Powered by BlinkBot</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 rounded-full bg-white/40" />
-                      <div className="w-2 h-2 rounded-full bg-white/40" />
-                      <div className="w-2 h-2 rounded-full bg-white/40" />
-                    </div>
-                  </div>
-
-                  <div className="p-4 space-y-3 min-h-[200px] bg-card text-xs">
-                    <div className="bg-background border border-border p-3 rounded-xl max-w-[85%] text-foreground leading-relaxed">
-                      Hello! How can I help you with your knowledge base today?
-                    </div>
-                    <div className="p-3 rounded-xl max-w-[85%] ml-auto text-right text-foreground leading-relaxed" style={{ backgroundColor: `${customWidgetColor}18`, borderColor: `${customWidgetColor}33`, border: '1px solid' }}>
-                      Which AI models are supported?
-                    </div>
-                    <div className="bg-background border border-border p-3 rounded-xl max-w-[90%] text-foreground leading-relaxed">
-                      We support OpenRouter, OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace!
-                    </div>
-                  </div>
-
-                  <div className="p-3 border-t border-border bg-background flex items-center gap-2">
-                    <div className="flex-1 bg-muted/50 rounded-xl px-3 py-2 text-[10px] text-muted-foreground">
-                      Type a message...
-                    </div>
-                    <button
-                      style={{ backgroundColor: customWidgetColor }}
-                      className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0"
-                    >
-                      <Send size={13} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Widget trigger button */}
-                <div className={`absolute -bottom-4 ${customWidgetPosition === 'right' ? '-right-4' : '-left-4'} transition-all duration-300`}>
-                  <button
-                    style={{ backgroundColor: customWidgetColor }}
-                    className="w-13 h-13 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 transition-transform cursor-pointer"
-                  >
-                    <MessageSquare size={22} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          PRICING
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section id="pricing" className="py-20 md:py-28 px-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold uppercase tracking-wider mb-4">
-              <Star size={13} /> Pricing
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Simple, transparent pricing.
-            </h2>
-            <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
-              Start for free, with no credit card needed. Scale up only when your team needs more.
-            </p>
-
-            {/* Billing Toggle */}
-            <div className="flex items-center justify-center gap-4 mt-8">
-              <span className={`text-sm font-semibold ${!annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
-              <button
-                type="button"
-                onClick={() => setAnnualBilling(!annualBilling)}
-                className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-0.5 cursor-pointer ${annualBilling ? 'bg-primary' : 'bg-muted'}`}
-              >
-                <span className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${annualBilling ? 'translate-x-6' : 'translate-x-0'}`} />
-              </button>
-              <span className={`text-sm font-semibold flex items-center gap-2 ${annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>
-                Annual
-                <span className="bg-emerald-500/10 text-emerald-500 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                  Save 20%
-                </span>
-              </span>
-            </div>
-          </div>
-
-          {/* Pricing Cards */}
-          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <PricingCard
-              title="Starter"
-              priceInr="0"
-              priceUsd="0"
-              desc="Free hook — perfect for testing and building your first AI Agent."
-              features={[
-                "1 Active Workspace",
-                "1 AI Agent per Workspace",
-                "500 AI Messages / month",
-                "5 MB Document & Asset Storage",
-                "Platform-managed system models only",
-                "BYOK: Not Allowed",
-                "Community Support"
-              ]}
-            />
-            <PricingCard
-              title="Pro"
-              priceInr={annualBilling ? "559" : "699"}
-              priceUsd={annualBilling ? "7" : "8"}
-              desc="For growing teams & small businesses."
-              features={[
-                "1 Active Workspace",
-                "5 AI Agents per Workspace",
-                "10,000 AI Messages / month",
-                "1 GB Vector & Asset Storage",
-                "1 Embedded Website Chatbots",
-                "BYOK: Allowed",
-                "Granular Studio & Model Permissions",
-                "Priority Support"
-              ]}
-              isPopular
-            />
-            <PricingCard
-              title="Business"
-              priceInr={annualBilling ? "1,599" : "1,999"}
-              priceUsd={annualBilling ? "19" : "24"}
-              desc="For agencies & scaling applications."
-              features={[
-                "Unlimited Workspaces",
-                "Unlimited AI Agents per Workspace",
-                "50,000 AI Messages / month",
-                "10 GB Vector & Asset Storage",
-                "Unlimited Embedded Chatbots",
-                "BYOK: Allowed",
-                "Full Audit Logging & RBAC Controls",
-                "Dedicated Support Manager"
-              ]}
-            />
-          </div>
-
-          {/* Top-up Credits */}
-          <div className="mt-10 max-w-3xl mx-auto bg-card border border-border rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-md">
-            <div>
-              <div className="font-bold text-base text-foreground flex items-center gap-2">
-                <Zap size={17} className="text-amber-500 fill-amber-500" />
-                Non-Expiring Message Credit Top-Ups
-              </div>
-              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                Run out of messages? Grab a top-up anytime: <strong>+5,000 messages</strong> for ₹299 ($4) 
-                or <strong>+20,000 messages</strong> for ₹899 ($11). Credits never expire.
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Test-drive the agent teams.
+                <br />
+                See how they respond.
+              </h2>
+              <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
+                These are live demo agents designed to showcase how specialized teams retrieve knowledge and handle tasks in real-time. Try asking them a question below.
               </p>
             </div>
-            <a
-              href="https://app.blinkbot.in/login"
-              className="px-5 py-2.5 rounded-xl btn-primary text-xs font-bold shrink-0 shadow-md whitespace-nowrap"
-            >
-              View Billing →
-            </a>
-          </div>
-        </div>
-      </section>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          FAQ
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section id="faq" className="py-20 md:py-28 bg-card border-y border-border px-6">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-14">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-bold uppercase tracking-wider mb-4">
-              <HelpCircle size={13} /> FAQ
-            </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Questions? We've got answers.
-            </h2>
-          </div>
-
-          <div className="space-y-3">
-            {FAQS.map((faq, idx) => (
-              <div key={idx} className="bg-background border border-border rounded-2xl overflow-hidden transition-all shadow-xs">
+            {/* Persona Switcher */}
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
+              {DEMO_PERSONAS.map((persona) => (
                 <button
-                  onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                  className="w-full px-6 py-5 text-left font-bold text-base flex items-center justify-between gap-4 text-foreground hover:text-primary transition-colors cursor-pointer"
+                  key={persona.id}
+                  onClick={() => setActivePersona(persona)}
+                  className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-bold transition-all cursor-pointer ${activePersona.id === persona.id
+                      ? 'bg-primary text-white shadow-md scale-105'
+                      : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+                    }`}
                 >
-                  <span>{faq.q}</span>
-                  <ChevronDown
-                    size={17}
-                    className={`transition-transform duration-200 text-muted-foreground shrink-0 ${openFaq === idx ? 'rotate-180 text-primary' : ''}`}
-                  />
+                  <persona.icon size={16} />
+                  {persona.name}
                 </button>
-                {openFaq === idx && (
-                  <div className="px-6 pb-6 text-sm text-muted-foreground leading-relaxed border-t border-border pt-4 bg-card/30">
-                    {faq.a}
+              ))}
+            </div>
+
+            {/* Simulator Box */}
+            <div className="bg-background border border-border rounded-[28px] shadow-xl overflow-hidden">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-border bg-muted/30 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${activePersona.avatarBg} flex items-center justify-center text-white shadow-xs`}>
+                    <activePersona.icon size={20} />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm flex items-center gap-2 text-foreground">
+                      {activePersona.name}
+                      <span className="text-[10px] bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">
+                        {activePersona.badge}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{activePersona.docsCount}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chat Messages */}
+              <div ref={sandboxScrollRef} className="p-6 md:p-8 space-y-4 min-h-[300px] max-h-[400px] overflow-y-auto bg-card">
+                {simChatHistory.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex gap-3 items-start animate-message ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  >
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold ${msg.role === 'user' ? 'bg-blue-600 text-white' : `${activePersona.avatarBg} text-white`
+                      }`}>
+                      {msg.role === 'user' ? 'You' : <Bot size={15} />}
+                    </div>
+
+                    <div className={`p-4 rounded-2xl max-w-[80%] text-sm leading-relaxed ${msg.role === 'user'
+                        ? 'bg-blue-600/10 border border-blue-500/20 text-foreground rounded-tr-xs'
+                        : 'bg-background border border-border text-foreground shadow-xs rounded-tl-xs'
+                      }`}>
+                      <p>{msg.text}</p>
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-3 pt-2.5 border-t border-border flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
+                            <FileText size={11} className="text-primary" /> Cited Sources:
+                          </span>
+                          {msg.sources.map((src, sIdx) => (
+                            <span key={sIdx} className="text-[10px] font-semibold bg-primary/10 text-primary px-2.5 py-0.5 rounded-md border border-primary/20">
+                              {src}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {isSimTyping && (
+                  <div className="flex gap-3 items-center text-xs text-muted-foreground bg-muted/40 p-3 rounded-2xl max-w-[200px]">
+                    <Loader2 size={15} className="animate-spin text-primary" />
+                    Querying vectors...
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          BOOK A DEMO FORM
+              {/* Prompt Suggestions */}
+              <div className="p-4 border-t border-border bg-muted/20">
+                <div className="text-xs font-semibold text-muted-foreground mb-2.5 flex items-center gap-1.5">
+                  <Lightbulb size={13} className="text-amber-500" />
+                  Try a sample question:
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activePersona.questions.map((q, qIdx) => (
+                    <button
+                      key={qIdx}
+                      onClick={() => handleQuestionClick(q)}
+                      disabled={isSimTyping}
+                      className="text-xs bg-card hover:bg-muted border border-border text-foreground px-3.5 py-2 rounded-xl transition-all text-left flex items-center gap-1.5 shadow-xs disabled:opacity-50 hover:border-primary/30 cursor-pointer"
+                    >
+                      "{q}" <ChevronRight size={12} className="text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          WIDGET CONFIGURATOR
       ═══════════════════════════════════════════════════════════════════ */}
-      <section id="demo" className="py-20 md:py-28 px-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
-              <MessagesSquare size={13} /> Talk to Us
+        <section id="widget" className="py-20 md:py-28 bg-card border-y border-border px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold uppercase tracking-wider mb-4">
+                <Sliders size={13} /> Widget Configurator
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Your brand. Your bot.
+              </h2>
+              <p className="mt-4 text-muted-foreground text-base max-w-2xl mx-auto">
+                Customize the accent color, header title, and screen position. The script snippet updates instantly, just copy and paste.
+              </p>
             </div>
-            <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
-              Need something custom?
-            </h2>
-            <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
-              Have high-volume requirements, custom integrations, or want a guided walkthrough? 
-              Drop us a message and we'll get back to you within 24 hours.
-            </p>
+
+            <div className="grid lg:grid-cols-12 gap-8 items-stretch">
+              {/* Controls Panel */}
+              <div className="lg:col-span-5 bg-background border border-border rounded-[24px] p-7 space-y-7 shadow-lg">
+                <div>
+                  <label className="text-sm font-semibold block mb-2.5 text-foreground">Widget Header Title</label>
+                  <input
+                    type="text"
+                    value={customWidgetTitle}
+                    onChange={(e) => setCustomWidgetTitle(e.target.value)}
+                    className="w-full border border-border bg-card rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                    placeholder="BlinkBot Assistant"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold block mb-3 text-foreground">Brand Accent Color</label>
+                  <div className="flex items-center gap-2.5">
+                    {WIDGET_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setCustomWidgetColor(color)}
+                        style={{ backgroundColor: color }}
+                        className={`w-9 h-9 rounded-full border-2 transition-all cursor-pointer ${customWidgetColor === color ? 'scale-125 border-foreground shadow-md' : 'border-transparent hover:scale-110'
+                          }`}
+                      />
+                    ))}
+                    <input
+                      type="color"
+                      value={customWidgetColor}
+                      onChange={(e) => setCustomWidgetColor(e.target.value)}
+                      className="w-9 h-9 rounded-full border border-border cursor-pointer bg-transparent"
+                      title="Custom color"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold block mb-3 text-foreground">Screen Position</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {['right', 'left'].map((pos) => (
+                      <button
+                        key={pos}
+                        onClick={() => setCustomWidgetPosition(pos)}
+                        className={`py-3 px-4 rounded-xl text-xs font-semibold border transition-all capitalize cursor-pointer ${customWidgetPosition === pos
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'bg-card border-border hover:bg-muted text-foreground'
+                          }`}
+                      >
+                        Bottom {pos}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Script Snippet */}
+                <div>
+                  <div className="flex items-center justify-between text-xs font-semibold mb-2.5">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Code size={13} /> Generated HTML Snippet
+                    </span>
+                    <button
+                      onClick={copyWidgetScript}
+                      className="text-primary hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                    >
+                      {copiedSnippet ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                      {copiedSnippet ? 'Copied!' : 'Copy Code'}
+                    </button>
+                  </div>
+                  <div className="bg-slate-950 text-slate-300 p-4 rounded-xl text-xs font-mono overflow-x-auto leading-loose border border-slate-800">
+                    <code>
+                      <span className="text-slate-500">{'<'}script</span><br />
+                      <span className="pl-4">src=<span className="text-amber-400">"https://blinkbot.in/widget.js"</span></span><br />
+                      <span className="pl-4">data-chatbot-id=<span className="text-amber-400">"bot_demo_9823"</span></span><br />
+                      <span className="pl-4">data-color=<span className="text-amber-400">"{customWidgetColor}"</span></span><br />
+                      <span className="pl-4">data-position=<span className="text-amber-400">"{customWidgetPosition}"</span> async{'>'}</span><br />
+                      <span className="text-slate-500">{'<'}/script{'>'}</span>
+                    </code>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Widget Preview */}
+              <div className="lg:col-span-7 flex flex-col items-center justify-center relative min-h-[480px] bg-background border border-border rounded-[28px] p-8 shadow-xl">
+                {/* Mock browser bg */}
+                <div className="absolute inset-0 rounded-[28px] overflow-hidden opacity-30 dark:opacity-10">
+                  <div className="absolute inset-0" style={{
+                    backgroundImage: `radial-gradient(circle at 20px 20px, var(--border) 1px, transparent 0)`,
+                    backgroundSize: '32px 32px'
+                  }} />
+                </div>
+
+                <div className="text-xs text-muted-foreground font-semibold mb-6 flex items-center gap-1.5 relative z-10">
+                  <Eye size={13} className="text-primary" /> Live Widget Preview
+                </div>
+
+                <div className="relative z-10 w-full max-w-xs">
+                  {/* Chat widget */}
+                  <div className="bg-background border border-border rounded-2xl shadow-2xl overflow-hidden transition-all duration-300">
+                    <div style={{ backgroundColor: customWidgetColor }} className="p-4 text-white flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
+                          <Bot size={18} className="text-white" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-sm">{customWidgetTitle || 'BlinkBot'}</div>
+                          <div className="text-[11px] opacity-80">Online · Powered by BlinkBot</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 rounded-full bg-white/40" />
+                        <div className="w-2 h-2 rounded-full bg-white/40" />
+                        <div className="w-2 h-2 rounded-full bg-white/40" />
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-3 min-h-[200px] bg-card text-xs">
+                      <div className="bg-background border border-border p-3 rounded-xl max-w-[85%] text-foreground leading-relaxed">
+                        Hello! How can I help you with your knowledge base today?
+                      </div>
+                      <div className="p-3 rounded-xl max-w-[85%] ml-auto text-right text-foreground leading-relaxed" style={{ backgroundColor: `${customWidgetColor}18`, borderColor: `${customWidgetColor}33`, border: '1px solid' }}>
+                        Which AI models are supported?
+                      </div>
+                      <div className="bg-background border border-border p-3 rounded-xl max-w-[90%] text-foreground leading-relaxed">
+                        We support OpenRouter, OpenAI, Groq, Anthropic Claude, Google Gemini, and HuggingFace!
+                      </div>
+                    </div>
+
+                    <div className="p-3 border-t border-border bg-background flex items-center gap-2">
+                      <div className="flex-1 bg-muted/50 rounded-xl px-3 py-2 text-[10px] text-muted-foreground">
+                        Type a message...
+                      </div>
+                      <button
+                        style={{ backgroundColor: customWidgetColor }}
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0"
+                      >
+                        <Send size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Widget trigger button */}
+                  <div className={`absolute -bottom-4 ${customWidgetPosition === 'right' ? '-right-4' : '-left-4'} transition-all duration-300`}>
+                    <button
+                      style={{ backgroundColor: customWidgetColor }}
+                      className="w-13 h-13 rounded-full shadow-xl flex items-center justify-center text-white hover:scale-110 transition-transform cursor-pointer"
+                    >
+                      <MessageSquare size={22} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+        </section>
 
-          <form
-            onSubmit={handleDemoSubmit}
-            className="bg-card border border-border rounded-[28px] p-7 md:p-10 shadow-xl space-y-6"
-          >
-            <div className="grid sm:grid-cols-2 gap-5">
-              <div>
-                <label className="text-sm font-semibold block mb-2 text-foreground">
-                  Full Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={demoForm.name}
-                  onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                  placeholder="Your full name"
-                  required
-                />
+        {/* ═══════════════════════════════════════════════════════════════════
+          PRICING
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section id="pricing" className="py-20 md:py-28 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/10 text-amber-500 text-xs font-bold uppercase tracking-wider mb-4">
+                <Star size={13} /> Pricing
               </div>
-              <div>
-                <label className="text-sm font-semibold block mb-2 text-foreground">
-                  Work Email <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={demoForm.email}
-                  onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                  placeholder="you@company.com"
-                  required
-                />
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Simple, transparent pricing.
+              </h2>
+              <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
+                Start for free, with no credit card needed. Scale up only when your team needs more.
+              </p>
+
+              {/* Billing Toggle */}
+              <div className="flex items-center justify-center gap-4 mt-8">
+                <span className={`text-sm font-semibold ${!annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
+                <button
+                  type="button"
+                  onClick={() => setAnnualBilling(!annualBilling)}
+                  className={`w-12 h-6 rounded-full transition-colors relative flex items-center p-0.5 cursor-pointer ${annualBilling ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${annualBilling ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+                <span className={`text-sm font-semibold flex items-center gap-2 ${annualBilling ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  Annual
+                  <span className="bg-emerald-500/10 text-emerald-500 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                    Save 20%
+                  </span>
+                </span>
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-5">
-              <div>
-                <label className="text-sm font-semibold block mb-2 text-foreground">Company / Organization</label>
-                <input
-                  type="text"
-                  value={demoForm.company}
-                  onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                  placeholder="Acme Corp"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-semibold block mb-2 text-foreground font-semibold">
-                  Website Link <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={demoForm.website}
-                  onChange={(e) => setDemoForm({ ...demoForm, website: e.target.value })}
-                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
-                  placeholder="https://example.com"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold block mb-2 text-foreground">
-                Tell us about your needs
-              </label>
-              <textarea
-                rows={4}
-                value={demoForm.message}
-                onChange={(e) => setDemoForm({ ...demoForm, message: e.target.value })}
-                className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-y text-foreground placeholder:text-muted-foreground"
-                placeholder="Describe your use case, document volumes, or integration requirements..."
+            {/* Pricing Cards */}
+            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              <PricingCard
+                title="Starter"
+                priceInr="0"
+                priceUsd="0"
+                desc="Free hook — perfect for testing and building your first AI Agent."
+                features={[
+                  "1 Active Workspace",
+                  "1 AI Agent per Workspace",
+                  "500 AI Messages / month",
+                  "5 MB Document & Asset Storage",
+                  "Platform-managed system models only",
+                  "BYOK: Not Allowed",
+                  "Community Support"
+                ]}
+              />
+              <PricingCard
+                title="Pro"
+                priceInr={annualBilling ? "559" : "699"}
+                priceUsd={annualBilling ? "7" : "8"}
+                desc="For growing teams & small businesses."
+                features={[
+                  "1 Active Workspace",
+                  "5 AI Agents per Workspace",
+                  "10,000 AI Messages / month",
+                  "1 GB Vector & Asset Storage",
+                  "1 Embedded Website Chatbots",
+                  "BYOK: Allowed",
+                  "Granular Studio & Model Permissions",
+                  "Priority Support"
+                ]}
+                isPopular
+              />
+              <PricingCard
+                title="Business"
+                priceInr={annualBilling ? "1,599" : "1,999"}
+                priceUsd={annualBilling ? "19" : "24"}
+                desc="For agencies & scaling applications."
+                features={[
+                  "Unlimited Workspaces",
+                  "Unlimited AI Agents per Workspace",
+                  "50,000 AI Messages / month",
+                  "10 GB Vector & Asset Storage",
+                  "Unlimited Embedded Chatbots",
+                  "BYOK: Allowed",
+                  "Full Audit Logging & RBAC Controls",
+                  "Dedicated Support Manager"
+                ]}
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full btn-primary py-4 rounded-xl text-base font-bold shadow-lg hover:shadow-xl flex items-center justify-center gap-2.5 transition-all disabled:opacity-75 cursor-pointer"
-            >
-              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              {isSubmitting ? "Sending your request..." : "Send Message"}
-            </button>
-          </form>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          FINAL CTA BANNER
-      ═══════════════════════════════════════════════════════════════════ */}
-      <section className="py-20 md:py-28 px-6 bg-card border-t border-border">
-        <div className="max-w-4xl mx-auto text-center relative">
-          {/* Background glow */}
-          <div
-            className="absolute inset-0 blur-[80px] opacity-10 dark:opacity-5 pointer-events-none"
-            style={{ background: 'radial-gradient(circle, #FF4D00, transparent)' }}
-          />
-
-          <div className="relative z-10">
-            <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight text-foreground leading-tight">
-              Your workflow tasks are just
-              <br />
-              <span
-                className="bg-clip-text text-transparent"
-                style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
-              >
-                waiting to be automated.
-              </span>
-            </h2>
-
-            <p className="mt-6 text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              Turn your business processes into secure, automated AI agent teams that run tools, connect systems, and deploy in minutes. Completely zero-code.
-            </p>
-
-            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+            {/* Top-up Credits */}
+            <div className="mt-10 max-w-3xl mx-auto bg-card border border-border rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-md">
+              <div>
+                <div className="font-bold text-base text-foreground flex items-center gap-2">
+                  <Zap size={17} className="text-amber-500 fill-amber-500" />
+                  Non-Expiring Message Credit Top-Ups
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                  Run out of messages? Grab a top-up anytime: <strong>+5,000 messages</strong> for ₹299 ($4)
+                  or <strong>+20,000 messages</strong> for ₹899 ($11). Credits never expire.
+                </p>
+              </div>
               <a
                 href="https://app.blinkbot.in/login"
-                className="w-full sm:w-auto btn-primary px-10 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
+                className="px-5 py-2.5 rounded-xl btn-primary text-xs font-bold shrink-0 shadow-md whitespace-nowrap"
               >
-                <Rocket size={18} />
-                Build Your AI Agent Team for Free
-                <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                View Billing →
               </a>
             </div>
-
-            <p className="mt-5 text-xs text-muted-foreground">
-              No credit card required · Free Starter plan included · Set up in minutes
-            </p>
           </div>
-        </div>
-      </section>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          FAQ
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section id="faq" className="py-20 md:py-28 bg-card border-y border-border px-6">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-bold uppercase tracking-wider mb-4">
+                <HelpCircle size={13} /> FAQ
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Questions? We've got answers.
+              </h2>
+            </div>
+
+            <div className="space-y-3">
+              {FAQS.map((faq, idx) => (
+                <div key={idx} className="bg-background border border-border rounded-2xl overflow-hidden transition-all shadow-xs">
+                  <button
+                    onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                    className="w-full px-6 py-5 text-left font-bold text-base flex items-center justify-between gap-4 text-foreground hover:text-primary transition-colors cursor-pointer"
+                  >
+                    <span>{faq.q}</span>
+                    <ChevronDown
+                      size={17}
+                      className={`transition-transform duration-200 text-muted-foreground shrink-0 ${openFaq === idx ? 'rotate-180 text-primary' : ''}`}
+                    />
+                  </button>
+                  {openFaq === idx && (
+                    <div className="px-6 pb-6 text-sm text-muted-foreground leading-relaxed border-t border-border pt-4 bg-card/30">
+                      {faq.a}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          BOOK A DEMO FORM
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section id="demo" className="py-20 md:py-28 px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold uppercase tracking-wider mb-4">
+                <MessagesSquare size={13} /> Talk to Us
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-foreground">
+                Need something custom?
+              </h2>
+              <p className="mt-4 text-muted-foreground text-base max-w-xl mx-auto">
+                Have high-volume requirements, custom integrations, or want a guided walkthrough?
+                Drop us a message and we'll get back to you within 24 hours.
+              </p>
+            </div>
+
+            <form
+              onSubmit={handleDemoSubmit}
+              className="bg-card border border-border rounded-[28px] p-7 md:p-10 shadow-xl space-y-6"
+            >
+              <div className="grid sm:grid-cols-2 gap-5">
+                <div>
+                  <label className="text-sm font-semibold block mb-2 text-foreground">
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={demoForm.name}
+                    onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })}
+                    className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                    placeholder="Your full name"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold block mb-2 text-foreground">
+                    Work Email <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={demoForm.email}
+                    onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })}
+                    className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                    placeholder="you@company.com"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-5">
+                <div>
+                  <label className="text-sm font-semibold block mb-2 text-foreground">Company / Organization</label>
+                  <input
+                    type="text"
+                    value={demoForm.company}
+                    onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
+                    className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                    placeholder="Acme Corp"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-semibold block mb-2 text-foreground font-semibold">
+                    Website Link <span className="text-xs text-muted-foreground font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={demoForm.website}
+                    onChange={(e) => setDemoForm({ ...demoForm, website: e.target.value })}
+                    className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground"
+                    placeholder="https://example.com"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold block mb-2 text-foreground">
+                  Tell us about your needs
+                </label>
+                <textarea
+                  rows={4}
+                  value={demoForm.message}
+                  onChange={(e) => setDemoForm({ ...demoForm, message: e.target.value })}
+                  className="w-full border border-border bg-background rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 resize-y text-foreground placeholder:text-muted-foreground"
+                  placeholder="Describe your use case, document volumes, or integration requirements..."
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full btn-primary py-4 rounded-xl text-base font-bold shadow-lg hover:shadow-xl flex items-center justify-center gap-2.5 transition-all disabled:opacity-75 cursor-pointer"
+              >
+                {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                {isSubmitting ? "Sending your request..." : "Send Message"}
+              </button>
+            </form>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+          FINAL CTA BANNER
+      ═══════════════════════════════════════════════════════════════════ */}
+        <section className="py-20 md:py-28 px-6 bg-card border-t border-border">
+          <div className="max-w-4xl mx-auto text-center relative">
+            {/* Background glow */}
+            <div
+              className="absolute inset-0 blur-[80px] opacity-10 dark:opacity-5 pointer-events-none"
+              style={{ background: 'radial-gradient(circle, #FF4D00, transparent)' }}
+            />
+
+            <div className="relative z-10">
+              <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight text-foreground leading-tight">
+                Your workflow tasks are just
+                <br />
+                <span
+                  className="bg-clip-text text-transparent"
+                  style={{ backgroundImage: 'linear-gradient(135deg, #FF4D00 0%, #FF8C00 100%)' }}
+                >
+                  waiting to be automated.
+                </span>
+              </h2>
+
+              <p className="mt-6 text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
+                Turn your business processes into secure, automated AI agent teams that run tools, connect systems, and deploy in minutes. Completely zero-code.
+              </p>
+
+              <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a
+                  href="https://app.blinkbot.in/login"
+                  className="w-full sm:w-auto btn-primary px-10 py-4 rounded-full text-base font-bold shadow-lg hover:shadow-xl hover:scale-[1.03] transition-all flex items-center justify-center gap-2 group"
+                >
+                  <Rocket size={18} />
+                  Build Your AI Agent Team for Free
+                  <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                </a>
+              </div>
+
+              <p className="mt-5 text-xs text-muted-foreground">
+                No credit card required · Free Starter plan included · Set up in minutes
+              </p>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* ═══════════════════════════════════════════════════════════════════
@@ -1717,11 +1709,10 @@ export default function LandingPage() {
 // ─── Pricing Card Sub-Component ───────────────────────────────────────────────
 function PricingCard({ title, priceInr, priceUsd, desc, features, isPopular }) {
   return (
-    <div className={`relative bg-card border rounded-[28px] p-8 flex flex-col transition-all hover:-translate-y-1 hover:shadow-xl ${
-      isPopular
+    <div className={`relative bg-card border rounded-[28px] p-8 flex flex-col transition-all hover:-translate-y-1 hover:shadow-xl ${isPopular
         ? 'border-primary shadow-lg ring-1 ring-primary/20'
         : 'border-border'
-    }`}>
+      }`}>
       {isPopular && (
         <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
           <span className="bg-primary text-white text-[10px] font-extrabold px-4 py-1 rounded-full uppercase tracking-wider shadow-sm">
@@ -1758,11 +1749,10 @@ function PricingCard({ title, priceInr, priceUsd, desc, features, isPopular }) {
 
       <a
         href="https://app.blinkbot.in/login"
-        className={`w-full text-center py-3.5 rounded-xl font-bold text-sm transition-all ${
-          isPopular
+        className={`w-full text-center py-3.5 rounded-xl font-bold text-sm transition-all ${isPopular
             ? 'btn-primary shadow-md hover:shadow-lg'
             : 'bg-muted/50 hover:bg-muted border border-border text-foreground'
-        }`}
+          }`}
       >
         {priceInr === "0" ? "Get Started Free" : `Upgrade to ${title}`}
       </a>
