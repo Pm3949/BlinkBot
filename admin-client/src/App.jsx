@@ -16,6 +16,7 @@ import TransactionsTab from './components/dashboard/TransactionsTab';
 import FinanceTab from './components/dashboard/FinanceTab';
 import PasswordModal from './components/dashboard/PasswordModal';
 import LoginView from './components/dashboard/LoginView';
+import BlogsTab from './components/dashboard/BlogsTab';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
@@ -411,6 +412,10 @@ export default function App() {
 
         {activeTab === 'finance' && (
           <FinanceTab API_URL={API_URL} />
+        )}
+
+        {activeTab === 'blogs' && (
+          <BlogsTab />
         )}
       </main>
 

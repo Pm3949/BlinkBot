@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Briefcase, Users, ShieldAlert, Calendar as CalendarIcon, Bot, Activity, CreditCard, LogOut, Sun, Moon } from 'lucide-react';
+import { ShieldCheck, Briefcase, Users, ShieldAlert, Calendar as CalendarIcon, Bot, Activity, CreditCard, LogOut, Sun, Moon, Newspaper } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, currentUser, handleLogout, isDarkMode, setIsDarkMode }) {
   const navItems = [
@@ -11,6 +11,7 @@ export default function Sidebar({ activeTab, setActiveTab, currentUser, handleLo
     { id: 'analytics', label: 'Usage Analytics', icon: Activity },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
     { id: 'finance', label: 'Finance Dashboard', icon: Briefcase },
+    { id: 'blogs', label: 'Blog Posts', icon: Newspaper },
   ];
 
   return (

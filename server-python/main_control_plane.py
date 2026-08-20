@@ -24,7 +24,7 @@ from fastapi import Request, Response
 # Import only control plane routers from the api package.
 from api import (
     analytics, admin, billing, chat_history, workspaces, 
-    agents, settings, auth, oauth, models, demo, workspace_tools
+    agents, settings, auth, oauth, models, demo, workspace_tools, blogs
 )
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -129,6 +129,7 @@ app.include_router(auth.router)
 app.include_router(models.router)
 app.include_router(demo.router)
 app.include_router(workspace_tools.router)
+app.include_router(blogs.router)
 app.include_router(oauth.router, prefix="/api/auth", tags=["OAuth Native Integrations"])
 
 # Set up the slowapi rate limiter.

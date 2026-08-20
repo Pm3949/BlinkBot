@@ -66,7 +66,7 @@ from fastapi import Request, Response
 from api import (
     documents, analytics, admin, billing, chat, chat_history, workspaces, 
     agents, chatbots, settings, notifications, meta_agent, 
-    demo, connectors, auth, oauth, models, workspace_tools
+    demo, connectors, auth, oauth, models, workspace_tools, blogs
 )
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -278,6 +278,7 @@ app.include_router(auth.router)
 app.include_router(connectors.router)
 app.include_router(models.router)
 app.include_router(workspace_tools.router)
+app.include_router(blogs.router)
 app.include_router(oauth.router, prefix="/api/auth", tags=["OAuth Native Integrations"])
 
 
