@@ -67,8 +67,8 @@ const DEMO_PERSONAS = [
     ],
     responses: {
       "What is your refund policy?": {
-        answer: "We offer a full 30-day money-back guarantee, no questions asked. You can cancel or switch your plan anytime from the Billing page in your workspace.",
-        sources: ["Refund_Policy.pdf", "Terms_of_Service.md"],
+        answer: "All transactions are final. We do not offer refunds, partial refunds, or money-back guarantees for any transactions, payments, or subscriptions, including monthly/annual plans and top-up credits.",
+        sources: ["Terms_of_Service.md"],
       },
       "How do I add my team members?": {
         answer: "Head to Workspace Settings → Team & Permissions. Click 'Invite Members', enter their email, and choose their role: Admin, Member, or Viewer. They'll get an invitation link instantly.",

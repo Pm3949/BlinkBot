@@ -34,7 +34,7 @@ Access is governed by role permissions configured on the **Team** page:
 ---
 
 ## 3. Creating & Configuring AI Agents
-Building a bot is handled via a visual 4-step wizard.
+Building a bot is handled via a visual 5-step wizard.
 
 ### Step 1: Identity & AI Auto-Configure
 *   **Identity:** Assign the agent a display name, description, and primary language.
@@ -54,8 +54,12 @@ Choose how files are processed and indexed:
     *   *Paragraph-based chunking:* Groups cohesive paragraphs (optimal for contextual reasoning).
     *   *Fixed-size chunking:* Splits text into fixed character windows with custom overlaps (optimal for general semantic search).
 
-### Step 4: Model Choice & Provider Keys
-Select your LLM engine:
+### Step 4: Capabilities & Tools
+Configure advanced capabilities and sandboxed environments:
+*   **Python Code Sandbox (CSV Analyzer):** Allow the agent to run Python code dynamically within a secure sandbox VM to calculate complex mathematical equations, analyze datasets, and generate visual charts.
+
+### Step 5: Model Choice & Provider Keys
+Select your LLM engine and primary language settings:
 *   **Groq:** Optimized for sub-second, hardware-accelerated responses.
 *   **OpenAI:** Industry benchmark using GPT-4o and GPT-4o-mini.
 *   **OpenRouter & HuggingFace:** Connect your keys to access open-source models like DeepSeek R1, Llama 3.3, Mistral, and Qwen at near-zero token costs.
@@ -110,7 +114,7 @@ BlinkBot offers simple pricing structures:
 *   **Pro & Business Plans:** Designed for scale, giving workspaces access to multiple projects, widgets, advanced commercial APIs, and increased storage.
 *   **Custom Slider Builder:** Allows teams to drag sliders to select exact message quotas, storage sizes, and widget counts, calculating a custom price in real-time.
 *   **Top-Up Packs:** Message top-up credits can be purchased at any time. These credits never expire and roll over month-to-month.
-*   **Refund Policy:** Full 30-day money-back guarantee with zero questions asked.
+*   **Refund Policy:** All transactions, subscription payments, and top-up credit purchases are final. We do not offer refunds, money-back guarantees, or partial credits under any circumstances.
 
 ---
 

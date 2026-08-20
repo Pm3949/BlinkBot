@@ -83,6 +83,16 @@ export default function TermsPage() {
             </p>
           </section>
 
+          <section>
+            <h2 className="text-xl font-bold text-foreground mb-3">7. Billing, Payments & No-Refund Policy</h2>
+            <p className="mb-2">
+              Certain services or subscription tiers on BlinkBot are offered on a paid basis. By purchasing any subscription or top-up credits, you agree to the pricing and payment terms.
+            </p>
+            <p className="font-semibold text-foreground">
+              IMPORTANT: All transactions, subscription charges, and purchases of top-up credits are final and non-refundable. We do not offer refunds, money-back guarantees, or partial credits under any circumstances.
+            </p>
+          </section>
+
           <section className="pt-8 border-t border-border/50">
             <h2 className="text-xl font-bold text-foreground mb-3">Contact Us</h2>
             <p>

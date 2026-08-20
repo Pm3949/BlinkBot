@@ -113,7 +113,7 @@ export default function UserGuidePage() {
               </p>
               <InfoBox title="Key Highlights">
                 <ul className="list-disc pl-5 space-y-1 text-sm">
-                  <li>No coding required — visual 4-step wizard</li>
+                  <li>No coding required — visual 5-step wizard</li>
                   <li>Multi-provider LLMs: Groq, OpenAI, Ollama</li>
                   <li>Automatic document chunking & vector embedding</li>
                   <li>Embeddable chat widgets for any website</li>
@@ -145,13 +145,14 @@ export default function UserGuidePage() {
             <GuideSection id="creating-bots" title="Creating AI Bots" icon={Bot}>
               <p>
                 To create a new bot, click <strong>Create Agent</strong> from the Dashboard or Studio. You'll be guided 
-                through a 4-step wizard:
+                through a 5-step wizard:
               </p>
               <ol className="list-decimal pl-5 space-y-3 text-muted-foreground mt-4">
-                <li><strong>Identity:</strong> Give your bot a name and description. Choose a language.</li>
+                <li><strong>Identity:</strong> Give your bot a name and description. Choose a language. Use AI Auto-Configure to generate a system prompt and layout for you automatically.</li>
                 <li><strong>Behavior:</strong> Write a system prompt (e.g., "You are a helpful customer support agent"). Add optional output format instructions (e.g., "Always respond in JSON").</li>
-                <li><strong>Knowledge:</strong> Select an embedding model and chunking strategy. Enable web search fallback if desired.</li>
-                <li><strong>Model:</strong> Choose your LLM provider (Groq, OpenAI, or Ollama) and select a specific model. Enter your API key if required.</li>
+                <li><strong>Knowledge Base:</strong> Select an embedding model and chunking strategy. Enable web search fallback if desired.</li>
+                <li><strong>Capabilities & Tools:</strong> Toggle optional features like the Python Code Sandbox (CSV Analyzer) to run code securely.</li>
+                <li><strong>Model Settings:</strong> Choose your LLM provider and select a specific model. Enter your API key if required.</li>
               </ol>
             </GuideSection>
 
@@ -283,6 +284,9 @@ export default function UserGuidePage() {
               <p className="mt-4">
                 The <strong>Custom Plan Builder</strong> lets you use sliders to adjust the exact number of agents, messages, storage, and widgets you need — with dynamic pricing calculated in real-time.
               </p>
+              <InfoBox title="No-Refund Policy" variant="info">
+                Please note that all payments, subscription fees, and top-up credit purchases on BlinkBot are strictly final and non-refundable. We do not offer money-back guarantees or refunds for any transactions under any circumstances.
+              </InfoBox>
             </GuideSection>
 
             {/* 12. Languages */}
