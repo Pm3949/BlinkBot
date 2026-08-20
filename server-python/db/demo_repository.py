@@ -146,6 +146,7 @@ async def get_admin_demo_requests():
     Errors / Exceptions:
         - May raise database-related errors.
     """
+    await create_demo_requests_table()
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
@@ -180,6 +181,7 @@ async def update_demo_request_status(request_id: int, status: str):
     Errors / Exceptions:
         - May raise database exceptions.
     """
+    await create_demo_requests_table()
     async with get_db_cursor_async(commit=True) as cursor:
         # Update status and return contact details.
         await run_in_threadpool(
@@ -209,6 +211,7 @@ async def get_demo_request_contact(request_id: int):
     Errors / Exceptions:
         - May raise database exceptions.
     """
+    await create_demo_requests_table()
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,
@@ -241,6 +244,7 @@ async def schedule_demo_meeting(request_id: int, scheduled_date: str, scheduled_
     Errors / Exceptions:
         - May raise database exceptions.
     """
+    await create_demo_requests_table()
     async with get_db_cursor_async(commit=True) as cursor:
         await run_in_threadpool(
             cursor.execute,
@@ -272,6 +276,7 @@ async def get_scheduled_demo_requests():
     Errors / Exceptions:
         - May raise database-related errors.
     """
+    await create_demo_requests_table()
     async with get_db_cursor_async(commit=False) as cursor:
         await run_in_threadpool(
             cursor.execute,

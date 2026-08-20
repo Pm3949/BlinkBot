@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X, ArrowLeft, Sun, Moon } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Database, Settings2, Activity, ShieldAlert, Check, X, ArrowLeft, Sun, Moon, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import TracePanel from "../components/chat/TracePanel";
@@ -320,6 +320,13 @@ export default function ChatPage() {
               </div>
             ) : (
               <>
+                {isFetchingNextPage && (
+                  <div className="flex justify-center items-center py-3 bg-muted/30 border border-border/40 rounded-xl gap-2 select-none animate-pulse">
+                    <Loader2 size={16} className="text-primary animate-spin" />
+                    <span className="text-xs font-semibold text-muted-foreground">Loading older messages...</span>
+                  </div>
+                )}
+
                 {!isLoadingProjects && projects.length === 0 && (
                   <div className="text-sm text-muted-foreground">
                     Create a network before starting a chat.
