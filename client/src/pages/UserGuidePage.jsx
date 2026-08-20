@@ -231,7 +231,7 @@ export default function UserGuidePage() {
                   <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground leading-relaxed">
                     <li><strong>Tool Name:</strong> `Create_GitHub_Issue`</li>
                     <li><strong>Base URL:</strong> `https://api.github.com`</li>
-                    <li><strong>Endpoint Path:</strong> `/repos/{owner}/{repo}/issues`</li>
+                    <li><strong>Endpoint Path:</strong> <code>{'/repos/{owner}/{repo}/issues'}</code></li>
                     <li><strong>Method:</strong> `POST`</li>
                     <li><strong>Body Parameters:</strong> `title` (required string), `body` (optional string).</li>
                     <li><strong>Requires Approval:</strong> `True`</li>
