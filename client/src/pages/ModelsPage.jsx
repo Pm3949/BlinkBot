@@ -536,13 +536,15 @@ export default function ModelsPage() {
                         </div>
 
                         {/* Active Switch */}
-                        <div title={isLocked ? `Submit ${m.provider} API key in Credentials tab to unlock activation` : ""}>
-                          <Switch
-                            checked={activeState}
-                            disabled={isLocked || modelTestState[m.model_id]?.status === "testing"}
-                            onCheckedChange={() => handleToggleActive(m)}
-                          />
-                        </div>
+                        {!isSystemModel && (
+                          <div title={isLocked ? `Submit ${m.provider} API key in Credentials tab to unlock activation` : ""}>
+                            <Switch
+                              checked={activeState}
+                              disabled={isLocked || modelTestState[m.model_id]?.status === "testing"}
+                              onCheckedChange={() => handleToggleActive(m)}
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <p className="text-xs text-muted-foreground line-clamp-2 mb-4">
@@ -707,13 +709,15 @@ export default function ModelsPage() {
                             )}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            <div title={isLocked ? `Submit ${m.provider} API key in Credentials tab to unlock` : ""}>
-                              <Switch
-                                checked={activeState}
-                                disabled={isLocked || modelTestState[m.model_id]?.status === "testing"}
-                                onCheckedChange={() => handleToggleActive(m)}
-                              />
-                            </div>
+                            {!isSystemModel && (
+                              <div title={isLocked ? `Submit ${m.provider} API key in Credentials tab to unlock` : ""}>
+                                <Switch
+                                  checked={activeState}
+                                  disabled={isLocked || modelTestState[m.model_id]?.status === "testing"}
+                                  onCheckedChange={() => handleToggleActive(m)}
+                                />
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             {m.user_id ? (
