@@ -108,6 +108,39 @@ def release_db_connection(conn):
         db_pool.putconn(conn)
 
 
+def _check_connection_alive(conn):
+    """
+    Synchronous helper to verify if a connection is alive by running a quick query.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+        return True
+    except Exception:
+        return False
+
+
+async def _get_valid_connection():
+    """
+    Retrieves a connection from the pool, validating its health.
+    Discards dead connections and retries up to 3 times.
+    """
+    for _ in range(3):
+        conn = await run_in_threadpool(db_pool.getconn)
+        is_alive = await run_in_threadpool(_check_connection_alive, conn)
+        if is_alive:
+            return conn
+        
+        logger.warning("Borrowed a dead database connection from the pool. Discarding and retrying...")
+        try:
+            await run_in_threadpool(db_pool.putconn, conn, close=True)
+        except Exception as e:
+            logger.debug(f"Error putting dead connection back to pool: {e}")
+            
+    # Fallback to a standard getconn if retries fail
+    return await run_in_threadpool(db_pool.getconn)
+
+
 @asynccontextmanager
 async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
     """
@@ -122,7 +155,7 @@ async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
         are delegated to run_in_threadpool to keep the main asyncio event loop non-blocking.
     """
     # Borrow a connection from the pool on a worker thread
-    conn = await run_in_threadpool(db_pool.getconn)
+    conn = await _get_valid_connection()
     
     # Instantiate the cursor using the custom factory if provided on a worker thread
     if cursor_factory:
@@ -139,14 +172,24 @@ async def get_db_cursor_async(commit: bool = False, cursor_factory=None):
         else:
             await run_in_threadpool(conn.rollback)
     except Exception as e:
-        # If any exception occurred, roll back on a worker thread.
-        await run_in_threadpool(conn.rollback)
+        # If any exception occurred, roll back on a worker thread if the connection is not closed.
+        try:
+            await run_in_threadpool(conn.rollback)
+        except psycopg2.InterfaceError:
+            # Connection is already closed/dead, rollback is not possible
+            pass
         logger.warning(f"Transaction rolled back due to error: {type(e).__name__}")
         raise
     finally:
         # Close the cursor and return the connection on a worker thread.
-        await run_in_threadpool(cursor.close)
-        await run_in_threadpool(db_pool.putconn, conn)
+        try:
+            await run_in_threadpool(cursor.close)
+        except Exception:
+            pass
+        try:
+            await run_in_threadpool(db_pool.putconn, conn)
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -161,15 +204,24 @@ async def get_db_connection_async():
         Optimized: Delegated pool methods to run_in_threadpool to ensure non-blocking loop execution.
     """
     # Borrow a connection from the pool on a worker thread
-    conn = await run_in_threadpool(db_pool.getconn)
+    conn = await _get_valid_connection()
     try:
         # Yield the raw connection object to the caller.
+        query_successful = False
         yield conn
+        query_successful = True
     except Exception as e:
         # Roll back on error on a worker thread.
-        await run_in_threadpool(conn.rollback)
+        try:
+            await run_in_threadpool(conn.rollback)
+        except psycopg2.InterfaceError:
+            pass
         logger.warning(f"Raw connection transaction rolled back due to error: {type(e).__name__}")
         raise
     finally:
         # Return the connection on a worker thread.
-        await run_in_threadpool(db_pool.putconn, conn)
+        try:
+            await run_in_threadpool(db_pool.putconn, conn)
+        except Exception:
+            pass
+
